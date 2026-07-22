@@ -39,10 +39,9 @@ type openAIInputTokensCountPrepared struct {
 	UpstreamModel   string
 }
 
-// EstimateGrokCountTokens estimates an Anthropic-compatible count_tokens
-// request locally. xAI does not expose a compatible token-count endpoint, so
-// this path deliberately avoids account selection, credentials, and upstream
-// calls.
+// EstimateGrokCountTokens estimates an Anthropic-compatible count_tokens request
+// locally. Grok does not expose a compatible token-counting endpoint, so this
+// path deliberately avoids account selection, credentials, and upstream calls.
 func EstimateGrokCountTokens(body []byte) (int, error) {
 	var anthropicReq apicompat.AnthropicRequest
 	if err := json.Unmarshal(body, &anthropicReq); err != nil {
@@ -51,10 +50,12 @@ func EstimateGrokCountTokens(body []byte) (int, error) {
 	if strings.TrimSpace(anthropicReq.Model) == "" {
 		return 0, fmt.Errorf("parse anthropic count_tokens request: model is required")
 	}
+
 	responsesReq, err := apicompat.AnthropicToResponses(&anthropicReq)
 	if err != nil {
 		return 0, fmt.Errorf("convert anthropic request to responses: %w", err)
 	}
+
 	estimated, err := estimateOpenAIInputTokens(openAIInputTokensCountRequest{
 		Model:        anthropicReq.Model,
 		Instructions: responsesReq.Instructions,
@@ -121,7 +122,7 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.Do(ProtectUserOwnedUpstreamRequest(upstreamReq, account, proxyURL), proxyURL, account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		setOpsUpstreamError(c, 0, safeErr, "")

@@ -1,8 +1,10 @@
+<div align="center">
+
+<img src="assets/logo.svg" alt="Sub2API Xray Logo" width="128" />
+
 # Sub2API Xray
 
 Sub2API Xray 是 [Sub2API](https://github.com/Wei-Shaw/sub2api) 的持续维护分支。在保留原版网关能力的基础上，新增用户私有资源池、订阅分发和内置 Xray 代理运行时。
-
-<div align="center">
 
 [![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
@@ -36,7 +38,7 @@ Sub2API Xray 是 [Sub2API](https://github.com/Wei-Shaw/sub2api) 的持续维护�
 
 ## 当前发行版
 
-当前版本为 `v0.1.161-xray2`，基于原版 `v0.1.161`。代理协议、用户资源、界面和升级变更见[发行说明](docs/releases/v0.1.161-xray2_CN.md)。
+当前集成版本为 `v0.1.163-xray2-beta1`，基于原版 `v0.1.163`。最新正式版仍为 `v0.1.161-xray2`，代理协议、用户资源、界面和升级变更见其[发行说明](docs/releases/v0.1.161-xray2_CN.md)。
 
 ## 重要提醒
 

@@ -183,8 +183,10 @@ func TestAnthropicToResponses_ThinkingSignatureBecomesReasoning(t *testing.T) {
 			{Role: "user", Content: json.RawMessage(`[{"type":"tool_result","tool_use_id":"toolu_1","content":"ok"}]`)},
 		},
 	}
+
 	resp, err := AnthropicToResponses(req)
 	require.NoError(t, err)
+
 	var items []ResponsesInputItem
 	require.NoError(t, json.Unmarshal(resp.Input, &items))
 	// user + reasoning + assistant text + function_call + function_call_output
@@ -421,9 +423,11 @@ func TestResponsesToAnthropic_Reasoning(t *testing.T) {
 func TestResponsesToAnthropic_StreamEmitsThinkingSignature(t *testing.T) {
 	state := NewResponsesEventToAnthropicState()
 	var all []AnthropicStreamEvent
+
 	appendAll := func(events []AnthropicStreamEvent) {
 		all = append(all, events...)
 	}
+
 	appendAll(ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
 		Type:        "response.output_item.added",
 		OutputIndex: 0,
@@ -435,6 +439,7 @@ func TestResponsesToAnthropic_StreamEmitsThinkingSignature(t *testing.T) {
 		Delta:        "thinking...",
 		SummaryIndex: 0,
 	}, state))
+	// summary.done must not close the thinking block before encrypted_content arrives
 	appendAll(ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
 		Type:         "response.reasoning_summary_text.done",
 		OutputIndex:  0,
@@ -450,10 +455,11 @@ func TestResponsesToAnthropic_StreamEmitsThinkingSignature(t *testing.T) {
 			Status:           "completed",
 		},
 	}, state))
+
 	var sawSignature bool
-	for _, event := range all {
-		if event.Type == "content_block_delta" && event.Delta != nil && event.Delta.Type == "signature_delta" {
-			assert.Equal(t, "enc-stream-1", event.Delta.Signature)
+	for _, ev := range all {
+		if ev.Type == "content_block_delta" && ev.Delta != nil && ev.Delta.Type == "signature_delta" {
+			assert.Equal(t, "enc-stream-1", ev.Delta.Signature)
 			sawSignature = true
 		}
 	}
@@ -851,12 +857,11 @@ func TestStreamingReasoning(t *testing.T) {
 	assert.Equal(t, "thinking_delta", events[0].Delta.Type)
 	assert.Equal(t, "Let me think...", events[0].Delta.Thinking)
 
-	// summary.done keeps thinking open until output_item.done so the encrypted
-	// signature can be emitted before the block closes.
+	// summary.done keeps thinking open until output_item.done (for signature)
 	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
 		Type: "response.reasoning_summary_text.done",
 	}, state)
-	require.Empty(t, events)
+	require.Len(t, events, 0)
 
 	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
 		Type:        "response.output_item.done",

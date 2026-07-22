@@ -367,6 +367,7 @@ func (s *GrokQuotaService) fetchBilling(
 		// billing 探测与真实转发保持同一套账号级请求头覆写。
 		account.ApplyHeaderOverrides(req.Header)
 		resp, requestErr := s.httpUpstream.Do(ProtectUserOwnedUpstreamRequest(req, account, proxyURL), proxyURL, account.ID, maxInt(account.Concurrency, 2))
+
 		statusCode := 0
 		var bodyBytes []byte
 		if requestErr == nil {
@@ -374,7 +375,9 @@ func (s *GrokQuotaService) fetchBilling(
 			bodyBytes, _ = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 			_ = resp.Body.Close()
 		}
-		if (requestErr != nil || isRetryableGrokBillingStatus(statusCode)) && attempt+1 < grokBillingMaxAttempts {
+
+		shouldRetry := requestErr != nil || isRetryableGrokBillingStatus(statusCode)
+		if shouldRetry && attempt+1 < grokBillingMaxAttempts {
 			timer := time.NewTimer(grokBillingRetryDelay)
 			select {
 			case <-timer.C:
@@ -384,6 +387,7 @@ func (s *GrokQuotaService) fetchBilling(
 			}
 			continue
 		}
+
 		if requestErr != nil {
 			return nil, 0, infraerrors.Newf(http.StatusBadGateway, "GROK_QUOTA_PROBE_REQUEST_FAILED", "billing request failed: %v", requestErr)
 		}

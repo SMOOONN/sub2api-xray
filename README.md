@@ -1,8 +1,10 @@
+<div align="center">
+
+<img src="assets/logo.svg" alt="Sub2API Xray Logo" width="128" />
+
 # Sub2API Xray
 
 Sub2API Xray is a maintained fork of [Sub2API](https://github.com/Wei-Shaw/sub2api). It keeps upstream gateway capabilities while adding private user resource pools, subscription distribution, and an embedded Xray proxy runtime.
-
-<div align="center">
 
 [![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
@@ -36,7 +38,7 @@ The user resource workspace is controlled by `enable_user_resources` and is disa
 
 ## Current Release
 
-The current release is `v0.1.161-xray2`, based on upstream `v0.1.161`. See the [release notes](docs/releases/v0.1.161-xray2.md) for proxy-protocol, user-resource, UI, and upgrade changes.
+The current integration build is `v0.1.163-xray2-beta1`, based on upstream `v0.1.163`. The latest formal release remains `v0.1.161-xray2`; see its [release notes](docs/releases/v0.1.161-xray2.md) for proxy-protocol, user-resource, UI, and upgrade changes.
 
 ## Important Notice
 
@@ -404,6 +406,7 @@ database:
 redis:
   host: "localhost"
   port: 6379
+  username: ""
   password: ""
 
 jwt:

@@ -62,6 +62,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	anthropicDigestChain := ""
 	anthropicMatchedDigestChain := ""
 	compatPromptCacheInjected := false
+	// Grok is outside the gpt-5/codex compat injector, but Claude Code still
+	// carries a stable session id. Prefer that as the Grok prompt-cache seed so
+	// multi-turn /v1/messages traffic can hit xAI's server-side cache.
 	if promptCacheKey == "" && account.Platform == PlatformGrok {
 		if sessionSeed := extractClaudeCodeSessionID(c, body); sessionSeed != "" {
 			promptCacheKey = sessionSeed
@@ -330,14 +333,17 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
+	// Grok may reject encrypted reasoning replayed under a different OAuth
+	// account/cache identity. Match forwardGrokResponses: one strip+retry before
+	// treating the 400 as a hard failure / failover trigger.
 	var resp *http.Response
 	for attempt := 0; ; attempt++ {
 		if attempt > 0 {
 			if account.Platform != PlatformGrok {
 				break
 			}
-			retryCtx, releaseRetry := detachUpstreamContext(ctx)
-			upstreamReq, err = buildGrokResponsesRequest(retryCtx, c, account, responsesBody, token, grokCacheIdentity, s.cfg)
+			upstreamCtxRetry, releaseRetry := detachUpstreamContext(ctx)
+			upstreamReq, err = buildGrokResponsesRequest(upstreamCtxRetry, c, account, responsesBody, token, grokCacheIdentity, s.cfg)
 			releaseRetry()
 			if err != nil {
 				return nil, fmt.Errorf("build grok retry request: %w", err)
@@ -354,8 +360,12 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if resp.Body != nil {
 			_ = resp.Body.Close()
 		}
-		if !isGrokInvalidEncryptedContentResponse(resp.StatusCode, respBody) &&
-			!requestHasGrokEncryptedReasoning(responsesBody) {
+		// Prefer explicit decrypt errors; also strip once on any 400 when the
+		// outbound body still carries reasoning.encrypted_content (account
+		// switch often returns opaque "Upstream error: 400").
+		shouldStrip := isGrokInvalidEncryptedContentResponse(resp.StatusCode, respBody) ||
+			requestHasGrokEncryptedReasoning(responsesBody)
+		if !shouldStrip {
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			break
 		}
@@ -399,6 +409,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			)
 			return s.ForwardAsAnthropic(ctx, c, account, body, promptCacheKey, defaultMappedModel)
 		}
+		// Grok account-switched history often fails decrypt; strip encrypted
+		// reasoning once at the client-body level so failover accounts can accept
+		// the multi-turn tool continuation instead of cascading 400s.
 		if account.Platform == PlatformGrok &&
 			isGrokInvalidEncryptedContentResponse(resp.StatusCode, respBody) &&
 			!grokEncryptedContentStripRetried(ctx) {

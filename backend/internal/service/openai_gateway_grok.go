@@ -52,9 +52,23 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	if isGrokImageGenerationModel(upstreamModel) {
 		return nil, fmt.Errorf("model %s is an image model and is not available on the Responses endpoint; use /v1/images/generations instead", upstreamModel)
 	}
-	patchedBody, err := patchGrokResponsesBody(body, upstreamModel)
+	patchedBody, clientToolMapping, err := patchGrokResponsesBodyWithClientTools(body, upstreamModel)
 	if err != nil {
+		setOpsUpstreamError(c, http.StatusBadRequest, err.Error(), "")
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+			"type": "invalid_request_error", "message": err.Error(), "param": "tools",
+		}})
 		return nil, err
+	}
+	setGrokResponsesClientToolMapping(c, clientToolMapping)
+	// OpenAI /responses/compact is not a native xAI endpoint. Convert it into a
+	// normal Grok Responses turn that asks for a structured summary, then map the
+	// reply back to an OpenAI compaction item on the way out.
+	if isOpenAIResponsesCompactPath(c) {
+		patchedBody, err = buildGrokCompactRequestBody(patchedBody)
+		if err != nil {
+			return nil, err
+		}
 	}
 	// Derive the identity from the request xAI will actually see. This makes
 	// Codex Responses Lite additional_tools part of the stable tool prefix.
@@ -97,9 +111,6 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		if err != nil {
 			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 		}
-		if resp == nil {
-			return nil, fmt.Errorf("xAI upstream returned an empty response")
-		}
 
 		// xAI can reject encrypted reasoning copied from a response produced under
 		// another account or cache identity. Retry once with the same routing and
@@ -111,12 +122,8 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		if resp.Body != nil {
 			_ = resp.Body.Close()
 		}
-		// Some xAI relays return only an opaque 400. Retry those only when the
-		// outbound body actually contains encrypted reasoning; structured errors
-		// with another code or message must keep their original behavior.
-		shouldRetryInvalidEncryptedContent := isGrokInvalidEncryptedContentResponse(resp.StatusCode, respBody) ||
-			(isGrokOpaqueBadRequest(resp.StatusCode, respBody) && requestHasGrokEncryptedReasoning(patchedBody))
-		if !shouldRetryInvalidEncryptedContent {
+		if !isGrokInvalidEncryptedContentResponse(resp.StatusCode, respBody) &&
+			!(isGrokOpaqueBadRequest(resp.StatusCode, respBody) && requestHasGrokEncryptedReasoning(patchedBody)) {
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			break
 		}
@@ -133,9 +140,7 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		patchedBody = retryBody
 		slog.Info("grok_invalid_encrypted_content_retry", "account_id", account.ID, "cache_identity_present", cacheIdentity != "")
 	}
-	if resp.Body != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)
@@ -144,17 +149,21 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		if upstreamMsg == "" {
 			upstreamMsg = fmt.Sprintf("xAI upstream returned status %d", resp.StatusCode)
 		}
+		kind := "http_error"
+		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody) {
+			kind = "failover"
+		}
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:           account.Platform,
 			AccountID:          account.ID,
 			AccountName:        account.Name,
 			UpstreamStatusCode: resp.StatusCode,
 			UpstreamRequestID:  firstNonEmpty(resp.Header.Get("x-request-id"), resp.Header.Get("xai-request-id")),
-			Kind:               "failover",
+			Kind:               kind,
 			Message:            upstreamMsg,
 		})
 		s.handleGrokAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
-		if s.shouldFailoverUpstreamError(resp.StatusCode) {
+		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody) {
 			return nil, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
 				ResponseBody:           respBody,
@@ -171,6 +180,13 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	var firstTokenMs *int
 	responseID := ""
 	if reqStream {
+		if hasGrokResponsesClientToolMapping(clientToolMapping) {
+			maxLineSize := defaultMaxLineSize
+			if s.cfg != nil && s.cfg.Gateway.MaxLineSize > 0 {
+				maxLineSize = s.cfg.Gateway.MaxLineSize
+			}
+			resp.Body = newGrokResponsesClientToolStreamBody(resp.Body, clientToolMapping, maxLineSize)
+		}
 		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel)
 		if err != nil {
 			return nil, err
@@ -211,28 +227,42 @@ func isGrokInvalidEncryptedContentResponse(statusCode int, body []byte) bool {
 		return false
 	}
 
-	code := gjson.GetBytes(body, "code")
-	if code.Type != gjson.String {
-		return false
+	// xAI has used both flat and nested error envelopes:
+	//   {"code":"invalid-argument","error":"Could not decrypt the provided encrypted_content."}
+	//   {"error":{"message":"Could not decrypt the provided encrypted_content."}}
+	code := strings.TrimSpace(gjson.GetBytes(body, "code").String())
+	message := ""
+	errNode := gjson.GetBytes(body, "error")
+	switch {
+	case errNode.Type == gjson.String:
+		message = errNode.String()
+	case errNode.IsObject():
+		message = firstNonEmpty(errNode.Get("message").String(), errNode.Get("error").String())
+		if code == "" {
+			code = strings.TrimSpace(errNode.Get("code").String())
+		}
+	default:
+		message = gjson.GetBytes(body, "message").String()
 	}
-	message := gjson.GetBytes(body, "error")
-	if message.Type != gjson.String {
-		message = gjson.GetBytes(body, "error.message")
-	}
-	if message.Type != gjson.String {
+	normalizedMessage := strings.ToLower(strings.TrimSpace(message))
+	if normalizedMessage == "" {
 		return false
 	}
 
-	normalizedCode := strings.TrimSpace(code.String())
-	normalizedMessage := strings.ToLower(strings.TrimSpace(message.String()))
-	if strings.EqualFold(normalizedCode, "invalid_encrypted_content") {
-		return strings.Contains(normalizedMessage, "encrypted")
+	if strings.EqualFold(code, "invalid_encrypted_content") {
+		return true
 	}
-	if !strings.EqualFold(normalizedCode, "invalid-argument") {
+	// Keep the official xAI flat-code gate so unrelated 400s are not retried.
+	if !strings.EqualFold(code, "invalid-argument") && code != "" {
+		return false
+	}
+	// Nested OpenAI-style envelopes may omit top-level code; require decrypt text.
+	if code == "" && !strings.Contains(normalizedMessage, "decrypt") {
 		return false
 	}
 	return strings.Contains(normalizedMessage, "encrypted_content") &&
-		(strings.Contains(normalizedMessage, "decrypt") || strings.Contains(normalizedMessage, "unmodified"))
+		(strings.Contains(normalizedMessage, "decrypt") ||
+			strings.Contains(normalizedMessage, "unmodified"))
 }
 
 func isGrokOpaqueBadRequest(statusCode int, body []byte) bool {
@@ -252,6 +282,8 @@ func isGrokOpaqueBadRequest(statusCode int, body []byte) bool {
 		!gjson.GetBytes(trimmed, "message").Exists()
 }
 
+// requestHasGrokEncryptedReasoning reports whether the outbound Responses body
+// still carries reasoning.encrypted_content that can be stripped for retry.
 func requestHasGrokEncryptedReasoning(body []byte) bool {
 	input := gjson.GetBytes(body, "input")
 	if !input.Exists() {
@@ -265,8 +297,8 @@ func requestHasGrokEncryptedReasoning(body []byte) bool {
 		if strings.TrimSpace(item.Get("type").String()) != "reasoning" {
 			continue
 		}
-		value := item.Get("encrypted_content")
-		if value.Exists() && value.Type != gjson.Null && strings.TrimSpace(value.String()) != "" {
+		enc := item.Get("encrypted_content")
+		if enc.Exists() && enc.Type != gjson.Null && strings.TrimSpace(enc.String()) != "" {
 			return true
 		}
 	}
@@ -280,38 +312,44 @@ func markGrokEncryptedContentStripRetried(ctx context.Context) context.Context {
 }
 
 func grokEncryptedContentStripRetried(ctx context.Context) bool {
-	value, _ := ctx.Value(grokEncryptedContentStripRetriedKey{}).(bool)
-	return value
+	v, _ := ctx.Value(grokEncryptedContentStripRetriedKey{}).(bool)
+	return v
 }
 
+// stripAnthropicThinkingSignatures removes thinking.signature from Claude
+// history so a different Grok OAuth account can accept multi-turn tool
+// continuations after decrypt failures. Returns ok=false when nothing changed.
 func stripAnthropicThinkingSignatures(body []byte) ([]byte, bool) {
 	if len(body) == 0 || !bytes.Contains(body, []byte(`"signature"`)) {
 		return body, false
 	}
-	var request map[string]any
-	if err := json.Unmarshal(body, &request); err != nil {
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
 		return body, false
 	}
-	messages, ok := request["messages"].([]any)
-	if !ok {
+	messages, ok := req["messages"].([]any)
+	if !ok || len(messages) == 0 {
 		return body, false
 	}
 	changed := false
-	for _, rawMessage := range messages {
-		message, ok := rawMessage.(map[string]any)
+	for _, rawMsg := range messages {
+		msg, ok := rawMsg.(map[string]any)
 		if !ok {
 			continue
 		}
-		content, ok := message["content"].([]any)
+		content, ok := msg["content"].([]any)
 		if !ok {
 			continue
 		}
 		for _, rawBlock := range content {
 			block, ok := rawBlock.(map[string]any)
-			if !ok || block["type"] != "thinking" {
+			if !ok {
 				continue
 			}
-			if _, exists := block["signature"]; exists {
+			if typ, _ := block["type"].(string); typ != "thinking" {
+				continue
+			}
+			if _, has := block["signature"]; has {
 				delete(block, "signature")
 				changed = true
 			}
@@ -320,7 +358,7 @@ func stripAnthropicThinkingSignatures(body []byte) ([]byte, bool) {
 	if !changed {
 		return body, false
 	}
-	out, err := json.Marshal(request)
+	out, err := json.Marshal(req)
 	if err != nil {
 		return body, false
 	}
@@ -363,6 +401,29 @@ func trimGrokInvalidEncryptedContentRetryBody(body []byte) ([]byte, bool, error)
 }
 
 func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
+	return patchGrokResponsesBodyBase(body, upstreamModel)
+}
+
+func patchGrokResponsesBodyWithClientTools(body []byte, upstreamModel string) ([]byte, apicompat.ResponsesClientToolMapping, error) {
+	if !json.Valid(body) {
+		return nil, apicompat.ResponsesClientToolMapping{}, fmt.Errorf("invalid json request body")
+	}
+	promoted, err := sanitizeGrokResponsesInput(body)
+	if err != nil {
+		return nil, apicompat.ResponsesClientToolMapping{}, err
+	}
+	adapted, mapping, err := adaptGrokResponsesClientTools(promoted)
+	if err != nil {
+		return nil, apicompat.ResponsesClientToolMapping{}, err
+	}
+	patched, err := patchGrokResponsesBodyBase(adapted, upstreamModel)
+	if err != nil {
+		return nil, apicompat.ResponsesClientToolMapping{}, err
+	}
+	return patched, mapping, nil
+}
+
+func patchGrokResponsesBodyBase(body []byte, upstreamModel string) ([]byte, error) {
 	if !json.Valid(body) {
 		return nil, fmt.Errorf("invalid json request body")
 	}
@@ -393,6 +454,10 @@ func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 		}
 	}
 	out, err = sanitizeGrokResponsesUnsupportedFields(out)
+	if err != nil {
+		return nil, err
+	}
+	out, err = convertOpenAICompactInputsForGrok(out)
 	if err != nil {
 		return nil, err
 	}
@@ -861,17 +926,21 @@ func (s *OpenAIGatewayService) describeGrokComposerImage(
 		if upstreamMsg == "" {
 			upstreamMsg = fmt.Sprintf("xAI image bridge upstream returned status %d", resp.StatusCode)
 		}
+		kind := "http_error"
+		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody) {
+			kind = "failover"
+		}
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 			Platform:           account.Platform,
 			AccountID:          account.ID,
 			AccountName:        account.Name,
 			UpstreamStatusCode: resp.StatusCode,
 			UpstreamRequestID:  firstNonEmpty(resp.Header.Get("x-request-id"), resp.Header.Get("xai-request-id")),
-			Kind:               "failover",
+			Kind:               kind,
 			Message:            upstreamMsg,
 		})
 		s.handleGrokAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
-		if s.shouldFailoverUpstreamError(resp.StatusCode) {
+		if s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody) {
 			return "", OpenAIUsage{}, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
 				ResponseBody:           respBody,
@@ -1039,6 +1108,7 @@ func applyGrokCLIHeaders(headers http.Header) {
 	}
 	headers.Set("User-Agent", grokUpstreamUserAgent)
 	headers.Set("X-Grok-Client-Version", grokCLIVersion)
+	headers.Set("X-Grok-Client-Mode", "interactive")
 }
 
 func (s *OpenAIGatewayService) updateGrokUsageSnapshot(ctx context.Context, account *Account, snapshot *xai.QuotaSnapshot) {
@@ -1293,12 +1363,18 @@ func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Contex
 	if s == nil || account == nil {
 		return
 	}
+	if isGrokContentPolicyRejection(statusCode, responseBody) {
+		return
+	}
 	now := time.Now()
 	s.updateGrokUsageSnapshot(ctx, account, parseGrokQuotaSnapshot(headers, statusCode, now))
 	switch statusCode {
 	case http.StatusUnauthorized:
 		s.tempUnscheduleGrok(ctx, account, 10*time.Minute, "grok credentials unauthorized")
 	case http.StatusForbidden:
+		if s.applyGrokForbiddenPolicy(ctx, account, responseBody) {
+			return
+		}
 		s.tempUnscheduleGrok(ctx, account, 30*time.Minute, "grok access or entitlement denied")
 	case http.StatusTooManyRequests:
 		// updateGrokUsageSnapshot installs both runtime and durable rate-limit state.

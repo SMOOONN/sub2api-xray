@@ -1,8 +1,10 @@
+<div align="center">
+
+<img src="assets/logo.svg" alt="Sub2API Xray Logo" width="128" />
+
 # Sub2API Xray
 
 Sub2API Xray は [Sub2API](https://github.com/Wei-Shaw/sub2api) の継続的に保守されるフォークです。上流のゲートウェイ機能を維持しながら、ユーザー専用リソースプール、サブスクリプション配布、組み込み Xray プロキシランタイムを追加しています。
-
-<div align="center">
 
 [![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
@@ -36,7 +38,7 @@ Sub2API Xray は [Sub2API](https://github.com/Wei-Shaw/sub2api) の継続的に�
 
 ## 現在のリリース
 
-現在のバージョンは上流 `v0.1.161` をベースにした `v0.1.161-xray2` です。プロトコル、ユーザーリソース、UI、アップグレード変更は[リリースノート](docs/releases/v0.1.161-xray2_JA.md)を参照してください。
+現在の統合ビルドは上流 `v0.1.163` をベースにした `v0.1.163-xray2-beta1` です。最新の正式版は `v0.1.161-xray2` のままで、プロトコル、ユーザーリソース、UI、アップグレード変更はその[リリースノート](docs/releases/v0.1.161-xray2_JA.md)を参照してください。
 
 ## 重要なお知らせ
 

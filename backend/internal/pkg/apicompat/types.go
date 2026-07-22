@@ -60,8 +60,8 @@ type AnthropicContentBlock struct {
 
 	// type=thinking
 	Thinking string `json:"thinking,omitempty"`
-	// Signature carries provider encrypted reasoning (for example xAI
-	// encrypted_content) so multi-turn clients can send it back safely.
+	// Signature carries provider encrypted reasoning (e.g. xAI encrypted_content)
+	// so multi-turn Claude clients can round-trip it back on subsequent turns.
 	Signature string `json:"signature,omitempty"`
 
 	// type=image

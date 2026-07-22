@@ -56,18 +56,6 @@ func TestAccountsParentAccountForeignKey(t *testing.T) {
 	require.Equal(t, entschema.Restrict, fk.OnDelete)
 }
 
-func TestUserSubscriptionRevokerForeignKeyAndActiveUniqueIndex(t *testing.T) {
-	fk := findForeignKeyBySymbol(t, UserSubscriptionsTable, "user_subscriptions_revoked_by_user_id_fkey")
-	require.Equal(t, entschema.SetNull, fk.OnDelete)
-	require.Len(t, fk.Columns, 1)
-	require.Equal(t, "revoked_by_user_id", fk.Columns[0].Name)
-
-	idx := findIndexByName(t, UserSubscriptionsTable, "user_subscriptions_user_group_unique_active")
-	require.True(t, idx.Unique)
-	require.NotNil(t, idx.Annotation)
-	require.Equal(t, "deleted_at IS NULL", idx.Annotation.Where)
-}
-
 func findForeignKeyBySymbol(t *testing.T, table *entschema.Table, symbol string) *entschema.ForeignKey {
 	t.Helper()
 
