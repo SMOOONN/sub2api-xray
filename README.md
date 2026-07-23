@@ -38,7 +38,7 @@ The user resource workspace is controlled by `enable_user_resources` and is disa
 
 ## Current Release
 
-The current integration build is `v0.1.163-xray2-beta1`, based on upstream `v0.1.163`. The latest formal release remains `v0.1.161-xray2`; see its [release notes](docs/releases/v0.1.161-xray2.md) for proxy-protocol, user-resource, UI, and upgrade changes.
+The current integration build is `v0.1.164-xray2-beta1`, based on upstream `v0.1.164`. The latest formal release remains `v0.1.161-xray2`; see its [release notes](docs/releases/v0.1.161-xray2.md) for proxy-protocol, user-resource, UI, and upgrade changes.
 
 ## Important Notice
 

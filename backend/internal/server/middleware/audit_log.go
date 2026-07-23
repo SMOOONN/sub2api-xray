@@ -177,6 +177,7 @@ var auditBodyOmittedRoutes = map[string]struct{}{
 	"POST /api/v1/my/proxies/import":                              {},
 	"POST /api/v1/my/proxies/sources":                             {},
 	"PUT /api/v1/my/proxies/sources/:id":                          {},
+	"PUT /api/v1/admin/accounts/:id/ollama-cloud-usage/session":   {},
 	"PUT /api/v1/admin/prompt-audit/config":                       {},
 	"POST /api/v1/admin/prompt-audit/endpoints/probe":             {},
 	"DELETE /api/v1/admin/prompt-audit/events/:id":                {},
