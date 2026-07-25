@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,6 +50,7 @@ type SingBoxRuntimeManager struct {
 	instances           map[int64]*singBoxRuntimeInstance
 	maxInstances        int
 	maxInstancesPerUser int
+	idleTTL             time.Duration
 	closed              bool
 	commandFactory      func(bin, configPath string) *exec.Cmd
 }
@@ -61,6 +63,7 @@ type singBoxRuntimeInstance struct {
 	configPath  string
 	logPath     string
 	done        chan error
+	lastUsed    time.Time
 }
 
 func NewSingBoxRuntimeManager(bin, workDir string) *SingBoxRuntimeManager {
@@ -78,6 +81,7 @@ func NewSingBoxRuntimeManager(bin, workDir string) *SingBoxRuntimeManager {
 		instances:           map[int64]*singBoxRuntimeInstance{},
 		maxInstances:        maxInstances,
 		maxInstancesPerUser: maxInstancesPerUser,
+		idleTTL:             parseProxyRuntimeIdleTTL(os.Getenv("SING_BOX_RUNTIME_IDLE_TTL")),
 	}
 }
 
@@ -152,19 +156,14 @@ func (m *SingBoxRuntimeManager) ProxyURL(ctx context.Context, p *Proxy) (string,
 		return "", errors.New("sing-box runtime manager is closed")
 	}
 	if inst := m.instances[p.ID]; inst != nil && inst.hash == fingerprint && inst.alive() {
+		inst.lastUsed = time.Now()
 		return localSocksURL(inst.port), nil
 	}
 	if old := m.instances[p.ID]; old != nil {
 		delete(m.instances, p.ID)
 		_ = old.stop()
 	}
-	for id, inst := range m.instances {
-		if inst != nil && inst.alive() {
-			continue
-		}
-		delete(m.instances, id)
-		_ = inst.stop()
-	}
+	m.pruneInactiveLocked(time.Now())
 	if len(m.instances) >= m.maxInstances {
 		return "", fmt.Errorf("sing-box runtime instance limit reached (%d)", m.maxInstances)
 	}
@@ -186,6 +185,16 @@ func (m *SingBoxRuntimeManager) ProxyURL(ctx context.Context, p *Proxy) (string,
 	}
 	m.instances[p.ID] = inst
 	return localSocksURL(inst.port), nil
+}
+
+func (m *SingBoxRuntimeManager) pruneInactiveLocked(now time.Time) {
+	for id, inst := range m.instances {
+		if inst != nil && inst.alive() && !proxyRuntimeIsIdle(inst.lastUsed, now, m.idleTTL) {
+			continue
+		}
+		delete(m.instances, id)
+		_ = inst.stop()
+	}
 }
 
 func (m *SingBoxRuntimeManager) Stop(proxyID int64) error {
@@ -278,7 +287,7 @@ func (m *SingBoxRuntimeManager) start(ctx context.Context, proxyID int64, ownerU
 	}
 	inst := &singBoxRuntimeInstance{
 		ownerUserID: cloneXrayOwnerID(ownerUserID), hash: hash, port: port, cmd: cmd,
-		configPath: configPath, logPath: logPath, done: make(chan error, 1),
+		configPath: configPath, logPath: logPath, done: make(chan error, 1), lastUsed: time.Now(),
 	}
 	go func() {
 		inst.done <- cmd.Wait()
@@ -551,7 +560,10 @@ func buildSingBoxShadowsocksSpec(raw string) (singBoxRuntimeSpec, error) {
 		q := u.Query()
 		if plugin := firstQuery(q, "plugin"); plugin != "" {
 			name, options, _ := strings.Cut(plugin, ";")
-			name = strings.TrimSpace(name)
+			name, options, err = normalizeSingBoxShadowsocksPlugin(name, options)
+			if err != nil {
+				return singBoxRuntimeSpec{}, err
+			}
 			if name != "" {
 				out["plugin"] = name
 				if options = strings.TrimSpace(options); options != "" {
@@ -565,6 +577,51 @@ func buildSingBoxShadowsocksSpec(raw string) (singBoxRuntimeSpec, error) {
 	}
 
 	return singBoxRuntimeSpec{Outbound: out}, nil
+}
+
+func normalizeSingBoxShadowsocksPlugin(name, options string) (string, string, error) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	switch name {
+	case "v2ray-plugin":
+		return name, strings.TrimSpace(options), nil
+	case "obfs", "simple-obfs", "obfs-local":
+		// Normalize below.
+	default:
+		return "", "", errors.New("unsupported shadowsocks plugin")
+	}
+
+	// Clash names the simple-obfs plugin "obfs" and uses mode/host keys;
+	// sing-box exposes the same plugin as obfs-local with SIP003 keys.
+	values := make(map[string]string)
+	for _, item := range strings.Split(options, ";") {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key != "" && value != "" {
+			values[key] = value
+		}
+	}
+	if mode := values["mode"]; mode != "" && values["obfs"] == "" {
+		values["obfs"] = mode
+		delete(values, "mode")
+	}
+	if host := values["host"]; host != "" && values["obfs-host"] == "" {
+		values["obfs-host"] = host
+		delete(values, "host")
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+values[key])
+	}
+	return "obfs-local", strings.Join(parts, ";"), nil
 }
 
 func applySingBoxPortHopping(out map[string]any, q url.Values) {

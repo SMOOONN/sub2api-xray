@@ -1,14 +1,18 @@
 package service
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBuildSingBoxRuntimeSpecSupportsExtendedProtocols(t *testing.T) {
@@ -93,6 +97,16 @@ func TestBuildSingBoxRuntimeSpecSupportsShadowsocksFormats(t *testing.T) {
 			pluginOpts: "mode=websocket;host=cdn.example.com",
 		},
 		{
+			name:       "clash simple obfs plugin",
+			raw:        "ss://" + userinfo + "@ss.example.com:8388?plugin=obfs%3Bmode%3Dhttp%3Bhost%3Dcdn.example.com#node",
+			method:     "chacha20-ietf",
+			password:   "secret",
+			host:       "ss.example.com",
+			port:       8388,
+			plugin:     "obfs-local",
+			pluginOpts: "obfs=http;obfs-host=cdn.example.com",
+		},
+		{
 			name:     "legacy full payload",
 			raw:      "ss://" + legacyPayload + "#legacy",
 			method:   "aes-256-cfb",
@@ -124,6 +138,18 @@ func TestBuildSingBoxRuntimeSpecSupportsShadowsocksFormats(t *testing.T) {
 				t.Fatalf("shadowsocks credentials or plugin mismatch: %#v", out)
 			}
 		})
+	}
+}
+
+func TestBuildSingBoxRuntimeSpecRejectsUnavailableShadowsocksPlugin(t *testing.T) {
+	userinfo := base64.RawURLEncoding.EncodeToString([]byte("chacha20-ietf-poly1305:secret"))
+	raw := "ss://" + userinfo + "@ss.example.com:8388?plugin=shadow-tls%3Bpassword%3Dsecret"
+	_, err := buildSingBoxRuntimeSpec(raw, &Proxy{Kind: "xray", Protocol: "ss"})
+	if err == nil || !strings.Contains(err.Error(), "unsupported shadowsocks plugin") {
+		t.Fatalf("unsupported plugin was not rejected: %v", err)
+	}
+	if strings.Contains(err.Error(), "secret") {
+		t.Fatalf("plugin validation error leaked credentials: %v", err)
 	}
 }
 
@@ -185,13 +211,15 @@ func TestSingBoxRuntimeConfigsPassBinaryCheck(t *testing.T) {
 		}.Encode(),
 	}).String()
 	tests := map[string]string{
-		"shadowsocks": "ss://Y2hhY2hhMjAtaWV0ZjpzZWNyZXQ@203.0.113.4:8388",
-		"hysteria":    "hysteria://secret@203.0.113.5:443?sni=edge.example.com&upmbps=20&downmbps=100",
-		"hysteria2":   "hy2://secret@203.0.113.10:443?sni=edge.example.com&obfs=salamander&obfs-password=mask",
-		"tuic":        "tuic://11111111-1111-1111-1111-111111111111:secret@203.0.113.20:443?sni=edge.example.com",
-		"anytls":      "anytls://secret@203.0.113.30:443?sni=edge.example.com",
-		"naive":       "naive+https://user:secret@203.0.113.40:443?sni=edge.example.com",
-		"wireguard":   wireGuard,
+		"shadowsocks":              "ss://Y2hhY2hhMjAtaWV0ZjpzZWNyZXQ@203.0.113.4:8388",
+		"shadowsocks-obfs":         "ss://Y2hhY2hhMjAtaWV0ZjpzZWNyZXQ@203.0.113.4:8388?plugin=obfs%3Bmode%3Dhttp%3Bhost%3Dcdn.example.com",
+		"shadowsocks-v2ray-plugin": "ss://Y2hhY2hhMjAtaWV0ZjpzZWNyZXQ@203.0.113.4:8388?plugin=v2ray-plugin%3Bmode%3Dwebsocket%3Bhost%3Dcdn.example.com%3Bpath%3D%2Fproxy",
+		"hysteria":                 "hysteria://secret@203.0.113.5:443?sni=edge.example.com&upmbps=20&downmbps=100",
+		"hysteria2":                "hy2://secret@203.0.113.10:443?sni=edge.example.com&obfs=salamander&obfs-password=mask",
+		"tuic":                     "tuic://11111111-1111-1111-1111-111111111111:secret@203.0.113.20:443?sni=edge.example.com",
+		"anytls":                   "anytls://secret@203.0.113.30:443?sni=edge.example.com",
+		"naive":                    "naive+https://user:secret@203.0.113.40:443?sni=edge.example.com",
+		"wireguard":                wireGuard,
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -211,5 +239,75 @@ func TestSingBoxRuntimeConfigsPassBinaryCheck(t *testing.T) {
 				t.Fatalf("sing-box rejected generated config: %v: %s", err, strings.TrimSpace(string(output)))
 			}
 		})
+	}
+}
+
+func TestSingBoxRuntimeManagerPrunesIdleInstance(t *testing.T) {
+	manager := NewSingBoxRuntimeManager("sing-box-test-helper", t.TempDir())
+	manager.maxInstances = 1
+	manager.idleTTL = time.Minute
+	manager.commandFactory = func(_, configPath string) *exec.Cmd {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestSingBoxRuntimeHelperProcess$")
+		cmd.Env = append(os.Environ(),
+			"SUB2API_SING_BOX_HELPER=1",
+			"SUB2API_SING_BOX_HELPER_CONFIG="+configPath,
+		)
+		return cmd
+	}
+	defer func() { _ = manager.Close() }()
+
+	proxy := func(id int64) *Proxy {
+		return &Proxy{
+			ID: id, Kind: "xray", Protocol: "anytls",
+			Extra: map[string]any{"raw": "anytls://secret@203.0.113.10:443?sni=edge.example.com"},
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := manager.ProxyURL(ctx, proxy(1)); err != nil {
+		t.Fatalf("start first sing-box runtime: %v", err)
+	}
+	manager.mu.Lock()
+	manager.instances[1].lastUsed = time.Now().Add(-2 * time.Minute)
+	manager.mu.Unlock()
+	if _, err := manager.ProxyURL(ctx, proxy(2)); err != nil {
+		t.Fatalf("idle sing-box runtime did not release capacity: %v", err)
+	}
+	manager.mu.Lock()
+	_, oldExists := manager.instances[1]
+	_, newExists := manager.instances[2]
+	manager.mu.Unlock()
+	if oldExists || !newExists {
+		t.Fatalf("unexpected sing-box runtime set after idle pruning: old=%t new=%t", oldExists, newExists)
+	}
+}
+
+func TestSingBoxRuntimeHelperProcess(t *testing.T) {
+	if os.Getenv("SUB2API_SING_BOX_HELPER") != "1" {
+		return
+	}
+	raw, err := os.ReadFile(os.Getenv("SUB2API_SING_BOX_HELPER_CONFIG"))
+	if err != nil {
+		t.Fatalf("read helper config: %v", err)
+	}
+	var cfg struct {
+		Inbounds []struct {
+			ListenPort int `json:"listen_port"`
+		} `json:"inbounds"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil || len(cfg.Inbounds) == 0 {
+		t.Fatalf("decode helper config: %v", err)
+	}
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.Inbounds[0].ListenPort)))
+	if err != nil {
+		t.Fatalf("listen helper port: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		_ = conn.Close()
 	}
 }

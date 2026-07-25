@@ -545,8 +545,11 @@ func accountProxyOwnerCompatible(accountOwnerID *int64, proxy *Proxy) bool {
 	if proxy == nil {
 		return false
 	}
+	// Administrators manage the complete proxy pool. User-owned proxies remain
+	// hidden from ordinary users unless public, but an administrator may bind
+	// any proxy to a system account from account management.
 	if accountOwnerID == nil {
-		return proxy.OwnerUserID == nil
+		return true
 	}
 	if proxy.OwnerUserID != nil && *proxy.OwnerUserID == *accountOwnerID {
 		return true

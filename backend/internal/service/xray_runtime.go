@@ -65,6 +65,7 @@ type XrayRuntimeManager struct {
 	instances           map[int64]*xrayRuntimeInstance
 	maxInstances        int
 	maxInstancesPerUser int
+	idleTTL             time.Duration
 	closed              bool
 	commandFactory      func(bin, configPath string) *exec.Cmd
 }
@@ -79,6 +80,7 @@ type xrayRuntimeInstance struct {
 	configPath  string
 	logPath     string
 	done        chan error
+	lastUsed    time.Time
 }
 
 func NewXrayRuntimeManager(bin, workDir string) *XrayRuntimeManager {
@@ -96,6 +98,7 @@ func NewXrayRuntimeManager(bin, workDir string) *XrayRuntimeManager {
 		instances:           map[int64]*xrayRuntimeInstance{},
 		maxInstances:        maxInstances,
 		maxInstancesPerUser: maxInstancesPerUser,
+		idleTTL:             parseProxyRuntimeIdleTTL(os.Getenv("XRAY_RUNTIME_IDLE_TTL")),
 	}
 }
 
@@ -140,6 +143,7 @@ func (m *XrayRuntimeManager) ProxyURL(ctx context.Context, p *Proxy) (string, er
 		return "", errors.New("xray runtime manager is closed")
 	}
 	if inst := m.instances[p.ID]; inst != nil && inst.sourceHash == sourceHash && inst.alive() {
+		inst.lastUsed = time.Now()
 		proxyURL := localSocksURL(inst.port)
 		m.mu.Unlock()
 		return proxyURL, nil
@@ -163,19 +167,14 @@ func (m *XrayRuntimeManager) ProxyURL(ctx context.Context, p *Proxy) (string, er
 		return "", errors.New("xray runtime manager is closed")
 	}
 	if inst := m.instances[p.ID]; inst != nil && inst.sourceHash == sourceHash && inst.alive() {
+		inst.lastUsed = time.Now()
 		return localSocksURL(inst.port), nil
 	}
 	if old := m.instances[p.ID]; old != nil {
 		delete(m.instances, p.ID)
 		_ = old.stop()
 	}
-	for id, inst := range m.instances {
-		if inst != nil && inst.alive() {
-			continue
-		}
-		delete(m.instances, id)
-		_ = inst.stop()
-	}
+	m.pruneInactiveLocked(time.Now())
 	if len(m.instances) >= m.maxInstances {
 		return "", fmt.Errorf("xray runtime instance limit reached (%d)", m.maxInstances)
 	}
@@ -199,6 +198,16 @@ func (m *XrayRuntimeManager) ProxyURL(ctx context.Context, p *Proxy) (string, er
 
 	m.instances[p.ID] = inst
 	return localSocksURL(inst.port), nil
+}
+
+func (m *XrayRuntimeManager) pruneInactiveLocked(now time.Time) {
+	for id, inst := range m.instances {
+		if inst != nil && inst.alive() && !proxyRuntimeIsIdle(inst.lastUsed, now, m.idleTTL) {
+			continue
+		}
+		delete(m.instances, id)
+		_ = inst.stop()
+	}
 }
 
 func pinUserOwnedXrayOutbound(ctx context.Context, outbound map[string]any) error {
@@ -336,7 +345,10 @@ func pinLegacyInsecureCertificate(ctx context.Context, tlsSettings map[string]an
 	}
 	pin, err := fetchPeerCertificateSHA256(ctx, host, port, serverName)
 	if err != nil {
-		return err
+		// Xray 26 removed allowInsecure. Returning a generic error here avoids
+		// emitting a config the runtime will reject and keeps the endpoint out of
+		// user-visible diagnostics.
+		return errors.New("legacy insecure TLS certificate could not be pinned")
 	}
 	tlsSettings["pinnedPeerCertSha256"] = pin
 	return nil
@@ -484,6 +496,7 @@ func (m *XrayRuntimeManager) start(ctx context.Context, proxyID int64, ownerUser
 		configPath:  configPath,
 		logPath:     logPath,
 		done:        make(chan error, 1),
+		lastUsed:    time.Now(),
 	}
 	go func() {
 		inst.done <- cmd.Wait()
@@ -794,6 +807,8 @@ func buildVMessOutbound(raw string) (map[string]any, error) {
 	copyValue(q, "security", stringFromMap(node, "tls"))
 	copyValue(q, "sni", stringFromMap(node, "sni"))
 	copyValue(q, "fp", stringFromMap(node, "fp"))
+	copyValue(q, "alpn", stringFromMap(node, "alpn"))
+	copyValue(q, "allowInsecure", stringFromMap(node, "allowInsecure"))
 	stream, err := xrayStreamSettings(q)
 	if err != nil {
 		return nil, err
@@ -876,12 +891,9 @@ func taggedOutbound(protocol string, settings map[string]any, stream map[string]
 }
 
 func xrayStreamSettings(q url.Values) (map[string]any, error) {
-	network := strings.ToLower(firstQuery(q, "type", "network"))
-	if network == "" {
-		network = "tcp"
-	}
-	if network == "splithttp" {
-		network = "xhttp"
+	network, err := canonicalXrayNetwork(firstQuery(q, "type", "network"))
+	if err != nil {
+		return nil, err
 	}
 	security := firstQuery(q, "security", "tls")
 	if security == "none" {
@@ -911,11 +923,24 @@ func xrayStreamSettings(q url.Values) (map[string]any, error) {
 		if host := firstQuery(q, "host"); host != "" {
 			ws["headers"] = map[string]any{"Host": host}
 		}
+		if maxEarlyData := intQuery(q, "ed", "maxEarlyData", "max_early_data"); maxEarlyData > 0 {
+			ws["maxEarlyData"] = maxEarlyData
+		}
+		if earlyDataHeader := firstQuery(q, "eh", "earlyDataHeaderName", "early_data_header_name"); earlyDataHeader != "" {
+			ws["earlyDataHeaderName"] = earlyDataHeader
+		}
 		out["wsSettings"] = ws
 	case "grpc":
 		grpc := map[string]any{}
 		if serviceName := firstQuery(q, "serviceName", "service_name", "path"); serviceName != "" {
 			grpc["serviceName"] = strings.TrimPrefix(serviceName, "/")
+		}
+		if authority := firstQuery(q, "authority", "host"); authority != "" {
+			grpc["authority"] = authority
+		}
+		mode := strings.ToLower(firstQuery(q, "mode", "grpcMode", "grpc_mode"))
+		if mode == "multi" || boolString(firstQuery(q, "multiMode", "multi_mode")) {
+			grpc["multiMode"] = true
 		}
 		out["grpcSettings"] = grpc
 	case "httpupgrade":
@@ -947,13 +972,94 @@ func xrayStreamSettings(q url.Values) (map[string]any, error) {
 			}
 		}
 		out["xhttpSettings"] = xhttp
-	case "tcp":
+	case "kcp":
+		kcpSettings, finalMask, err := xrayKCPCompatibilitySettings(q)
+		if err != nil {
+			return nil, err
+		}
+		out["kcpSettings"] = kcpSettings
+		out["finalmask"] = finalMask
+	case "tcp", "raw":
 		headerType := firstQuery(q, "headerType", "header")
 		if headerType != "" && headerType != "none" {
-			out["tcpSettings"] = map[string]any{"header": map[string]any{"type": headerType}}
+			settingsKey := "tcpSettings"
+			if network == "raw" {
+				settingsKey = "rawSettings"
+			}
+			out[settingsKey] = map[string]any{"header": map[string]any{"type": headerType}}
 		}
 	}
 	return out, nil
+}
+
+func canonicalXrayNetwork(raw string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "tcp":
+		return "tcp", nil
+	case "raw":
+		return "raw", nil
+	case "mkcp", "kcp":
+		return "kcp", nil
+	case "websocket", "ws":
+		return "ws", nil
+	case "grpc":
+		return "grpc", nil
+	case "httpupgrade", "http-upgrade", "http_upgrade":
+		return "httpupgrade", nil
+	case "xhttp", "splithttp":
+		return "xhttp", nil
+	case "http", "h2", "http2":
+		return "", errors.New("xray HTTP/H2 transport was removed; use an XHTTP node")
+	case "quic":
+		return "", errors.New("xray QUIC transport was removed; use an XHTTP/H3 node")
+	default:
+		return "", errors.New("unsupported xray transport")
+	}
+}
+
+func xrayKCPCompatibilitySettings(q url.Values) (map[string]any, map[string]any, error) {
+	settings := map[string]any{}
+	for target, keys := range map[string][]string{
+		"mtu":              {"mtu"},
+		"tti":              {"tti"},
+		"uplinkCapacity":   {"uplinkCapacity", "uplink_capacity", "up"},
+		"downlinkCapacity": {"downlinkCapacity", "downlink_capacity", "down"},
+		"readBufferSize":   {"readBufferSize", "read_buffer_size"},
+		"writeBufferSize":  {"writeBufferSize", "write_buffer_size"},
+	} {
+		if value := intQuery(q, keys...); value > 0 {
+			settings[target] = value
+		}
+	}
+	if raw := firstQuery(q, "congestion"); raw != "" {
+		settings["congestion"] = boolString(raw)
+	}
+
+	udpMasks := make([]map[string]any, 0, 2)
+	headerType := strings.ToLower(firstQuery(q, "headerType", "header"))
+	if headerType != "" && headerType != "none" {
+		maskType, ok := map[string]string{
+			"srtp":         "header-srtp",
+			"utp":          "header-utp",
+			"wechat-video": "header-wechat",
+			"wechat":       "header-wechat",
+			"dtls":         "header-dtls",
+			"wireguard":    "header-wireguard",
+		}[headerType]
+		if !ok {
+			return nil, nil, errors.New("unsupported xray KCP header type")
+		}
+		udpMasks = append(udpMasks, map[string]any{"type": maskType})
+	}
+	if seed := firstQuery(q, "seed", "path"); seed != "" {
+		udpMasks = append(udpMasks, map[string]any{
+			"type":     "mkcp-aes128gcm",
+			"settings": map[string]any{"password": seed},
+		})
+	} else {
+		udpMasks = append(udpMasks, map[string]any{"type": "mkcp-original"})
+	}
+	return settings, map[string]any{"udp": udpMasks}, nil
 }
 
 func normalizeXHTTPDownloadSettings(extra map[string]any, legacyInsecure bool) error {

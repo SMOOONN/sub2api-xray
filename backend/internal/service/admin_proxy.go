@@ -634,6 +634,13 @@ func proxyQualityOverallStatus(result *ProxyQualityCheckResult) string {
 		return "challenge"
 	}
 	if result.FailedCount > 0 {
+		// A reachable proxy can still be unable to access one provider's
+		// public probe endpoint because of regional policy or upstream rules.
+		// Keep that distinct from a proxy that cannot establish the base
+		// connection at all.
+		if proxyQualityBaseConnectivityPass(result) {
+			return "warn"
+		}
 		return "failed"
 	}
 	if result.WarnCount > 0 {
@@ -684,6 +691,7 @@ func (s *adminServiceImpl) saveProxyQualitySnapshot(ctx context.Context, proxyID
 		QualitySummary:   result.Summary,
 		QualityCheckedAt: &checkedAt,
 		QualityCFRay:     proxyQualityFirstCFRay(result),
+		QualityEngine:    proxyQualityEngineVersion,
 		UpdatedAt:        time.Now(),
 	}
 	if result.BaseLatencyMs > 0 {
@@ -771,11 +779,13 @@ func (s *adminServiceImpl) attachProxyLatency(ctx context.Context, proxies []Pro
 		proxies[i].CountryCode = info.CountryCode
 		proxies[i].Region = info.Region
 		proxies[i].City = info.City
-		proxies[i].QualityStatus = info.QualityStatus
-		proxies[i].QualityScore = info.QualityScore
-		proxies[i].QualityGrade = info.QualityGrade
-		proxies[i].QualitySummary = info.QualitySummary
-		proxies[i].QualityChecked = info.QualityCheckedAt
+		if hasCurrentProxyQuality(info) {
+			proxies[i].QualityStatus = info.QualityStatus
+			proxies[i].QualityScore = info.QualityScore
+			proxies[i].QualityGrade = info.QualityGrade
+			proxies[i].QualitySummary = info.QualitySummary
+			proxies[i].QualityChecked = info.QualityCheckedAt
+		}
 	}
 }
 
@@ -799,6 +809,7 @@ func (s *adminServiceImpl) saveProxyLatency(ctx context.Context, proxyID int64, 
 				merged.QualitySummary = existing.QualitySummary
 				merged.QualityCheckedAt = existing.QualityCheckedAt
 				merged.QualityCFRay = existing.QualityCFRay
+				merged.QualityEngine = existing.QualityEngine
 			}
 		}
 	}

@@ -233,3 +233,18 @@ func TestSafeForLogInvalidURLDoesNotEchoInput(t *testing.T) {
 		t.Fatalf("invalid proxy URL leaked input: %q", got)
 	}
 }
+
+func TestParseRuntimePlaceholderReturnsExplicitError(t *testing.T) {
+	for _, raw := range []string{
+		"xray://unavailable/42",
+		"sing-box://unavailable/43",
+	} {
+		_, _, err := Parse(raw)
+		if err == nil || !strings.Contains(err.Error(), "runtime is unavailable") {
+			t.Fatalf("runtime placeholder returned an unclear error for %q: %v", raw, err)
+		}
+		if strings.Contains(err.Error(), "unsupported proxy scheme") {
+			t.Fatalf("runtime placeholder was misreported as an unsupported scheme: %v", err)
+		}
+	}
+}

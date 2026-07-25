@@ -175,17 +175,20 @@ ENV XRAY_BIN=/usr/local/bin/xray \
     XRAY_WORK_DIR=/app/data/xray \
     XRAY_MAX_INSTANCES=64 \
     XRAY_MAX_INSTANCES_PER_USER=16 \
+    XRAY_RUNTIME_IDLE_TTL=15m \
     SING_BOX_BIN=/usr/local/bin/sing-box \
     SING_BOX_WORK_DIR=/app/data/sing-box \
     SING_BOX_MAX_INSTANCES=64 \
-    SING_BOX_MAX_INSTANCES_PER_USER=16
+    SING_BOX_MAX_INSTANCES_PER_USER=16 \
+    SING_BOX_RUNTIME_IDLE_TTL=15m
 
 # Copy binary/resources with ownership to avoid extra full-layer chown copy
 COPY --from=backend-builder --chown=sub2api:sub2api /app/sub2api /app/sub2api
 COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
 
-# Create data directory
-RUN mkdir -p /app/data && chown sub2api:sub2api /app/data
+# The updater creates a same-directory temp file and atomically replaces
+# /app/sub2api, so the non-root runtime user must own the application directory.
+RUN mkdir -p /app/data && chown -R sub2api:sub2api /app
 
 # Copy entrypoint script (fixes volume permissions then drops to sub2api)
 COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh

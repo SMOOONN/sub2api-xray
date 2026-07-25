@@ -134,3 +134,11 @@ func proxyIDsFromResourceItems(items []map[string]any) []int64 {
 	}
 	return ids
 }
+
+func proxyIDsForProxySourceQualityChecks(result *ProxyImportResult) []int64 {
+	if result == nil {
+		return nil
+	}
+	ids := append(proxyIDsFromResourceItems(result.Created), proxyIDsFromResourceItems(result.Updated)...)
+	return uniquePositiveInt64s(ids)
+}

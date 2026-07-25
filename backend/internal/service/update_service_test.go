@@ -5,6 +5,8 @@ package service
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -67,6 +69,21 @@ func TestUpdateServicePerformUpdateNoUpdateReturnsSentinel(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrNoUpdateAvailable))
 	require.ErrorIs(t, err, ErrNoUpdateAvailable)
+}
+
+func TestDockerImagesAllowNonRootAtomicUpdates(t *testing.T) {
+	repoRoot := filepath.Join("..", "..", "..")
+	for _, relativePath := range []string{
+		"Dockerfile",
+		"Dockerfile.goreleaser",
+		filepath.Join("deploy", "Dockerfile"),
+	} {
+		t.Run(relativePath, func(t *testing.T) {
+			content, err := os.ReadFile(filepath.Join(repoRoot, relativePath))
+			require.NoError(t, err)
+			require.Contains(t, string(content), "chown -R sub2api:sub2api /app")
+		})
+	}
 }
 
 func newRollbackTestService(current string, releases []*GitHubRelease) *UpdateService {

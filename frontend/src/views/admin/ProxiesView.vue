@@ -1652,7 +1652,10 @@ const applyLatencyResult = (
 
 const summarizeQualityStatus = (result: ProxyQualityCheckResult): Proxy['quality_status'] => {
   if (result.challenge_count > 0) return 'challenge'
-  if (result.failed_count > 0) return 'failed'
+  if (result.failed_count > 0) {
+    const baseConnected = result.items?.some((item) => item.target === 'base_connectivity' && item.status === 'pass') ?? false
+    return baseConnected ? 'warn' : 'failed'
+  }
   if (result.warn_count > 0) return 'warn'
   return 'healthy'
 }

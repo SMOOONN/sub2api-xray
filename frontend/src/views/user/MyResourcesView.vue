@@ -2723,10 +2723,11 @@ function applyProxyTestResult(proxyID: number, result: UserProxyTestResult): voi
 function applyProxyQualityResult(proxyID: number, result: ProxyQualityCheckResult): void {
   const target = items.value.find(item => Number(item.id) === proxyID)
   if (!target) return
+  const baseConnected = result.items?.some(item => item.target === 'base_connectivity' && item.status === 'pass') ?? false
   target.quality_status = result.challenge_count > 0
     ? 'challenge'
     : result.failed_count > 0
-      ? 'failed'
+      ? baseConnected ? 'warn' : 'failed'
       : result.warn_count > 0
         ? 'warn'
         : 'healthy'

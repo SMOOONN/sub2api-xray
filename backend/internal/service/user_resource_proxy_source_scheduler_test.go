@@ -48,6 +48,17 @@ func TestProxySourceNodeIdentityIsStableAndNamesFitSchema(t *testing.T) {
 	}
 }
 
+func TestProxySourceQualityChecksIncludeCreatedAndUpdatedNodes(t *testing.T) {
+	result := &ProxyImportResult{
+		Created: []map[string]any{{"id": int64(101)}, {"id": int64(102)}},
+		Updated: []map[string]any{{"id": int64(102)}, {"id": int64(103)}},
+	}
+	ids := proxyIDsForProxySourceQualityChecks(result)
+	if len(ids) != 3 || ids[0] != 101 || ids[1] != 102 || ids[2] != 103 {
+		t.Fatalf("unexpected proxy quality ids: %v", ids)
+	}
+}
+
 func TestStripProxySourceMetadataPreventsUserSpoofing(t *testing.T) {
 	payload := map[string]any{"extra": map[string]any{
 		"source_id": int64(9), "source_node_key": "spoofed", "raw": "vless://example",

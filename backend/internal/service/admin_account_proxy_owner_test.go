@@ -101,7 +101,7 @@ func TestAccountProxyOwnerCompatible(t *testing.T) {
 		want         bool
 	}{
 		{name: "system account with system proxy", proxy: &Proxy{}, want: true},
-		{name: "system account with user proxy", proxy: &Proxy{OwnerUserID: &ownerOne}, want: false},
+		{name: "system account with user proxy", proxy: &Proxy{OwnerUserID: &ownerOne}, want: true},
 		{name: "user account with owned proxy", accountOwner: &ownerOne, proxy: &Proxy{OwnerUserID: &ownerOne}, want: true},
 		{name: "user account with another private proxy", accountOwner: &ownerOne, proxy: &Proxy{OwnerUserID: &ownerTwo}, want: false},
 		{name: "user account with private system proxy", accountOwner: &ownerOne, proxy: &Proxy{}, want: false},
@@ -256,7 +256,7 @@ func TestUpdateAccountAllowsMatchingOwnerGroupAndProxyAtomically(t *testing.T) {
 	require.Equal(t, []int64{33}, repo.groupsByAccount[accountID])
 }
 
-func TestCreateAccountRejectsUserOwnedProxyForSystemAccount(t *testing.T) {
+func TestCreateAccountAllowsUserOwnedProxyForSystemAccount(t *testing.T) {
 	proxyOwner := int64(9)
 	proxyID := int64(41)
 	repo := &upstreamBillingProbeAccountRepo{}
@@ -274,9 +274,9 @@ func TestCreateAccountRejectsUserOwnedProxyForSystemAccount(t *testing.T) {
 		SkipDefaultGroupBind: true,
 	})
 
-	require.Error(t, err)
-	require.Equal(t, "ACCOUNT_PROXY_OWNER_MISMATCH", string(infraerrors.Reason(err)))
-	require.Empty(t, repo.accounts)
+	require.NoError(t, err)
+	require.NotNil(t, repo.accounts[1])
+	require.Equal(t, &proxyID, repo.accounts[1].ProxyID)
 }
 
 func TestUpdateAccountRejectsProxyFromAnotherOwnerBeforeWrite(t *testing.T) {

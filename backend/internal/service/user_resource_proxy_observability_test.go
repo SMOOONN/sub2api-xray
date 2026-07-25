@@ -43,6 +43,7 @@ func TestUserResourceProxyObservabilityAttachesSafeDisplayFields(t *testing.T) {
 			QualityGrade:     "A",
 			QualitySummary:   "all checks passed",
 			QualityCheckedAt: &checkedAt,
+			QualityEngine:    proxyQualityEngineVersion,
 		},
 	}}
 	svc := NewUserResourceService(nil, nil, nil, nil)

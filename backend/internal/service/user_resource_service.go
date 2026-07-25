@@ -2298,11 +2298,13 @@ func (s *UserResourceService) attachProxyObservability(ctx context.Context, item
 		item["country_code"] = info.CountryCode
 		item["region"] = info.Region
 		item["city"] = info.City
-		item["quality_status"] = info.QualityStatus
-		item["quality_score"] = info.QualityScore
-		item["quality_grade"] = info.QualityGrade
-		item["quality_summary"] = info.QualitySummary
-		item["quality_checked"] = info.QualityCheckedAt
+		if hasCurrentProxyQuality(info) {
+			item["quality_status"] = info.QualityStatus
+			item["quality_score"] = info.QualityScore
+			item["quality_grade"] = info.QualityGrade
+			item["quality_summary"] = info.QualitySummary
+			item["quality_checked"] = info.QualityCheckedAt
+		}
 	}
 }
 
@@ -2325,6 +2327,7 @@ func (s *UserResourceService) saveProxyObservation(ctx context.Context, proxyID 
 			merged.QualitySummary = existing.QualitySummary
 			merged.QualityCheckedAt = existing.QualityCheckedAt
 			merged.QualityCFRay = existing.QualityCFRay
+			merged.QualityEngine = existing.QualityEngine
 		}
 	}
 	_ = s.proxyLatencyCache.SetProxyLatency(ctx, proxyID, &merged)
@@ -2620,6 +2623,7 @@ func (s *UserResourceService) saveUserProxyQualitySnapshot(
 		QualitySummary:   result.Summary,
 		QualityCheckedAt: &checkedAt,
 		QualityCFRay:     proxyQualityFirstCFRay(result),
+		QualityEngine:    proxyQualityEngineVersion,
 		UpdatedAt:        time.Now(),
 	}
 	if result.BaseLatencyMs > 0 {
@@ -2880,7 +2884,7 @@ func (s *UserResourceService) SyncProxySource(ctx context.Context, ownerID, sour
 		return nil, err
 	}
 	status, importedCount, _ := proxySourceSyncSummary(imported)
-	s.enqueueImportedProxyQualityChecks(ownerID, proxyIDsFromResourceItems(imported.Created))
+	s.enqueueImportedProxyQualityChecks(ownerID, proxyIDsForProxySourceQualityChecks(imported))
 	return &ProxySourceSyncResult{
 		SourceID:      sourceID,
 		Status:        status,
@@ -6026,7 +6030,7 @@ func parseClashProxyNode(proxy map[string]any) parsedProxyNode {
 	}
 	switch protocol {
 	case "socks":
-		protocol = "socks5"
+		protocol = "socks5h"
 	case "shadowsocks":
 		protocol = "ss"
 	}
@@ -6049,7 +6053,7 @@ func parseClashProxyNode(proxy map[string]any) parsedProxyNode {
 		if cipher == "" || password == "" {
 			return parsedProxyNode{Name: name, Err: "shadowsocks node missing method or password"}
 		}
-		raw := buildClashShadowsocksURI(cipher, password, host, port, name)
+		raw := buildClashShadowsocksURI(proxy, cipher, password, host, port, name)
 		return parsedProxyNode{Name: name, Kind: "xray", Protocol: "ss", Host: host, Port: port, Username: cipher, Password: password, Raw: raw}
 	case "vmess":
 		uuid := clashString(proxy, "uuid", "id")
@@ -6234,15 +6238,48 @@ func buildClashStandardURI(protocol, host string, port int, username, password, 
 	return u.String()
 }
 
-func buildClashShadowsocksURI(cipher, password, host string, port int, name string) string {
+func buildClashShadowsocksURI(proxy map[string]any, cipher, password, host string, port int, name string) string {
 	u := &url.URL{Scheme: "ss", Host: net.JoinHostPort(host, strconv.Itoa(port)), User: url.UserPassword(cipher, password)}
+	if plugin := clashString(proxy, "plugin"); plugin != "" {
+		if options := clashPluginOptions(proxy["plugin-opts"]); options != "" {
+			plugin += ";" + options
+		}
+		u.RawQuery = url.Values{"plugin": []string{plugin}}.Encode()
+	}
 	if name != "" {
 		u.Fragment = name
 	}
 	return u.String()
 }
 
+func clashPluginOptions(raw any) string {
+	options, ok := raw.(map[string]any)
+	if !ok || len(options) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(options))
+	for key := range options {
+		if strings.TrimSpace(key) != "" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		value := strings.TrimSpace(urAsString(options[key]))
+		if value == "" {
+			continue
+		}
+		parts = append(parts, key+"="+value)
+	}
+	return strings.Join(parts, ";")
+}
+
 func buildClashVMessURI(proxy map[string]any, host string, port int, uuid, name string) string {
+	network, path, transportHost, serviceName, _, _ := clashTransportOptions(proxy)
+	if network == "grpc" && serviceName != "" {
+		path = serviceName
+	}
 	node := map[string]any{
 		"v":    "2",
 		"ps":   name,
@@ -6251,34 +6288,31 @@ func buildClashVMessURI(proxy map[string]any, host string, port int, uuid, name 
 		"id":   uuid,
 		"aid":  toInt(proxy["alterId"]),
 		"scy":  clashString(proxy, "cipher"),
-		"net":  clashString(proxy, "network"),
+		"net":  network,
 		"type": clashString(proxy, "header-type", "headerType"),
-		"host": clashString(proxy, "ws-opts.host", "host"),
-		"path": clashString(proxy, "ws-path", "path"),
+		"host": transportHost,
+		"path": path,
 		"tls":  clashClashTLS(proxy),
 		"sni":  clashString(proxy, "servername", "sni"),
 		"fp":   clashString(proxy, "client-fingerprint", "fingerprint"),
-	}
-	if node["host"] == "" {
-		node["host"] = clashNestedString(proxy, "ws-opts", "host")
-	}
-	if node["path"] == "" {
-		node["path"] = clashNestedString(proxy, "ws-opts", "path")
 	}
 	raw, _ := json.Marshal(node)
 	return "vmess://" + base64.RawStdEncoding.EncodeToString(raw)
 }
 
 func buildClashVLESSURI(proxy map[string]any, host string, port int, uuid, name string) string {
+	network, path, transportHost, serviceName, mode, extra := clashTransportOptions(proxy)
 	q := url.Values{}
-	addClashQuery(q, "type", clashString(proxy, "network"))
+	addClashQuery(q, "type", network)
 	addClashQuery(q, "security", clashClashSecurity(proxy))
 	addClashQuery(q, "sni", clashString(proxy, "servername", "sni"))
 	addClashQuery(q, "fp", clashString(proxy, "client-fingerprint", "fingerprint"))
 	addClashQuery(q, "flow", clashString(proxy, "flow"))
-	addClashQuery(q, "path", clashString(proxy, "ws-path", "path"))
-	addClashQuery(q, "host", clashString(proxy, "host"))
-	addClashQuery(q, "serviceName", clashNestedString(proxy, "grpc-opts", "grpc-service-name", "serviceName", "service-name"))
+	addClashQuery(q, "path", path)
+	addClashQuery(q, "host", transportHost)
+	addClashQuery(q, "serviceName", serviceName)
+	addClashQuery(q, "mode", mode)
+	addClashQuery(q, "extra", extra)
 	addClashQuery(q, "pbk", clashNestedString(proxy, "reality-opts", "public-key", "publicKey", "pbk"))
 	addClashQuery(q, "sid", clashNestedString(proxy, "reality-opts", "short-id", "shortId", "sid"))
 	u := &url.URL{Scheme: "vless", Host: net.JoinHostPort(host, strconv.Itoa(port)), User: url.User(uuid), RawQuery: q.Encode()}
@@ -6289,20 +6323,77 @@ func buildClashVLESSURI(proxy map[string]any, host string, port int, uuid, name 
 }
 
 func buildClashTrojanURI(proxy map[string]any, host string, port int, password, name string) string {
+	network, path, transportHost, serviceName, mode, extra := clashTransportOptions(proxy)
 	q := url.Values{}
-	addClashQuery(q, "type", clashString(proxy, "network"))
+	addClashQuery(q, "type", network)
 	addClashQuery(q, "security", clashClashSecurity(proxy))
 	addClashQuery(q, "sni", clashString(proxy, "servername", "sni"))
 	addClashQuery(q, "fp", clashString(proxy, "client-fingerprint", "fingerprint"))
 	addClashQuery(q, "flow", clashString(proxy, "flow"))
-	addClashQuery(q, "path", clashString(proxy, "ws-path", "path"))
-	addClashQuery(q, "host", clashString(proxy, "host"))
-	addClashQuery(q, "serviceName", clashNestedString(proxy, "grpc-opts", "grpc-service-name", "serviceName", "service-name"))
+	addClashQuery(q, "path", path)
+	addClashQuery(q, "host", transportHost)
+	addClashQuery(q, "serviceName", serviceName)
+	addClashQuery(q, "mode", mode)
+	addClashQuery(q, "extra", extra)
 	u := &url.URL{Scheme: "trojan", Host: net.JoinHostPort(host, strconv.Itoa(port)), User: url.User(password), RawQuery: q.Encode()}
 	if name != "" {
 		u.Fragment = name
 	}
 	return u.String()
+}
+
+func clashTransportOptions(proxy map[string]any) (network, path, host, serviceName, mode, extra string) {
+	network = strings.ToLower(clashString(proxy, "network"))
+	path = clashString(proxy, "ws-path", "path")
+	host = clashString(proxy, "host")
+	serviceName = clashNestedString(proxy, "grpc-opts", "grpc-service-name", "serviceName", "service-name")
+
+	var opts map[string]any
+	switch network {
+	case "ws", "websocket":
+		opts = clashNestedMap(proxy, "ws-opts")
+	case "httpupgrade", "http-upgrade":
+		opts = clashNestedMap(proxy, "http-upgrade-opts", "httpupgrade-opts")
+	case "xhttp", "splithttp":
+		opts = clashNestedMap(proxy, "xhttp-opts", "splithttp-opts")
+		mode = clashString(opts, "mode")
+		extra = clashJSONValue(opts["extra"])
+	}
+	if opts != nil {
+		if nestedPath := clashString(opts, "path"); nestedPath != "" {
+			path = nestedPath
+		}
+		if nestedHost := clashString(opts, "host"); nestedHost != "" {
+			host = nestedHost
+		}
+		if headerHost := clashNestedString(opts, "headers", "Host", "host"); headerHost != "" {
+			host = headerHost
+		}
+	}
+	return network, path, host, serviceName, mode, extra
+}
+
+func clashNestedMap(proxy map[string]any, keys ...string) map[string]any {
+	for _, key := range keys {
+		if nested, ok := proxy[key].(map[string]any); ok {
+			return nested
+		}
+	}
+	return nil
+}
+
+func clashJSONValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
 }
 
 func clashClashSecurity(proxy map[string]any) string {
@@ -6364,7 +6455,7 @@ func parseProxyNode(line string) parsedProxyNode {
 		return parsedProxyNode{Raw: line, Err: "missing host or port"}
 	}
 	if node.Protocol == "socks" || node.Protocol == "socks5h" {
-		node.Protocol = "socks5"
+		node.Protocol = "socks5h"
 	}
 	if node.Kind == "xray" {
 		switch node.Protocol {

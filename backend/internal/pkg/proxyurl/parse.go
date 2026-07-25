@@ -49,6 +49,9 @@ func Parse(raw string) (trimmed string, parsed *url.URL, err error) {
 	}
 
 	scheme := strings.ToLower(parsed.Scheme)
+	if (scheme == "xray" || scheme == "sing-box") && strings.EqualFold(parsed.Hostname(), "unavailable") {
+		return "", nil, fmt.Errorf("%s proxy runtime is unavailable", scheme)
+	}
 	if !allowedSchemes[scheme] {
 		return "", nil, fmt.Errorf("unsupported proxy scheme %q (allowed: http, https, socks5, socks5h)", scheme)
 	}

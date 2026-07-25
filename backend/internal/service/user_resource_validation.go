@@ -552,12 +552,13 @@ func (s *UserResourceService) normalizeAndValidateProxyPayload(ctx context.Conte
 	}
 	payload["kind"] = kind
 	protocol := strings.ToLower(strings.TrimSpace(urAsString(state["protocol"])))
+	protocol = canonicalStandardProxyProtocol(protocol)
 	if kind == "standard" {
-		if err := validateAllowedValue("protocol", protocol, "http", "https", "socks", "socks5", "socks5h"); err != nil {
+		if err := validateAllowedValue("protocol", protocol, "http", "https", "socks5", "socks5h"); err != nil {
 			return err
 		}
 	} else if err := validateAllowedValue("protocol", protocol,
-		"http", "https", "socks", "socks5", "socks5h", "vmess", "vless", "trojan", "ss", "shadowsocks",
+		"http", "https", "socks5", "socks5h", "vmess", "vless", "trojan", "ss", "shadowsocks",
 		"hysteria", "hysteria2", "tuic", "anytls", "naive", "wireguard"); err != nil {
 		return err
 	}

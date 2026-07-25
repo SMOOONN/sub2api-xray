@@ -100,6 +100,43 @@ func TestBuildXrayOutboundVLESSXHTTP(t *testing.T) {
 	}
 }
 
+func TestXrayStreamSettingsSupportsCompatibilityAliasesAndKCP(t *testing.T) {
+	httpUpgrade, err := xrayStreamSettings(url.Values{
+		"type": {"http-upgrade"},
+		"path": {"/upgrade"},
+		"host": {"edge.example.com"},
+	})
+	if err != nil || httpUpgrade["network"] != "httpupgrade" {
+		t.Fatalf("http-upgrade alias was not normalized: settings=%#v err=%v", httpUpgrade, err)
+	}
+
+	kcp, err := xrayStreamSettings(url.Values{
+		"type":       {"mkcp"},
+		"headerType": {"srtp"},
+		"seed":       {"compat-seed"},
+		"mtu":        {"1200"},
+	})
+	if err != nil || kcp["network"] != "kcp" {
+		t.Fatalf("mkcp alias was not normalized: settings=%#v err=%v", kcp, err)
+	}
+	finalMask := kcp["finalmask"].(map[string]any)
+	udp := finalMask["udp"].([]map[string]any)
+	if len(udp) != 2 || udp[0]["type"] != "header-srtp" || udp[1]["type"] != "mkcp-aes128gcm" {
+		t.Fatalf("legacy KCP header/seed were not migrated: %#v", finalMask)
+	}
+	if kcp["kcpSettings"].(map[string]any)["mtu"] != 1200 {
+		t.Fatalf("KCP tuning was not preserved: %#v", kcp["kcpSettings"])
+	}
+}
+
+func TestXrayStreamSettingsRejectsRemovedTransports(t *testing.T) {
+	for _, network := range []string{"http", "h2", "quic"} {
+		if _, err := xrayStreamSettings(url.Values{"type": {network}}); err == nil {
+			t.Fatalf("removed Xray transport %q was accepted", network)
+		}
+	}
+}
+
 func TestBuildXrayOutboundRejectsMalformedXHTTPDownloadSettings(t *testing.T) {
 	query := url.Values{
 		"type":  {"xhttp"},
@@ -128,6 +165,23 @@ func TestPinLegacyInsecureCertificateCreatesXrayPin(t *testing.T) {
 	pin := stringFromMap(tlsSettings, "pinnedPeerCertSha256")
 	if len(pin) != sha256.Size*2 {
 		t.Fatalf("unexpected certificate pin: %q", pin)
+	}
+	if _, exists := tlsSettings[xrayLegacyInsecureMarker]; exists {
+		t.Fatal("internal legacy marker was not removed")
+	}
+}
+
+func TestPinLegacyInsecureCertificateRejectsUnavailableEndpoint(t *testing.T) {
+	tlsSettings := map[string]any{xrayLegacyInsecureMarker: true}
+	err := pinLegacyInsecureCertificate(context.Background(), tlsSettings, "127.0.0.1", 1)
+	if err == nil {
+		t.Fatal("expected unavailable legacy insecure endpoint to be rejected")
+	}
+	if _, exists := tlsSettings["allowInsecure"]; exists {
+		t.Fatalf("removed allowInsecure field must not be restored: %#v", tlsSettings)
+	}
+	if _, exists := tlsSettings["pinnedPeerCertSha256"]; exists {
+		t.Fatalf("unexpected certificate pin after failed preflight: %#v", tlsSettings)
 	}
 	if _, exists := tlsSettings[xrayLegacyInsecureMarker]; exists {
 		t.Fatal("internal legacy marker was not removed")
@@ -399,6 +453,71 @@ func TestXrayXHTTPConfigPassesBinaryCheck(t *testing.T) {
 	}
 }
 
+func TestXrayRuntimeConfigsPassBinaryCheck(t *testing.T) {
+	bin := strings.TrimSpace(os.Getenv("XRAY_BIN"))
+	if bin == "" {
+		t.Skip("set XRAY_BIN to run real xray config checks")
+	}
+
+	vmessNode := func(network, security string) string {
+		node := map[string]any{
+			"add":  "203.0.113.10",
+			"port": "443",
+			"id":   "11111111-1111-1111-1111-111111111111",
+			"aid":  0,
+			"scy":  "auto",
+			"net":  network,
+			"type": "none",
+			"host": "edge.example.com",
+			"path": "/proxy",
+			"tls":  security,
+			"sni":  "edge.example.com",
+		}
+		raw, err := json.Marshal(node)
+		if err != nil {
+			t.Fatalf("marshal vmess node: %v", err)
+		}
+		return "vmess://" + base64.RawStdEncoding.EncodeToString(raw)
+	}
+
+	tests := map[string]string{
+		"http":                  "http://user:secret@203.0.113.2:8080",
+		"socks5":                "socks5://user:secret@203.0.113.3:1080",
+		"vmess-tcp":             vmessNode("tcp", ""),
+		"vmess-websocket-tls":   vmessNode("ws", "tls"),
+		"vmess-grpc-tls":        vmessNode("grpc", "tls"),
+		"vmess-kcp":             vmessNode("kcp", ""),
+		"vless-tcp-tls":         "vless://11111111-1111-1111-1111-111111111111@203.0.113.11:443?security=tls&type=tcp&sni=edge.example.com",
+		"vless-websocket-tls":   "vless://11111111-1111-1111-1111-111111111111@203.0.113.12:443?security=tls&type=ws&sni=edge.example.com&host=edge.example.com&path=%2Fproxy",
+		"vless-grpc-reality":    "vless://11111111-1111-1111-1111-111111111111@203.0.113.13:443?security=reality&type=grpc&sni=edge.example.com&pbk=AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI&sid=0123456789abcdef&serviceName=proxy",
+		"vless-httpupgrade-tls": "vless://11111111-1111-1111-1111-111111111111@203.0.113.14:443?security=tls&type=httpupgrade&sni=edge.example.com&host=edge.example.com&path=%2Fproxy",
+		"vless-xhttp-tls":       "vless://11111111-1111-1111-1111-111111111111@203.0.113.15:443?security=tls&type=xhttp&sni=edge.example.com&host=edge.example.com&path=%2Fproxy&mode=auto",
+		"trojan-tcp-tls":        "trojan://secret@203.0.113.21:443?security=tls&type=tcp&sni=edge.example.com",
+		"trojan-websocket-tls":  "trojan://secret@203.0.113.22:443?security=tls&type=ws&sni=edge.example.com&host=edge.example.com&path=%2Fproxy",
+		"trojan-grpc-tls":       "trojan://secret@203.0.113.23:443?security=tls&type=grpc&sni=edge.example.com&serviceName=proxy",
+	}
+
+	for name, raw := range tests {
+		t.Run(name, func(t *testing.T) {
+			outbound, err := buildXrayOutbound(raw, &Proxy{Kind: "xray"})
+			if err != nil {
+				t.Fatalf("build xray outbound: %v", err)
+			}
+			config, err := json.Marshal(buildXrayRuntimeConfig(1080, outbound, true))
+			if err != nil {
+				t.Fatalf("marshal xray config: %v", err)
+			}
+			path := filepath.Join(t.TempDir(), name+".json")
+			if err := os.WriteFile(path, config, 0o600); err != nil {
+				t.Fatalf("write xray config: %v", err)
+			}
+			if output, err := exec.Command(bin, "run", "-test", "-config", path).CombinedOutput(); err != nil {
+				t.Fatalf("xray rejected generated config: %v: %s", err, strings.TrimSpace(string(output)))
+			}
+		})
+	}
+}
+
 func TestXrayRuntimeManagerConcurrentStartAndClose(t *testing.T) {
 	workDir := t.TempDir()
 	manager := NewXrayRuntimeManager("xray-test-helper", workDir)
@@ -520,6 +639,48 @@ func TestXrayRuntimeManagerEnforcesInstanceLimit(t *testing.T) {
 	}
 	if _, err := manager.ProxyURL(ctx, proxy(2)); err != nil {
 		t.Fatalf("start runtime after releasing capacity: %v", err)
+	}
+}
+
+func TestXrayRuntimeManagerPrunesIdleInstance(t *testing.T) {
+	manager := NewXrayRuntimeManager("xray-test-helper", t.TempDir())
+	manager.maxInstances = 1
+	manager.idleTTL = time.Minute
+	manager.commandFactory = func(_, configPath string) *exec.Cmd {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestXrayRuntimeHelperProcess$")
+		cmd.Env = append(os.Environ(),
+			"SUB2API_XRAY_HELPER=1",
+			"SUB2API_XRAY_HELPER_CONFIG="+configPath,
+		)
+		return cmd
+	}
+	defer func() { _ = manager.Close() }()
+
+	proxy := func(id int64) *Proxy {
+		return &Proxy{
+			ID: id, Kind: "xray",
+			Extra: map[string]any{"outbound": map[string]any{
+				"tag": "direct", "protocol": "freedom", "settings": map[string]any{},
+			}},
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := manager.ProxyURL(ctx, proxy(1)); err != nil {
+		t.Fatalf("start first Xray runtime: %v", err)
+	}
+	manager.mu.Lock()
+	manager.instances[1].lastUsed = time.Now().Add(-2 * time.Minute)
+	manager.mu.Unlock()
+	if _, err := manager.ProxyURL(ctx, proxy(2)); err != nil {
+		t.Fatalf("idle Xray runtime did not release capacity: %v", err)
+	}
+	manager.mu.Lock()
+	_, oldExists := manager.instances[1]
+	_, newExists := manager.instances[2]
+	manager.mu.Unlock()
+	if oldExists || !newExists {
+		t.Fatalf("unexpected Xray runtime set after idle pruning: old=%t new=%t", oldExists, newExists)
 	}
 }
 

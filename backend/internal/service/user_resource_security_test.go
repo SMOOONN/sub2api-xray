@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -471,6 +472,10 @@ proxies:
     port: 8388
     cipher: aes-128-gcm
     password: ss-secret
+    plugin: obfs
+    plugin-opts:
+      mode: http
+      host: cdn.example.com
   - name: vless node
     type: vless
     server: vless.example.com
@@ -511,6 +516,17 @@ proxies:
 	if _, err := buildXrayOutbound(nodes[0].Raw, &Proxy{Kind: "xray"}); err != nil {
 		t.Fatalf("ss clash node did not produce a valid xray outbound: %v", err)
 	}
+	ssURL, err := url.Parse(nodes[0].Raw)
+	if err != nil || ssURL.Query().Get("plugin") != "obfs;host=cdn.example.com;mode=http" {
+		t.Fatalf("clash shadowsocks plugin options were not preserved: %q", nodes[0].Raw)
+	}
+	ssSpec, err := buildSingBoxRuntimeSpec(nodes[0].Raw, &Proxy{Kind: "xray", Protocol: "ss"})
+	if err != nil {
+		t.Fatalf("clash shadowsocks node did not produce a sing-box runtime spec: %v", err)
+	}
+	if plugin := stringFromMap(ssSpec.Outbound, "plugin"); plugin != "obfs-local" || stringFromMap(ssSpec.Outbound, "plugin_opts") != "obfs=http;obfs-host=cdn.example.com" {
+		t.Fatalf("clash shadowsocks plugin was not mapped for sing-box: %#v", ssSpec.Outbound)
+	}
 	if nodes[1].Name != "vless node" || nodes[1].Protocol != "vless" || nodes[1].Network != "grpc" {
 		t.Fatalf("unexpected vless node: %#v", nodes[1])
 	}
@@ -532,6 +548,139 @@ proxies:
 	if _, err := buildSingBoxRuntimeSpec(nodes[4].Raw, &Proxy{Kind: "xray", Protocol: "hysteria"}); err != nil {
 		t.Fatalf("hysteria clash node did not produce a valid sing-box outbound: %v", err)
 	}
+}
+
+func TestParseClashProxyNodesPreservesNestedTransportOptions(t *testing.T) {
+	raw := `
+proxies:
+  - name: vless ws
+    type: vless
+    server: vless.example.com
+    port: 443
+    uuid: 11111111-1111-1111-1111-111111111111
+    tls: true
+    network: ws
+    ws-opts:
+      path: /vless
+      headers:
+        Host: vless-cdn.example.com
+  - name: trojan httpupgrade
+    type: trojan
+    server: trojan.example.com
+    port: 443
+    password: trojan-secret
+    tls: true
+    network: httpupgrade
+    http-upgrade-opts:
+      path: /upgrade
+      host: trojan-cdn.example.com
+  - name: vless xhttp
+    type: vless
+    server: xhttp.example.com
+    port: 443
+    uuid: 22222222-2222-2222-2222-222222222222
+    tls: true
+    network: xhttp
+    xhttp-opts:
+      path: /xhttp
+      mode: auto
+      headers:
+        Host: xhttp-cdn.example.com
+      extra:
+        downloadSettings:
+          server: download.example.com
+          port: 443
+          servername: download-sni.example.com
+  - name: vmess grpc
+    type: vmess
+    server: vmess-grpc.example.com
+    port: 443
+    uuid: 33333333-3333-3333-3333-333333333333
+    tls: true
+    network: grpc
+    grpc-opts:
+      grpc-service-name: vmess-service
+  - name: vmess ws
+    type: vmess
+    server: vmess-ws.example.com
+    port: 443
+    uuid: 44444444-4444-4444-4444-444444444444
+    tls: true
+    network: ws
+    ws-opts:
+      path: /vmess
+      headers:
+        Host: vmess-cdn.example.com
+`
+
+	nodes := parseProxyNodeLines(raw)
+	if len(nodes) != 5 {
+		t.Fatalf("expected 5 transport nodes, got %d", len(nodes))
+	}
+	for index, node := range nodes {
+		if node.Err != "" {
+			t.Fatalf("transport node %d was rejected during import", index)
+		}
+		if _, err := buildXrayOutbound(node.Raw, &Proxy{Kind: "xray", Protocol: node.Protocol}); err != nil {
+			t.Fatalf("transport node %d did not produce an xray outbound", index)
+		}
+	}
+
+	for index, expected := range []struct {
+		path string
+		host string
+		mode string
+	}{
+		{path: "/vless", host: "vless-cdn.example.com"},
+		{path: "/upgrade", host: "trojan-cdn.example.com"},
+		{path: "/xhttp", host: "xhttp-cdn.example.com", mode: "auto"},
+	} {
+		u, err := url.Parse(nodes[index].Raw)
+		if err != nil {
+			t.Fatalf("parse transport node %d", index)
+		}
+		if u.Query().Get("path") != expected.path || u.Query().Get("host") != expected.host || u.Query().Get("mode") != expected.mode {
+			t.Fatalf("nested transport options were not preserved for node %d", index)
+		}
+	}
+	var xhttpExtra map[string]any
+	if err := json.Unmarshal([]byte(mustParseURL(t, nodes[2].Raw).Query().Get("extra")), &xhttpExtra); err != nil {
+		t.Fatal("xhttp extra settings were not preserved")
+	}
+	if _, ok := xhttpExtra["downloadSettings"].(map[string]any); !ok {
+		t.Fatal("xhttp download settings were not preserved")
+	}
+
+	for index, expected := range []struct {
+		network string
+		path    string
+		host    string
+	}{
+		{network: "grpc", path: "vmess-service"},
+		{network: "ws", path: "/vmess", host: "vmess-cdn.example.com"},
+	} {
+		payload := strings.TrimPrefix(nodes[index+3].Raw, "vmess://")
+		decoded, ok := decodeShareBase64(payload)
+		if !ok {
+			t.Fatalf("decode vmess transport node %d", index)
+		}
+		var vmess map[string]any
+		if err := json.Unmarshal([]byte(decoded), &vmess); err != nil {
+			t.Fatalf("decode vmess transport payload %d", index)
+		}
+		if urAsString(vmess["net"]) != expected.network || urAsString(vmess["path"]) != expected.path || urAsString(vmess["host"]) != expected.host {
+			t.Fatalf("nested vmess transport options were not preserved for node %d", index)
+		}
+	}
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal("parse proxy node URL")
+	}
+	return u
 }
 
 func TestParseProxyNodeLinesSupportsSingBoxJSON(t *testing.T) {
@@ -607,6 +756,21 @@ func TestUserOwnedAccountAndProxyRejectInternalOutboundTargets(t *testing.T) {
 	}
 	if err := svc.normalizeAndValidateProxyPayload(ctx, 10, 0, nil, xrayPayload); err == nil {
 		t.Fatal("expected raw xray outbound injection to be rejected")
+	}
+}
+
+func TestUserResourceProxyValidationNormalizesLegacySocksAlias(t *testing.T) {
+	svc := NewUserResourceService(nil, nil, nil, nil)
+	payload := map[string]any{
+		"name": "legacy-socks", "kind": "standard", "protocol": "socks",
+		"host": "8.8.8.8", "port": 1080, "status": StatusActive,
+		"fallback_mode": FallbackModeNone, "expiry_warn_days": 0,
+	}
+	if err := svc.normalizeAndValidateProxyPayload(context.Background(), 10, 0, nil, payload); err != nil {
+		t.Fatalf("legacy SOCKS alias was rejected: %v", err)
+	}
+	if payload["protocol"] != "socks5h" {
+		t.Fatalf("legacy SOCKS alias was not normalized: %#v", payload["protocol"])
 	}
 }
 
