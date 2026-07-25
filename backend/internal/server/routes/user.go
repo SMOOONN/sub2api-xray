@@ -132,6 +132,7 @@ func RegisterUserRoutes(
 			{
 				groups.GET("", h.MyResources.ListGroups)
 				groups.POST("", h.MyResources.CreateGroup)
+				groups.GET("/live-capability", h.MyResources.GetGroupLiveCapability)
 				groups.GET("/usage-summary", h.MyResources.GetGroupUsageSummary)
 				groups.GET("/capacity-summary", h.MyResources.GetGroupCapacitySummary)
 				groups.GET("/:id", h.MyResources.GetGroup)

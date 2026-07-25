@@ -189,6 +189,12 @@ func (s *UserResourceService) normalizeAndValidateGroupPayload(ctx context.Conte
 	}
 	payload["allow_batch_image_generation"] = allowBatch
 
+	allowLive := toBool(state["allow_live"])
+	if platform != PlatformOpenAI {
+		allowLive = false
+	}
+	payload["allow_live"] = allowLive
+
 	if raw, ok := payload["model_routing"]; ok {
 		routing, err := normalizeModelRouting(raw)
 		if err != nil {

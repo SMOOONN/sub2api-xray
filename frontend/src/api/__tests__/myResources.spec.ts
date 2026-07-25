@@ -25,6 +25,7 @@ describe('myResourcesApi', () => {
     apiClient.defaults.adapter = adapter
 
     await myResourcesApi.groups.list()
+    await myResourcesApi.groups.liveCapability()
     await myResourcesApi.groups.usageSummary('Asia/Shanghai')
     await myResourcesApi.groups.capacitySummary()
     await myResourcesApi.groups.get(1)
@@ -91,5 +92,6 @@ describe('myResourcesApi', () => {
     expect(urls).toContain('/my/accounts/models/sync-upstream-preview')
     expect(urls).toContain('/my/accounts/oauth/gemini/capabilities')
     expect(urls).toContain('/my/accounts/antigravity/default-model-mapping')
+    expect(urls).toContain('/my/groups/live-capability')
   })
 })

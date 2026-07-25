@@ -104,6 +104,7 @@ const getPage = async (url: string, params?: ResourceListParams): Promise<Resour
 export const myResourcesApi = {
   groups: {
     list: (params?: ResourceListParams) => getPage('/my/groups', params),
+    liveCapability: async () => (await apiClient.get<{ supported: boolean; reason?: string }>('/my/groups/live-capability')).data,
     usageSummary: async (timezone?: string) => (await apiClient.get<ResourceItem[]>('/my/groups/usage-summary', { params: timezone ? { timezone } : undefined })).data,
     capacitySummary: async () => (await apiClient.get<ResourceItem[]>('/my/groups/capacity-summary')).data,
     get: async (id: number) => (await apiClient.get<ResourceItem>(`/my/groups/${id}`)).data,

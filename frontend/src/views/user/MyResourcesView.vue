@@ -503,6 +503,23 @@
                 <input v-model="editorForm.group.allow_messages_dispatch" type="checkbox" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
                 <span class="text-sm text-gray-700 dark:text-dark-100">{{ mr('fields.openaiDispatch') }}</span>
               </label>
+              <div v-if="editorForm.group.platform === 'openai'" class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+                <div class="flex items-center justify-between gap-3">
+                  <span class="text-sm text-gray-700 dark:text-dark-100">{{ t('admin.groups.openaiLive.allow') }}</span>
+                  <button
+                    type="button"
+                    class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+                    :class="editorForm.group.allow_live ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600'"
+                    @click="toggleGroupLive"
+                  >
+                    <span
+                      class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                      :class="editorForm.group.allow_live ? 'translate-x-6' : 'translate-x-1'"
+                    />
+                  </button>
+                </div>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.groups.openaiLive.hint') }}</p>
+              </div>
               <label class="flex items-center gap-2 rounded-lg border border-gray-200 p-3 dark:border-dark-700">
                 <input v-model="editorForm.group.require_oauth_only" type="checkbox" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
                 <span class="text-sm text-gray-700 dark:text-dark-100">{{ mr('fields.oauthOnly') }}</span>
@@ -1492,6 +1509,7 @@ const proxyPasswordDirty = ref(false)
 const proxyExtraDirty = ref(false)
 const editorMode = ref<'default' | 'accountImport' | 'proxyImport' | 'codexSessionImport' | 'codexPATImport'>('default')
 const operationError = ref('')
+const groupLiveCapability = ref<{ supported: boolean; reason?: string } | null>(null)
 const recordDetailOpen = ref(false)
 const recordDetailItem = ref<ResourceItem | null>(null)
 const groupOverridesOpen = ref(false)
@@ -1600,6 +1618,7 @@ const editorForm = reactive({
     model_routing_text: '{}',
     supported_model_scopes_text: '[]',
     allow_messages_dispatch: false,
+    allow_live: false,
     require_oauth_only: false,
     require_privacy_set: false,
     default_mapped_model: '',
@@ -1896,6 +1915,7 @@ function populateEditorForm(payload: ResourceItem): void {
   editorForm.group.model_routing_text = JSON.stringify(payload.model_routing || {}, null, 2)
   editorForm.group.supported_model_scopes_text = JSON.stringify(payload.supported_model_scopes || [], null, 2)
   editorForm.group.allow_messages_dispatch = Boolean(payload.allow_messages_dispatch)
+  editorForm.group.allow_live = Boolean(payload.allow_live)
   editorForm.group.require_oauth_only = Boolean(payload.require_oauth_only)
   editorForm.group.require_privacy_set = Boolean(payload.require_privacy_set)
   editorForm.group.default_mapped_model = stringValue(payload.default_mapped_model)
@@ -1994,6 +2014,7 @@ function mergeEditorFormPayload(payload: ResourceItem): ResourceItem {
     out.model_routing = parseJSONField(editorForm.group.model_routing_text, {})
     out.supported_model_scopes = parseJSONField(editorForm.group.supported_model_scopes_text, [])
     out.allow_messages_dispatch = editorForm.group.allow_messages_dispatch
+    out.allow_live = editorForm.group.allow_live
     out.require_oauth_only = editorForm.group.require_oauth_only
     out.require_privacy_set = editorForm.group.require_privacy_set
     out.default_mapped_model = editorForm.group.default_mapped_model
@@ -2457,6 +2478,29 @@ async function openCreate(): Promise<void> {
   proxyExtraDirty.value = true
   editorText.value = JSON.stringify(payload, null, 2)
   editorOpen.value = true
+}
+
+async function toggleGroupLive(): Promise<void> {
+  if (editorForm.group.allow_live) {
+    editorForm.group.allow_live = false
+    return
+  }
+
+  try {
+    groupLiveCapability.value ||= await myResourcesApi.groups.liveCapability()
+  } catch {
+    groupLiveCapability.value = { supported: false }
+  }
+
+  if (groupLiveCapability.value.supported) {
+    editorForm.group.allow_live = true
+    return
+  }
+
+  const confirmed = window.confirm(
+    `${t('admin.groups.openaiLive.unsupportedTitle')}\n\n${t('admin.groups.openaiLive.unsupportedMessage')}`,
+  )
+  if (confirmed) editorForm.group.allow_live = true
 }
 
 async function openEdit(item: ResourceItem): Promise<void> {
@@ -3415,6 +3459,10 @@ watch(() => editorForm.proxy.kind, kind => {
   if (!options.some(option => option.value === editorForm.proxy.protocol)) {
     editorForm.proxy.protocol = String(options[0]?.value || 'socks5')
   }
+})
+
+watch(() => editorForm.group.platform, platform => {
+  if (platform !== 'openai') editorForm.group.allow_live = false
 })
 
 watch(() => editorForm.account.platform, platform => {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/platform/liveattestation"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -258,6 +259,18 @@ func (h *MyResourceHandler) ListGroups(c *gin.Context) {
 		return
 	}
 	response.Success(c, page)
+}
+
+func (h *MyResourceHandler) GetGroupLiveCapability(c *gin.Context) {
+	if _, ok := h.currentUser(c); !ok {
+		return
+	}
+	err := liveattestation.NewProvider().Check(c.Request.Context())
+	result := gin.H{"supported": err == nil}
+	if err != nil {
+		result["reason"] = err.Error()
+	}
+	response.Success(c, result)
 }
 
 func (h *MyResourceHandler) GetGroup(c *gin.Context) {
