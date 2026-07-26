@@ -38,7 +38,7 @@ The user resource workspace is controlled by `enable_user_resources` and is disa
 
 ## Current Release
 
-The current integration build is `v0.1.165-xray3-beta1`, based on upstream `v0.1.165`. The latest formal release remains `v0.1.164-xray3`; see its [release notes](docs/releases/v0.1.164-xray3.md).
+The current release is `v0.1.165-xray3`, synchronized with upstream `v0.1.165`. See the [GitHub release](https://github.com/SMNNagarajan/sub2api-xray/releases/tag/v0.1.165-xray3).
 
 ## Important Notice
 
