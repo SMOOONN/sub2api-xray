@@ -107,7 +107,7 @@ func TestUserRepository_UpdateReusesOuterTransaction(t *testing.T) {
 	require.NoError(t, err)
 	opCtx := dbent.NewTxContext(ctx, tx)
 	user.Status = service.StatusDisabled
-	require.NoError(t, userRepo.Update(opCtx, user))
+	require.NoError(t, userRepo.Update(opCtx, user, service.UserUpdateFields{Status: true}))
 	require.NoError(t, tx.Rollback())
 
 	stored, err := userRepo.GetByID(ctx, user.ID)
