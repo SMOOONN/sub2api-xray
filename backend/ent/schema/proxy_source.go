@@ -31,7 +31,9 @@ func (ProxySource) Mixin() []ent.Mixin {
 
 func (ProxySource) Fields() []ent.Field {
 	return []ent.Field{
-		field.Int64("owner_user_id"),
+		field.Int64("owner_user_id").
+			Optional().
+			Nillable(),
 		field.String("name").
 			MaxLen(100).
 			NotEmpty(),

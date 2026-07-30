@@ -15,12 +15,12 @@ func TestClaimDueProxySourceIsOwnerScopedAndAtomic(t *testing.T) {
 		t.Fatalf("create sqlmock: %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	mock.ExpectExec(`UPDATE proxy_sources`).
+	mock.ExpectExec(`(?s)UPDATE proxy_sources.*owner_user_id IS NOT DISTINCT FROM \$2`).
 		WithArgs(int64(44), int64(9)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	svc := NewUserResourceService(db, nil, nil, nil)
-	claimed, err := svc.claimDueProxySource(context.Background(), dueUserProxySource{ID: 44, OwnerID: 9})
+	claimed, err := svc.claimDueProxySource(context.Background(), dueUserProxySource{ID: 44, OwnerID: sql.NullInt64{Int64: 9, Valid: true}})
 	if err != nil {
 		t.Fatalf("claim due source: %v", err)
 	}
@@ -32,6 +32,97 @@ func TestClaimDueProxySourceIsOwnerScopedAndAtomic(t *testing.T) {
 	}
 }
 
+func TestClaimDueSystemProxySourceUsesNullSafeOwnerScope(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("create sqlmock: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	mock.ExpectExec(`(?s)UPDATE proxy_sources.*owner_user_id IS NOT DISTINCT FROM \$2`).
+		WithArgs(int64(44), nil).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	svc := NewUserResourceService(db, nil, nil, nil)
+	claimed, err := svc.claimDueProxySource(context.Background(), dueUserProxySource{ID: 44})
+	if err != nil {
+		t.Fatalf("claim due system source: %v", err)
+	}
+	if !claimed {
+		t.Fatal("expected due system source to be claimed")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestDueProxySourceSyncDispatchesByNullableOwner(t *testing.T) {
+	t.Run("user source", func(t *testing.T) {
+		var systemCalls, userCalls int
+		err := syncDueProxySourceWith(
+			context.Background(),
+			dueUserProxySource{ID: 44, OwnerID: sql.NullInt64{Int64: 9, Valid: true}},
+			func(context.Context, int64) error {
+				systemCalls++
+				return nil
+			},
+			func(_ context.Context, ownerID, sourceID int64) error {
+				userCalls++
+				if ownerID != 9 || sourceID != 44 {
+					t.Fatalf("unexpected user sync arguments: owner=%d source=%d", ownerID, sourceID)
+				}
+				return nil
+			},
+		)
+		if err != nil {
+			t.Fatalf("dispatch user source: %v", err)
+		}
+		if systemCalls != 0 || userCalls != 1 {
+			t.Fatalf("unexpected dispatch counts: system=%d user=%d", systemCalls, userCalls)
+		}
+	})
+
+	t.Run("system source", func(t *testing.T) {
+		var systemCalls, userCalls int
+		err := syncDueProxySourceWith(
+			context.Background(),
+			dueUserProxySource{ID: 55},
+			func(_ context.Context, sourceID int64) error {
+				systemCalls++
+				if sourceID != 55 {
+					t.Fatalf("unexpected system source id: %d", sourceID)
+				}
+				return nil
+			},
+			func(context.Context, int64, int64) error {
+				userCalls++
+				return nil
+			},
+		)
+		if err != nil {
+			t.Fatalf("dispatch system source: %v", err)
+		}
+		if systemCalls != 1 || userCalls != 0 {
+			t.Fatalf("unexpected dispatch counts: system=%d user=%d", systemCalls, userCalls)
+		}
+	})
+}
+
+func TestMarkScheduledSystemProxySourceFailureUsesNullSafeOwnerScope(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("create sqlmock: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	mock.ExpectExec(`(?s)UPDATE proxy_sources.*owner_user_id IS NOT DISTINCT FROM \$3`).
+		WithArgs(sqlmock.AnyArg(), int64(44), nil).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	svc := NewUserResourceService(db, nil, nil, nil)
+	svc.markScheduledProxySourceFailure(dueUserProxySource{ID: 44}, context.DeadlineExceeded)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
 func TestProxySourceNodeIdentityIsStableAndNamesFitSchema(t *testing.T) {
 	node := parsedProxyNode{Name: "US West", Kind: "xray", Protocol: "vless", Host: "node.example.com", Port: 443, Network: "grpc"}
 	base := proxySourceNodeBaseKey(node)
@@ -143,7 +234,7 @@ func TestSyncProxySourceNodesRollsBackWhenStatusWriteFails(t *testing.T) {
 	mock.ExpectRollback()
 
 	svc := NewUserResourceService(db, nil, nil, nil)
-	_, err = svc.syncProxySourceNodes(context.Background(), 9, 44, "source", "http://1.1.1.1:8080#node", false)
+	_, err = svc.syncProxySourceNodes(context.Background(), userResourceOwner(9), 44, "source", "http://1.1.1.1:8080#node", false)
 	if err == nil {
 		t.Fatal("expected source status failure to roll back node changes")
 	}

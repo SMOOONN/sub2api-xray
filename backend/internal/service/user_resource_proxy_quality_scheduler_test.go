@@ -14,7 +14,7 @@ func TestImportedProxyQualityChecksUseBoundedWorkers(t *testing.T) {
 	release := make(chan struct{})
 	var active atomic.Int32
 	var maximum atomic.Int32
-	svc.proxyQualityRunner = func(ctx context.Context, _ int64, proxyID int64) error {
+	svc.proxyQualityRunner = func(ctx context.Context, _ *int64, proxyID int64) error {
 		current := active.Add(1)
 		for {
 			previous := maximum.Load()
@@ -60,10 +60,68 @@ func TestImportedProxyQualityChecksUseBoundedWorkers(t *testing.T) {
 	}
 }
 
+func TestImportedProxyQualityChecksUseUserOwner(t *testing.T) {
+	type qualityCall struct {
+		ownerID *int64
+		proxyID int64
+	}
+
+	svc := NewUserResourceService(nil, nil, nil, nil)
+	calls := make(chan qualityCall, 1)
+	svc.proxyQualityRunner = func(_ context.Context, ownerID *int64, proxyID int64) error {
+		calls <- qualityCall{ownerID: cloneProxyQualityOwnerID(ownerID), proxyID: proxyID}
+		return nil
+	}
+	svc.StartProxyQualityWorkers()
+	defer func() { _ = svc.Close() }()
+
+	svc.enqueueImportedProxyQualityChecks(9, []int64{41})
+	select {
+	case call := <-calls:
+		if call.ownerID == nil || *call.ownerID != 9 {
+			t.Fatalf("quality owner = %v, want 9", proxyQualityOwnerLogValue(call.ownerID))
+		}
+		if call.proxyID != 41 {
+			t.Fatalf("quality proxy = %d, want 41", call.proxyID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("user-owned quality check did not reach worker pool")
+	}
+}
+
+func TestSystemProxyQualityChecksUseNilOwnerInWorkerPool(t *testing.T) {
+	type qualityCall struct {
+		ownerID *int64
+		proxyID int64
+	}
+
+	svc := NewUserResourceService(nil, nil, nil, nil)
+	calls := make(chan qualityCall, 1)
+	svc.proxyQualityRunner = func(_ context.Context, ownerID *int64, proxyID int64) error {
+		calls <- qualityCall{ownerID: cloneProxyQualityOwnerID(ownerID), proxyID: proxyID}
+		return nil
+	}
+	svc.StartProxyQualityWorkers()
+	defer func() { _ = svc.Close() }()
+
+	svc.enqueueSystemProxyQualityChecks([]int64{51})
+	select {
+	case call := <-calls:
+		if call.ownerID != nil {
+			t.Fatalf("system quality owner = %d, want nil", *call.ownerID)
+		}
+		if call.proxyID != 51 {
+			t.Fatalf("quality proxy = %d, want 51", call.proxyID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("system quality check did not reach worker pool")
+	}
+}
+
 func TestImportedProxyQualityChecksAreIgnoredUntilWorkersStart(t *testing.T) {
 	svc := NewUserResourceService(nil, nil, nil, nil)
 	called := atomic.Bool{}
-	svc.proxyQualityRunner = func(context.Context, int64, int64) error {
+	svc.proxyQualityRunner = func(context.Context, *int64, int64) error {
 		called.Store(true)
 		return nil
 	}

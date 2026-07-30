@@ -70,6 +70,14 @@ func (_c *ProxySourceCreate) SetOwnerUserID(v int64) *ProxySourceCreate {
 	return _c
 }
 
+// SetNillableOwnerUserID sets the "owner_user_id" field if the given value is not nil.
+func (_c *ProxySourceCreate) SetNillableOwnerUserID(v *int64) *ProxySourceCreate {
+	if v != nil {
+		_c.SetOwnerUserID(*v)
+	}
+	return _c
+}
+
 // SetName sets the "name" field.
 func (_c *ProxySourceCreate) SetName(v string) *ProxySourceCreate {
 	_c.mutation.SetName(v)
@@ -244,9 +252,6 @@ func (_c *ProxySourceCreate) check() error {
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "ProxySource.updated_at"`)}
 	}
-	if _, ok := _c.mutation.OwnerUserID(); !ok {
-		return &ValidationError{Name: "owner_user_id", err: errors.New(`ent: missing required field "ProxySource.owner_user_id"`)}
-	}
 	if _, ok := _c.mutation.Name(); !ok {
 		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "ProxySource.name"`)}
 	}
@@ -321,7 +326,7 @@ func (_c *ProxySourceCreate) createSpec() (*ProxySource, *sqlgraph.CreateSpec) {
 	}
 	if value, ok := _c.mutation.OwnerUserID(); ok {
 		_spec.SetField(proxysource.FieldOwnerUserID, field.TypeInt64, value)
-		_node.OwnerUserID = value
+		_node.OwnerUserID = &value
 	}
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(proxysource.FieldName, field.TypeString, value)
@@ -452,6 +457,12 @@ func (u *ProxySourceUpsert) UpdateOwnerUserID() *ProxySourceUpsert {
 // AddOwnerUserID adds v to the "owner_user_id" field.
 func (u *ProxySourceUpsert) AddOwnerUserID(v int64) *ProxySourceUpsert {
 	u.Add(proxysource.FieldOwnerUserID, v)
+	return u
+}
+
+// ClearOwnerUserID clears the value of the "owner_user_id" field.
+func (u *ProxySourceUpsert) ClearOwnerUserID() *ProxySourceUpsert {
+	u.SetNull(proxysource.FieldOwnerUserID)
 	return u
 }
 
@@ -673,6 +684,13 @@ func (u *ProxySourceUpsertOne) AddOwnerUserID(v int64) *ProxySourceUpsertOne {
 func (u *ProxySourceUpsertOne) UpdateOwnerUserID() *ProxySourceUpsertOne {
 	return u.Update(func(s *ProxySourceUpsert) {
 		s.UpdateOwnerUserID()
+	})
+}
+
+// ClearOwnerUserID clears the value of the "owner_user_id" field.
+func (u *ProxySourceUpsertOne) ClearOwnerUserID() *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.ClearOwnerUserID()
 	})
 }
 
@@ -1080,6 +1098,13 @@ func (u *ProxySourceUpsertBulk) AddOwnerUserID(v int64) *ProxySourceUpsertBulk {
 func (u *ProxySourceUpsertBulk) UpdateOwnerUserID() *ProxySourceUpsertBulk {
 	return u.Update(func(s *ProxySourceUpsert) {
 		s.UpdateOwnerUserID()
+	})
+}
+
+// ClearOwnerUserID clears the value of the "owner_user_id" field.
+func (u *ProxySourceUpsertBulk) ClearOwnerUserID() *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.ClearOwnerUserID()
 	})
 }
 

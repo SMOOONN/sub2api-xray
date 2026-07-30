@@ -93,7 +93,7 @@ const isSearchable = computed(() => {
 const filteredGroups = computed(() => {
   let result: AdminGroup[] = props.groups
   if (props.enforceOwner) {
-    result = result.filter((group) => group.owner_user_id === (props.ownerUserId ?? null))
+    result = result.filter((group) => (group.owner_user_id ?? null) === (props.ownerUserId ?? null))
   }
   if (props.platform) {
     // antigravity 账户启用混合调度后，可选择 anthropic/gemini 分组

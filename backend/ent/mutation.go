@@ -38125,7 +38125,7 @@ func (m *ProxySourceMutation) OwnerUserID() (r int64, exists bool) {
 // OldOwnerUserID returns the old "owner_user_id" field's value of the ProxySource entity.
 // If the ProxySource object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ProxySourceMutation) OldOwnerUserID(ctx context.Context) (v int64, err error) {
+func (m *ProxySourceMutation) OldOwnerUserID(ctx context.Context) (v *int64, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldOwnerUserID is only allowed on UpdateOne operations")
 	}
@@ -38157,10 +38157,24 @@ func (m *ProxySourceMutation) AddedOwnerUserID() (r int64, exists bool) {
 	return *v, true
 }
 
+// ClearOwnerUserID clears the value of the "owner_user_id" field.
+func (m *ProxySourceMutation) ClearOwnerUserID() {
+	m.owner_user_id = nil
+	m.addowner_user_id = nil
+	m.clearedFields[proxysource.FieldOwnerUserID] = struct{}{}
+}
+
+// OwnerUserIDCleared returns if the "owner_user_id" field was cleared in this mutation.
+func (m *ProxySourceMutation) OwnerUserIDCleared() bool {
+	_, ok := m.clearedFields[proxysource.FieldOwnerUserID]
+	return ok
+}
+
 // ResetOwnerUserID resets all changes to the "owner_user_id" field.
 func (m *ProxySourceMutation) ResetOwnerUserID() {
 	m.owner_user_id = nil
 	m.addowner_user_id = nil
+	delete(m.clearedFields, proxysource.FieldOwnerUserID)
 }
 
 // SetName sets the "name" field.
@@ -38818,6 +38832,9 @@ func (m *ProxySourceMutation) ClearedFields() []string {
 	if m.FieldCleared(proxysource.FieldDeletedAt) {
 		fields = append(fields, proxysource.FieldDeletedAt)
 	}
+	if m.FieldCleared(proxysource.FieldOwnerUserID) {
+		fields = append(fields, proxysource.FieldOwnerUserID)
+	}
 	if m.FieldCleared(proxysource.FieldLastSyncedAt) {
 		fields = append(fields, proxysource.FieldLastSyncedAt)
 	}
@@ -38840,6 +38857,9 @@ func (m *ProxySourceMutation) ClearField(name string) error {
 	switch name {
 	case proxysource.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case proxysource.FieldOwnerUserID:
+		m.ClearOwnerUserID()
 		return nil
 	case proxysource.FieldLastSyncedAt:
 		m.ClearLastSyncedAt()

@@ -54,13 +54,22 @@ describe('MyProxyEditorDialog', () => {
     api.sourceSync.mockResolvedValue({ created_count: 0, imported_count: 0 })
   })
 
-  it('uses a scrollable BaseDialog and offers all supported creation modes', async () => {
+  it('uses the shared dropdown control for input mode selection', async () => {
     const wrapper = mountDialog()
     await vi.waitFor(() => expect(api.list).toHaveBeenCalled())
 
-    expect(wrapper.findAll('[data-test^="proxy-create-mode-"]')).toHaveLength(2)
+    expect(wrapper.findAll('button[data-test^="proxy-create-mode-"]')).toHaveLength(2)
     expect(wrapper.text()).toContain('myResources.proxyEditor.standardCreate')
     expect(wrapper.text()).toContain('myResources.proxyEditor.batchCreate')
+
+    const selector = wrapper.get('[data-test="proxy-input-mode-selector"]')
+    expect(selector.get('.select-trigger').text()).toContain('myResources.proxyEditor.standardProxy')
+
+    await selector.get('.select-trigger').trigger('click')
+    expect(selector.findAll('[role="option"]')).toHaveLength(4)
+    expect(selector.text()).toContain('myResources.proxyEditor.xrayShare')
+    expect(selector.text()).toContain('myResources.proxyEditor.providerSubscription')
+    expect(selector.text()).toContain('myResources.proxyEditor.nodeConfig')
   })
 
   it('shows live batch validity and duplicate statistics', async () => {

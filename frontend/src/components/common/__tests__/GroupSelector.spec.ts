@@ -12,9 +12,9 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
-const group = (id: number, ownerUserId: number | null, name: string) => ({
+const group = (id: number, ownerUserId: number | null | undefined, name: string) => ({
   id,
-  owner_user_id: ownerUserId,
+  ...(ownerUserId === undefined ? {} : { owner_user_id: ownerUserId }),
   name,
   description: null,
   platform: 'openai',
@@ -25,12 +25,13 @@ const group = (id: number, ownerUserId: number | null, name: string) => ({
 } as AdminGroup)
 
 const groups = [
-  group(1, null, 'System group'),
+  group(1, null, 'Explicit system group'),
+  group(4, undefined, 'Implicit system group'),
   group(2, 7, 'User 7 group'),
   group(3, 8, 'User 8 group'),
 ]
 
-const mountSelector = (ownerUserId: number | null) => mount(GroupSelector, {
+const mountSelector = (ownerUserId: number | null | undefined) => mount(GroupSelector, {
   props: {
     modelValue: [],
     groups,
@@ -50,17 +51,27 @@ const mountSelector = (ownerUserId: number | null) => mount(GroupSelector, {
 })
 
 describe('GroupSelector owner scope', () => {
-  it('only exposes system groups for a system account', () => {
+  it('treats a missing group owner as system-owned when ownerUserId is null', () => {
     const text = mountSelector(null).text()
-    expect(text).toContain('System group')
+    expect(text).toContain('Explicit system group')
+    expect(text).toContain('Implicit system group')
     expect(text).not.toContain('User 7 group')
     expect(text).not.toContain('User 8 group')
   })
 
-  it('only exposes groups owned by the target user', () => {
+  it('treats an undefined ownerUserId as the system owner', () => {
+    const text = mountSelector(undefined).text()
+    expect(text).toContain('Explicit system group')
+    expect(text).toContain('Implicit system group')
+    expect(text).not.toContain('User 7 group')
+    expect(text).not.toContain('User 8 group')
+  })
+
+  it('keeps groups with a different private owner hidden', () => {
     const text = mountSelector(7).text()
     expect(text).toContain('User 7 group')
-    expect(text).not.toContain('System group')
+    expect(text).not.toContain('Explicit system group')
+    expect(text).not.toContain('Implicit system group')
     expect(text).not.toContain('User 8 group')
   })
 })

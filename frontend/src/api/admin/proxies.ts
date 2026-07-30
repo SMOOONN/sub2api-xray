@@ -15,6 +15,64 @@ import type {
   AdminDataImportResult
 } from '@/types'
 
+export interface AdminProxyImportRequest {
+  name_prefix?: string
+  content: string
+  is_public?: boolean
+}
+
+export interface AdminProxyImportResult {
+  created?: Proxy[]
+  updated?: Proxy[]
+  created_count?: number
+  updated_count?: number
+  imported_count?: number
+  skipped?: number
+  errors?: Array<string | { line?: number; message?: string; error?: string }>
+}
+
+const normalizeImportCount = (value: number | undefined): number | undefined => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined
+  return Math.max(0, value)
+}
+
+export function getAdminProxyImportCount(result: AdminProxyImportResult): number {
+  const importedCount = normalizeImportCount(result.imported_count)
+  if (importedCount !== undefined) return importedCount
+
+  const createdCount = normalizeImportCount(result.created_count)
+  const updatedCount = normalizeImportCount(result.updated_count)
+  if (createdCount !== undefined || updatedCount !== undefined) {
+    return (createdCount ?? 0) + (updatedCount ?? 0)
+  }
+
+  const created = Array.isArray(result.created) ? result.created.length : 0
+  const updated = Array.isArray(result.updated) ? result.updated.length : 0
+  return created + updated
+}
+
+export interface AdminProxySource {
+  id: number
+  owner_user_id?: number | null
+  name: string
+  subscription_url: string
+  refresh_interval_minutes: number
+  is_public: boolean
+  last_sync_status?: string
+  last_sync_error?: string | null
+  last_synced_at?: string | null
+  last_imported_count?: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface AdminProxySourcePayload {
+  name: string
+  subscription_url: string
+  refresh_interval_minutes: number
+  is_public: boolean
+}
+
 /**
  * List all proxies with pagination
  * @param page - Page number (default: 1)
@@ -213,6 +271,47 @@ export async function batchCreate(
   return data
 }
 
+/**
+ * Import standard proxies, modern share links, or Sing-box/Clash configuration.
+ */
+export async function importNodes(payload: AdminProxyImportRequest): Promise<AdminProxyImportResult> {
+  const { data } = await apiClient.post<AdminProxyImportResult>('/admin/proxies/import', payload)
+  return data
+}
+
+export async function listSources(
+  page: number = 1,
+  pageSize: number = 20
+): Promise<PaginatedResponse<AdminProxySource>> {
+  const { data } = await apiClient.get<PaginatedResponse<AdminProxySource>>('/admin/proxies/sources', {
+    params: { page, page_size: pageSize }
+  })
+  return data
+}
+
+export async function createSource(payload: AdminProxySourcePayload): Promise<AdminProxySource> {
+  const { data } = await apiClient.post<AdminProxySource>('/admin/proxies/sources', payload)
+  return data
+}
+
+export async function updateSource(
+  id: number,
+  payload: AdminProxySourcePayload
+): Promise<AdminProxySource> {
+  const { data } = await apiClient.put<AdminProxySource>(`/admin/proxies/sources/${id}`, payload)
+  return data
+}
+
+export async function deleteSource(id: number): Promise<{ message: string }> {
+  const { data } = await apiClient.delete<{ message: string }>(`/admin/proxies/sources/${id}`)
+  return data
+}
+
+export async function syncSource(id: number): Promise<AdminProxyImportResult> {
+  const { data } = await apiClient.post<AdminProxyImportResult>(`/admin/proxies/sources/${id}/sync`)
+  return data
+}
+
 export async function batchDelete(ids: number[]): Promise<{
   deleted_ids: number[]
   skipped: Array<{ id: number; reason: string }>
@@ -270,6 +369,14 @@ export const proxiesAPI = {
   getStats,
   getProxyAccounts,
   batchCreate,
+  importNodes,
+  sources: {
+    list: listSources,
+    create: createSource,
+    update: updateSource,
+    delete: deleteSource,
+    sync: syncSource
+  },
   batchDelete,
   exportData,
   importData

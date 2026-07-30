@@ -543,6 +543,10 @@ func validateUserOwnedAccountURLs(ctx context.Context, state map[string]any) err
 }
 
 func (s *UserResourceService) normalizeAndValidateProxyPayload(ctx context.Context, ownerID, proxyID int64, existing, payload map[string]any) error {
+	return s.normalizeAndValidateProxyPayloadForOwner(ctx, userResourceOwner(ownerID), proxyID, existing, payload)
+}
+
+func (s *UserResourceService) normalizeAndValidateProxyPayloadForOwner(ctx context.Context, ownerID *int64, proxyID int64, existing, payload map[string]any) error {
 	if err := validateResourcePayloadTypes(payload, proxyWritableColumns); err != nil {
 		return err
 	}
@@ -599,7 +603,7 @@ func (s *UserResourceService) normalizeAndValidateProxyPayload(ctx context.Conte
 		return invalidUserResourceField("backup_proxy_id", "cannot reference the same proxy")
 	}
 	if backupID > 0 {
-		if err := s.validateProxySelectable(ctx, ownerID, backupID); err != nil {
+		if err := s.validateProxySelectableForOwner(ctx, ownerID, backupID); err != nil {
 			return err
 		}
 	} else if _, ok := payload["backup_proxy_id"]; ok {

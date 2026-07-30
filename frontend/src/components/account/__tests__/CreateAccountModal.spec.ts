@@ -8,12 +8,14 @@ const {
   importCodexSessionMock,
   createOpenAICodexPATMock,
   userApiPostMock,
+  authIsSimpleMode,
 } = vi.hoisted(() => ({
   createAccountMock: vi.fn(),
   probeUpstreamBillingMock: vi.fn(),
   importCodexSessionMock: vi.fn(),
   createOpenAICodexPATMock: vi.fn(),
   userApiPostMock: vi.fn(),
+  authIsSimpleMode: { value: true },
 }))
 
 vi.mock('@/api/client', () => ({
@@ -31,7 +33,11 @@ vi.mock('@/stores/app', () => ({
 }))
 
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ isSimpleMode: true }),
+  useAuthStore: () => ({
+    get isSimpleMode() {
+      return authIsSimpleMode.value
+    },
+  }),
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -92,6 +98,15 @@ const OAuthAuthorizationFlowStub = defineComponent({
   `,
 })
 
+const GroupSelectorStub = defineComponent({
+  name: 'GroupSelector',
+  props: {
+    ownerUserId: Number,
+    enforceOwner: Boolean,
+  },
+  template: '<div data-testid="group-selector" />',
+})
+
 function mountModal(scope: 'admin' | 'user' = 'admin') {
   return mount(CreateAccountModal, {
     props: { show: true, proxies: [], groups: [], scope },
@@ -104,8 +119,7 @@ function mountModal(scope: 'admin' | 'user' = 'admin') {
         Icon: true,
         PlatformIcon: true,
         ProxySelector: true,
-        ProxyAdBanner: true,
-        GroupSelector: true,
+        GroupSelector: GroupSelectorStub,
         ModelWhitelistSelector: true,
         QuotaLimitCard: true,
       },
@@ -155,6 +169,7 @@ async function openCodexImportStep(toggleClicks = 0, scope: 'admin' | 'user' = '
 
 describe('CreateAccountModal OpenAI long-context billing', () => {
   beforeEach(() => {
+    authIsSimpleMode.value = true
     createAccountMock.mockReset().mockResolvedValue({ id: 42, platform: 'openai', type: 'apikey' })
     probeUpstreamBillingMock.mockReset().mockResolvedValue({})
     importCodexSessionMock.mockReset().mockResolvedValue({
@@ -169,6 +184,15 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     userApiPostMock.mockReset().mockResolvedValue({
       data: { id: 43, platform: 'openai', type: 'apikey' },
     })
+  })
+
+  it('passes the normalized system owner scope to GroupSelector for an admin account', () => {
+    authIsSimpleMode.value = false
+    const wrapper = mountModal('admin')
+    const selector = wrapper.getComponent(GroupSelectorStub)
+
+    expect(selector.props('enforceOwner')).toBe(true)
+    expect(selector.props('ownerUserId')).toBe(null)
   })
 
   it('creates a user-scoped OpenAI Responses API account through /my/accounts', async () => {

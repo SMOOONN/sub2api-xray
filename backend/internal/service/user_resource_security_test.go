@@ -205,6 +205,10 @@ func TestRedactProxyImportResultForUserResponseHidesAllNodeSecrets(t *testing.T)
 			"password": "updated-pass",
 			"extra":    map[string]any{"raw": "tuic://updated-secret"},
 		}},
+		Errors: []string{
+			"entry 1: vless://11111111-2222-3333-4444-555555555555@node-secret.example.com:443?token=node-token-secret",
+			"entry 2: proxy-user:proxy-pass@proxy-secret.example.com:1080 Authorization: Bearer bearer-secret-value-12345678901234567890",
+		},
 	}
 
 	RedactProxyImportResultForUserResponse(result)
@@ -216,6 +220,14 @@ func TestRedactProxyImportResultForUserResponseHidesAllNodeSecrets(t *testing.T)
 		extra := item["extra"].(map[string]any)
 		if extra["raw"] != "" || extra["redacted"] != true {
 			t.Fatalf("proxy import response leaked node configuration: %#v", extra)
+		}
+	}
+	for _, secret := range []string{
+		"11111111-2222-3333-4444-555555555555", "node-secret.example.com", "node-token-secret",
+		"proxy-user", "proxy-pass", "proxy-secret.example.com", "bearer-secret-value",
+	} {
+		if strings.Contains(strings.Join(result.Errors, "\n"), secret) {
+			t.Fatalf("proxy import error leaked %q: %#v", secret, result.Errors)
 		}
 	}
 }
@@ -230,6 +242,10 @@ func TestRedactProxySourceSyncResultForUserResponseHidesAllNodeSecrets(t *testin
 			"password": "updated-pass",
 			"extra":    map[string]any{"raw": "anytls://updated-secret"},
 		}},
+		Errors: []string{
+			"subscription_url=https://airport-secret.example.com/sub?token=subscription-token-secret",
+			"dial tcp node-secret.example.com:443 with api_key=api-secret-value",
+		},
 	}
 
 	RedactProxySourceSyncResultForUserResponse(result)
@@ -241,6 +257,38 @@ func TestRedactProxySourceSyncResultForUserResponseHidesAllNodeSecrets(t *testin
 		extra := item["extra"].(map[string]any)
 		if extra["raw"] != "" || extra["redacted"] != true {
 			t.Fatalf("proxy source sync response leaked node configuration: %#v", extra)
+		}
+	}
+	for _, secret := range []string{
+		"airport-secret.example.com", "subscription-token-secret", "node-secret.example.com", "api-secret-value",
+	} {
+		if strings.Contains(strings.Join(result.Errors, "\n"), secret) {
+			t.Fatalf("proxy source sync error leaked %q: %#v", secret, result.Errors)
+		}
+	}
+}
+
+func TestProxyImportErrorRedactionPreservesEntryWithoutSecrets(t *testing.T) {
+	raw := "entry 9: failed vless://aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee@hidden.example.com:443?token=opaque-secret Authorization: Bearer bearer-secret-value"
+	got := redactProxyImportErrorText(raw)
+	if !strings.Contains(got, "entry 9") || !strings.Contains(got, "failed") {
+		t.Fatalf("redaction removed useful error context: %q", got)
+	}
+	for _, secret := range []string{
+		"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "hidden.example.com", "opaque-secret", "bearer-secret-value",
+	} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("redacted import error leaked %q: %q", secret, got)
+		}
+	}
+}
+
+func TestSafeSyncErrorDoesNotPersistSubscriptionSecrets(t *testing.T) {
+	err := fmt.Errorf("fetch https://airport.example.com/sub?token=subscription-secret with username=proxy-user password=proxy-pass")
+	got := safeSyncError(err)
+	for _, secret := range []string{"airport.example.com", "subscription-secret", "proxy-user", "proxy-pass"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("sync error leaked %q: %q", secret, got)
 		}
 	}
 }
@@ -1169,7 +1217,7 @@ func TestUserResourceCapacityLimitRejectsAdditionalResources(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	svc := NewUserResourceService(db, nil, nil, nil)
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM proxies WHERE owner_user_id = \$1 AND deleted_at IS NULL`).
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM proxies WHERE owner_user_id IS NOT DISTINCT FROM \$1 AND deleted_at IS NULL`).
 		WithArgs(int64(42)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(userResourceMaxProxies))
 

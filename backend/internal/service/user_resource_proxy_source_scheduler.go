@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -14,7 +15,7 @@ const (
 
 type dueUserProxySource struct {
 	ID      int64
-	OwnerID int64
+	OwnerID sql.NullInt64
 }
 
 func (s *UserResourceService) StartProxySourceScheduler(interval time.Duration) {
@@ -122,7 +123,7 @@ LIMIT $1`, userProxySourceSchedulerBatchSize)
 			continue
 		}
 		syncCtx, cancel := context.WithTimeout(ctx, userProxySourceSyncTimeout)
-		_, syncErr := s.SyncProxySource(syncCtx, source.OwnerID, source.ID)
+		syncErr := s.syncDueProxySource(syncCtx, source)
 		cancel()
 		if syncErr != nil {
 			s.markScheduledProxySourceFailure(source, syncErr)
@@ -130,13 +131,46 @@ LIMIT $1`, userProxySourceSchedulerBatchSize)
 	}
 }
 
+func (s *UserResourceService) syncDueProxySource(ctx context.Context, source dueUserProxySource) error {
+	return syncDueProxySourceWith(
+		ctx,
+		source,
+		func(ctx context.Context, sourceID int64) error {
+			_, err := s.SyncSystemProxySource(ctx, sourceID)
+			return err
+		},
+		func(ctx context.Context, ownerID, sourceID int64) error {
+			_, err := s.SyncProxySource(ctx, ownerID, sourceID)
+			return err
+		},
+	)
+}
+
+func syncDueProxySourceWith(
+	ctx context.Context,
+	source dueUserProxySource,
+	syncSystem func(context.Context, int64) error,
+	syncUser func(context.Context, int64, int64) error,
+) error {
+	if source.OwnerID.Valid {
+		return syncUser(ctx, source.OwnerID.Int64, source.ID)
+	}
+	return syncSystem(ctx, source.ID)
+}
+
+func dueProxySourceOwnerValue(ownerID sql.NullInt64) any {
+	if !ownerID.Valid {
+		return nil
+	}
+	return ownerID.Int64
+}
 func (s *UserResourceService) claimDueProxySource(ctx context.Context, source dueUserProxySource) (bool, error) {
 	result, err := s.db.ExecContext(ctx, `
 UPDATE proxy_sources
 SET last_sync_status = 'syncing', last_sync_error = NULL, updated_at = NOW()
-WHERE id = $1 AND owner_user_id = $2 AND deleted_at IS NULL
+WHERE id = $1 AND owner_user_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL
   AND (last_synced_at IS NULL OR last_synced_at + (refresh_interval_minutes * INTERVAL '1 minute') <= NOW())
-  AND (last_sync_status <> 'syncing' OR updated_at < NOW() - INTERVAL '10 minutes')`, source.ID, source.OwnerID)
+  AND (last_sync_status <> 'syncing' OR updated_at < NOW() - INTERVAL '10 minutes')`, source.ID, dueProxySourceOwnerValue(source.OwnerID))
 	if err != nil {
 		return false, err
 	}
@@ -149,7 +183,7 @@ func (s *UserResourceService) markScheduledProxySourceFailure(source dueUserProx
 	_, err := s.db.ExecContext(ctx, `
 UPDATE proxy_sources
 SET last_synced_at = NOW(), last_sync_status = 'error', last_sync_error = $1, last_imported_count = 0, updated_at = NOW()
-WHERE id = $2 AND owner_user_id = $3 AND deleted_at IS NULL`, safeSyncError(syncErr), source.ID, source.OwnerID)
+WHERE id = $2 AND owner_user_id IS NOT DISTINCT FROM $3 AND deleted_at IS NULL`, safeSyncError(syncErr), source.ID, dueProxySourceOwnerValue(source.OwnerID))
 	if err != nil {
 		logger.LegacyPrintf("service.user_resources", "mark proxy source id=%d failure failed: %v", source.ID, err)
 	}

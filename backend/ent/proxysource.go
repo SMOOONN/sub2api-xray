@@ -24,7 +24,7 @@ type ProxySource struct {
 	// DeletedAt holds the value of the "deleted_at" field.
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 	// OwnerUserID holds the value of the "owner_user_id" field.
-	OwnerUserID int64 `json:"owner_user_id,omitempty"`
+	OwnerUserID *int64 `json:"owner_user_id,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// SubscriptionURL holds the value of the "subscription_url" field.
@@ -101,7 +101,8 @@ func (_m *ProxySource) assignValues(columns []string, values []any) error {
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field owner_user_id", values[i])
 			} else if value.Valid {
-				_m.OwnerUserID = value.Int64
+				_m.OwnerUserID = new(int64)
+				*_m.OwnerUserID = value.Int64
 			}
 		case proxysource.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -200,8 +201,10 @@ func (_m *ProxySource) String() string {
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
-	builder.WriteString("owner_user_id=")
-	builder.WriteString(fmt.Sprintf("%v", _m.OwnerUserID))
+	if v := _m.OwnerUserID; v != nil {
+		builder.WriteString("owner_user_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)

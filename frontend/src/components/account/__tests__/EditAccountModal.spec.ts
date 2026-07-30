@@ -131,7 +131,9 @@ const GroupSelectorStub = defineComponent({
     modelValue: {
       type: Array,
       default: () => []
-    }
+    },
+    ownerUserId: Number,
+    enforceOwner: Boolean
   },
   emits: ['update:modelValue'],
   template: `
@@ -323,6 +325,15 @@ describe('EditAccountModal', () => {
   beforeEach(() => {
     authIsSimpleMode.value = true
     userApiPutMock.mockReset().mockResolvedValue({ data: buildAccount() })
+  })
+
+  it('passes the normalized system owner scope to GroupSelector for an admin account', () => {
+    authIsSimpleMode.value = false
+    const wrapper = mountModal(buildAccount(), 'admin')
+    const selector = wrapper.getComponent(GroupSelectorStub)
+
+    expect(selector.props('enforceOwner')).toBe(true)
+    expect(selector.props('ownerUserId')).toBe(null)
   })
 
   it('preserves the disabled status when a user-scoped account is edited', async () => {

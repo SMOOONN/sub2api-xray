@@ -1481,7 +1481,7 @@ var (
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "owner_user_id", Type: field.TypeInt64},
+		{Name: "owner_user_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "name", Type: field.TypeString, Size: 100},
 		{Name: "subscription_url", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "is_public", Type: field.TypeBool, Default: false},

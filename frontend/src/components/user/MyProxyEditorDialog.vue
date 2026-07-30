@@ -6,7 +6,7 @@
     @close="emit('close')"
   >
     <form id="my-proxy-editor-form" class="space-y-5" @submit.prevent="submit">
-      <div v-if="!proxy" class="mb-6 flex items-center border-b border-gray-200 dark:border-dark-600">
+      <div v-if="!proxy" class="mb-6 flex flex-wrap items-center border-b border-gray-200 dark:border-dark-600">
         <button
           v-for="option in creationModeOptions"
           :key="option.value"
@@ -39,7 +39,12 @@
 
         <div v-if="!proxy">
           <label class="input-label">{{ mr('proxyEditor.inputType') }}</label>
-          <Select v-model="inputMode" :options="inputModeOptions" :searchable="false" />
+          <Select
+            v-model="inputMode"
+            :options="inputModeOptions"
+            :searchable="false"
+            data-test="proxy-input-mode-selector"
+          />
         </div>
 
         <template v-if="inputMode === 'direct'">
@@ -47,7 +52,7 @@
             <label class="input-label">{{ mr('fields.protocol') }}</label>
             <Select v-model="form.protocol" :options="standardProtocolOptions" :searchable="false" />
           </div>
-          <div class="grid grid-cols-[minmax(0,1fr)_7.5rem] gap-3">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_7.5rem]">
             <div class="min-w-0">
               <label class="input-label">{{ mr('fields.host') }}</label>
               <input v-model.trim="form.host" class="input" data-test="proxy-host" required />
@@ -91,7 +96,7 @@
         </template>
 
         <template v-else-if="inputMode === 'xray'">
-          <div v-if="proxy" class="grid grid-cols-[minmax(0,1fr)_7.5rem] gap-3">
+          <div v-if="proxy" class="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_7.5rem]">
             <div class="min-w-0">
               <label class="input-label">{{ mr('fields.host') }}</label>
               <input v-model.trim="form.host" class="input" required />
@@ -157,7 +162,7 @@
           ></textarea>
         </div>
         <div v-if="batchStats.total > 0" class="rounded-lg bg-gray-50 p-4 dark:bg-dark-700">
-          <div class="grid grid-cols-4 gap-2 text-center">
+          <div class="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
             <div v-for="stat in batchStatsDisplay" :key="stat.key" :data-test="`proxy-stat-${stat.key}`" class="min-w-0 px-1">
               <div class="truncate text-xs text-gray-500 dark:text-dark-300">{{ stat.label }}</div>
               <div :class="['mt-1 text-base font-semibold', stat.class]">{{ stat.value }}</div>
@@ -295,7 +300,7 @@ const creationModeOptions = computed(() => [
   { value: 'standard' as const, label: mr('proxyEditor.standardCreate') },
   { value: 'batch' as const, label: mr('proxyEditor.batchCreate') },
 ])
-const inputModeOptions = computed<SelectOption[]>(() => [
+const inputModeOptions = computed<Array<{ value: InputMode; label: string }>>(() => [
   { value: 'direct', label: mr('proxyEditor.standardProxy') },
   { value: 'xray', label: mr('proxyEditor.xrayShare') },
   { value: 'source', label: mr('proxyEditor.providerSubscription') },

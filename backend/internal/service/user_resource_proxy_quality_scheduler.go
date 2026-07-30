@@ -16,11 +16,11 @@ const (
 )
 
 type userProxyQualityJob struct {
-	ownerID int64
+	ownerID *int64
 	proxyID int64
 }
 
-type userProxyQualityRunner func(context.Context, int64, int64) error
+type userProxyQualityRunner func(context.Context, *int64, int64) error
 
 func (s *UserResourceService) StartProxyQualityWorkers() {
 	if s == nil {
@@ -36,8 +36,8 @@ func (s *UserResourceService) StartProxyQualityWorkers() {
 	done := make(chan struct{})
 	runner := s.proxyQualityRunner
 	if runner == nil {
-		runner = func(ctx context.Context, ownerID, proxyID int64) error {
-			_, err := s.QualityCheckProxy(ctx, ownerID, proxyID)
+		runner = func(ctx context.Context, ownerID *int64, proxyID int64) error {
+			_, err := s.qualityCheckProxyForOwner(ctx, ownerID, proxyID)
 			return err
 		}
 	}
@@ -63,8 +63,8 @@ func (s *UserResourceService) StartProxyQualityWorkers() {
 						if err != nil && ctx.Err() == nil {
 							logger.LegacyPrintf(
 								"service.user_resources",
-								"automatic proxy quality check failed: owner_id=%d proxy_id=%d err=%s",
-								job.ownerID,
+								"automatic proxy quality check failed: owner_id=%v proxy_id=%d err=%s",
+								proxyQualityOwnerLogValue(job.ownerID),
 								job.proxyID,
 								logredact.RedactText(err.Error()),
 							)
@@ -102,10 +102,23 @@ func (s *UserResourceService) stopProxyQualityWorkers() {
 }
 
 func (s *UserResourceService) enqueueImportedProxyQualityChecks(ownerID int64, proxyIDs []int64) {
-	proxyIDs = uniquePositiveInt64s(proxyIDs)
-	if s == nil || ownerID <= 0 || len(proxyIDs) == 0 {
+	if ownerID <= 0 {
 		return
 	}
+	ownerCopy := ownerID
+	s.enqueueProxyQualityChecks(&ownerCopy, proxyIDs)
+}
+
+func (s *UserResourceService) enqueueSystemProxyQualityChecks(proxyIDs []int64) {
+	s.enqueueProxyQualityChecks(nil, proxyIDs)
+}
+
+func (s *UserResourceService) enqueueProxyQualityChecks(ownerID *int64, proxyIDs []int64) {
+	proxyIDs = uniquePositiveInt64s(proxyIDs)
+	if s == nil || len(proxyIDs) == 0 || (ownerID != nil && *ownerID <= 0) {
+		return
+	}
+	ownerID = cloneProxyQualityOwnerID(ownerID)
 	s.proxyQualityMu.Lock()
 	jobs := s.proxyQualityJobs
 	done := s.proxyQualityDone
@@ -123,6 +136,21 @@ func (s *UserResourceService) enqueueImportedProxyQualityChecks(ownerID int64, p
 			}
 		}
 	}(append([]int64(nil), proxyIDs...))
+}
+
+func cloneProxyQualityOwnerID(ownerID *int64) *int64 {
+	if ownerID == nil {
+		return nil
+	}
+	ownerCopy := *ownerID
+	return &ownerCopy
+}
+
+func proxyQualityOwnerLogValue(ownerID *int64) any {
+	if ownerID == nil {
+		return "system"
+	}
+	return *ownerID
 }
 
 func proxyIDsFromResourceItems(items []map[string]any) []int64 {

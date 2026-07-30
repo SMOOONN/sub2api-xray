@@ -37,7 +37,13 @@ var (
 	ErrUserResourceInvalid   = infraerrors.BadRequest("USER_RESOURCE_INVALID", "invalid user resource payload")
 )
 
-var resourceAuthHeaderPattern = regexp.MustCompile(`(?i)\b((?:authorization|proxy[-_]?authorization)\s*[:=]\s*)(?:bearer|basic)\s+[^\s,&}]+`)
+var (
+	resourceAuthHeaderPattern      = regexp.MustCompile(`(?i)\b((?:authorization|proxy[-_]?authorization)\s*[:=]\s*)(?:bearer|basic)\s+[^\s,&}]+`)
+	proxyImportURLPattern          = regexp.MustCompile(`(?i)\b(?:https?|socks(?:5h?)?|vmess|vless|trojan|ss|hysteria2?|hy2|tuic|anytls|naive(?:\+https|\+quic)?|wireguard|wg)://[^\s,;]+`)
+	proxyImportCredentialPattern   = regexp.MustCompile(`(?i)\b[^\s/@:]+:[^\s/@]+@(?:\[[0-9a-f:]+\]|[a-z0-9.-]+)(?::\d{1,5})?`)
+	proxyImportEndpointPattern     = regexp.MustCompile(`(?i)\b(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|(?:\d{1,3}\.){3}\d{1,3})(?::\d{1,5})?\b`)
+	proxyImportOpaqueSecretPattern = regexp.MustCompile(`\b[A-Za-z0-9_-]{32,}\b`)
+)
 
 const (
 	userResourceBatchMaxItems   = 1000
@@ -89,6 +95,25 @@ type userResourceDBTX interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func userResourceOwner(ownerID int64) *int64 {
+	owner := ownerID
+	return &owner
+}
+
+func userResourceOwnerValue(ownerID *int64) any {
+	if ownerID == nil {
+		return nil
+	}
+	return *ownerID
+}
+
+func userResourceOwnerMatches(value any, ownerID *int64) bool {
+	if ownerID == nil {
+		return value == nil
+	}
+	return urToInt64(value) == *ownerID
 }
 
 type userResourceOAuthSession struct {
@@ -750,6 +775,15 @@ func (s *UserResourceService) ensureDB() error {
 }
 
 func (s *UserResourceService) ensureOwnedResourceCapacity(ctx context.Context, table string, ownerID int64, limit int) error {
+	return s.ensureResourceCapacityForOwner(ctx, table, userResourceOwner(ownerID), limit)
+}
+
+func (s *UserResourceService) ensureResourceCapacityForOwner(ctx context.Context, table string, ownerID *int64, limit int) error {
+	// System resources remain governed by administrator access rather than the
+	// per-user resource quotas used by /my endpoints.
+	if ownerID == nil {
+		return nil
+	}
 	if limit <= 0 {
 		return infraerrors.New(http.StatusTooManyRequests, "USER_RESOURCE_LIMIT_REACHED", "resource limit reached")
 	}
@@ -759,8 +793,8 @@ func (s *UserResourceService) ensureOwnedResourceCapacity(ctx context.Context, t
 		return fmt.Errorf("unsupported owned resource table %q", table)
 	}
 	var count int
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE owner_user_id = $1 AND deleted_at IS NULL", table)
-	if err := s.db.QueryRowContext(ctx, query, ownerID).Scan(&count); err != nil {
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE owner_user_id IS NOT DISTINCT FROM $1 AND deleted_at IS NULL", table)
+	if err := s.db.QueryRowContext(ctx, query, userResourceOwnerValue(ownerID)).Scan(&count); err != nil {
 		return err
 	}
 	if count >= limit {
@@ -2126,11 +2160,45 @@ LIMIT 1`, proxyID, ownerID)
 	return item, nil
 }
 
+func (s *UserResourceService) getProxyForExactOwner(ctx context.Context, ownerID *int64, proxyID int64) (map[string]any, error) {
+	if err := s.ensureDB(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT
+  p.id, p.owner_user_id, p.is_public, p.kind, p.name, p.protocol, p.host, p.port,
+  p.username, p.password, (COALESCE(p.username, '') <> '' OR COALESCE(p.password, '') <> '') AS has_auth,
+  p.status, p.expires_at, p.fallback_mode, p.backup_proxy_id, p.expiry_warn_days,
+  COALESCE(p.extra, '{}'::jsonb)::text AS extra, p.created_at, p.updated_at,
+  (SELECT COUNT(*) FROM accounts a WHERE a.proxy_id = p.id AND a.deleted_at IS NULL)::bigint AS account_count
+FROM proxies p
+WHERE p.id = $1
+  AND p.owner_user_id IS NOT DISTINCT FROM $2
+  AND p.deleted_at IS NULL
+LIMIT 1`, proxyID, userResourceOwnerValue(ownerID))
+	if err != nil {
+		return nil, err
+	}
+	items, err := scanRowsToMaps(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, ErrUserResourceNotFound
+	}
+	s.attachProxyObservability(ctx, items)
+	return items[0], nil
+}
+
 func (s *UserResourceService) CreateProxy(ctx context.Context, ownerID int64, payload map[string]any) (map[string]any, error) {
 	return s.createProxy(ctx, ownerID, payload, false)
 }
 
 func (s *UserResourceService) createProxy(ctx context.Context, ownerID int64, payload map[string]any, preserveSourceMetadata bool) (map[string]any, error) {
+	return s.createProxyForOwner(ctx, userResourceOwner(ownerID), payload, preserveSourceMetadata)
+}
+
+func (s *UserResourceService) createProxyForOwner(ctx context.Context, ownerID *int64, payload map[string]any, preserveSourceMetadata bool) (map[string]any, error) {
 	if err := s.ensureDB(); err != nil {
 		return nil, err
 	}
@@ -2146,17 +2214,17 @@ func (s *UserResourceService) createProxy(ctx context.Context, ownerID int64, pa
 		"expiry_warn_days": 7,
 		"extra":            map[string]any{},
 	})
-	if err := s.normalizeAndValidateProxyPayload(ctx, ownerID, 0, nil, payload); err != nil {
+	if err := s.normalizeAndValidateProxyPayloadForOwner(ctx, ownerID, 0, nil, payload); err != nil {
 		return nil, err
 	}
-	if err := s.ensureOwnedResourceCapacity(ctx, "proxies", ownerID, userResourceMaxProxies); err != nil {
+	if err := s.ensureResourceCapacityForOwner(ctx, "proxies", ownerID, userResourceMaxProxies); err != nil {
 		return nil, err
 	}
-	id, err := s.insertOwned(ctx, "proxies", ownerID, proxyWritableColumns, payload, []string{"name", "protocol", "host", "port"})
+	id, err := s.insertForOwnerWith(ctx, s.db, "proxies", ownerID, proxyWritableColumns, payload, []string{"name", "protocol", "host", "port"})
 	if err != nil {
 		return nil, err
 	}
-	return s.GetProxy(ctx, ownerID, id)
+	return s.getProxyForExactOwner(ctx, ownerID, id)
 }
 
 func (s *UserResourceService) UpdateProxy(ctx context.Context, ownerID, proxyID int64, payload map[string]any) (map[string]any, error) {
@@ -2421,6 +2489,22 @@ func (s *UserResourceService) TestProxy(ctx context.Context, ownerID, proxyID in
 }
 
 func (s *UserResourceService) ImportProxyNodes(ctx context.Context, ownerID int64, namePrefix, raw string, isPublic bool) (*ProxyImportResult, error) {
+	result, err := s.importProxyNodesForOwner(ctx, userResourceOwner(ownerID), namePrefix, raw, isPublic)
+	if err == nil {
+		s.enqueueImportedProxyQualityChecks(ownerID, proxyIDsFromResourceItems(result.Created))
+	}
+	return result, err
+}
+
+func (s *UserResourceService) ImportSystemProxyNodes(ctx context.Context, namePrefix, raw string, isPublic bool) (*ProxyImportResult, error) {
+	result, err := s.importProxyNodesForOwner(ctx, nil, namePrefix, raw, isPublic)
+	if err == nil {
+		s.enqueueSystemProxyQualityChecks(proxyIDsFromResourceItems(result.Created))
+	}
+	return result, err
+}
+
+func (s *UserResourceService) importProxyNodesForOwner(ctx context.Context, ownerID *int64, namePrefix, raw string, isPublic bool) (*ProxyImportResult, error) {
 	if err := s.ensureDB(); err != nil {
 		return nil, err
 	}
@@ -2431,7 +2515,7 @@ func (s *UserResourceService) ImportProxyNodes(ctx context.Context, ownerID int6
 	result := &ProxyImportResult{Created: []map[string]any{}, Errors: []string{}}
 	for i, node := range nodes {
 		if node.Err != "" {
-			result.Errors = append(result.Errors, node.Err)
+			result.Errors = append(result.Errors, formatProxyImportError(i, node.Err))
 			continue
 		}
 		name := node.Name
@@ -2452,14 +2536,13 @@ func (s *UserResourceService) ImportProxyNodes(ctx context.Context, ownerID int6
 			"password":  node.Password,
 			"extra":     map[string]any{"raw": node.Raw, "network": node.Network},
 		}
-		created, err := s.CreateProxy(ctx, ownerID, payload)
+		created, err := s.createProxyForOwner(ctx, ownerID, payload, false)
 		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", name, err))
+			result.Errors = append(result.Errors, formatProxyImportError(i, err.Error()))
 			continue
 		}
 		result.Created = append(result.Created, created)
 	}
-	s.enqueueImportedProxyQualityChecks(ownerID, proxyIDsFromResourceItems(result.Created))
 	return result, nil
 }
 
@@ -2495,7 +2578,11 @@ ORDER BY id ASC`, args...)
 }
 
 func (s *UserResourceService) QualityCheckProxy(ctx context.Context, ownerID, proxyID int64) (*ProxyQualityCheckResult, error) {
-	proxyItem, err := s.getSelectableProxyRaw(ctx, ownerID, proxyID)
+	return s.qualityCheckProxyForOwner(ctx, userResourceOwner(ownerID), proxyID)
+}
+
+func (s *UserResourceService) qualityCheckProxyForOwner(ctx context.Context, ownerID *int64, proxyID int64) (*ProxyQualityCheckResult, error) {
+	proxyItem, err := s.getSelectableProxyRawForOwner(ctx, ownerID, proxyID)
 	if err != nil {
 		return nil, err
 	}
@@ -2506,7 +2593,7 @@ func (s *UserResourceService) QualityCheckProxy(ctx context.Context, ownerID, pr
 		CheckedAt: time.Now().Unix(),
 		Items:     make([]ProxyQualityCheckItem, 0, len(proxyQualityTargets)+1),
 	}
-	if urToInt64(proxyItem["owner_user_id"]) != ownerID {
+	if !userResourceOwnerMatches(proxyItem["owner_user_id"], ownerID) {
 		defer func() {
 			result.ExitIP = ""
 			for index := range result.Items {
@@ -2643,12 +2730,20 @@ func (s *UserResourceService) saveUserProxyQualitySnapshot(
 }
 
 func (s *UserResourceService) ListProxySources(ctx context.Context, ownerID int64, opts UserResourceListOptions) (*UserResourcePage, error) {
+	return s.listProxySourcesForOwner(ctx, userResourceOwner(ownerID), opts)
+}
+
+func (s *UserResourceService) ListSystemProxySources(ctx context.Context, opts UserResourceListOptions) (*UserResourcePage, error) {
+	return s.listProxySourcesForOwner(ctx, nil, opts)
+}
+
+func (s *UserResourceService) listProxySourcesForOwner(ctx context.Context, ownerID *int64, opts UserResourceListOptions) (*UserResourcePage, error) {
 	if err := s.ensureDB(); err != nil {
 		return nil, err
 	}
 	page, pageSize := normalizeResourcePage(opts.Page, opts.PageSize)
-	args := []any{ownerID}
-	where := []string{"owner_user_id = $1", "deleted_at IS NULL"}
+	args := []any{userResourceOwnerValue(ownerID)}
+	where := []string{"owner_user_id IS NOT DISTINCT FROM $1", "deleted_at IS NULL"}
 	if opts.Status != "" {
 		where = append(where, "last_sync_status = "+nextArg(&args, opts.Status))
 	}
@@ -2682,6 +2777,14 @@ LIMIT `+limitArg+` OFFSET `+offsetArg, args...)
 }
 
 func (s *UserResourceService) CreateProxySource(ctx context.Context, ownerID int64, payload map[string]any) (map[string]any, error) {
+	return s.createProxySourceForOwner(ctx, userResourceOwner(ownerID), payload)
+}
+
+func (s *UserResourceService) CreateSystemProxySource(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	return s.createProxySourceForOwner(ctx, nil, payload)
+}
+
+func (s *UserResourceService) createProxySourceForOwner(ctx context.Context, ownerID *int64, payload map[string]any) (map[string]any, error) {
 	if err := s.ensureDB(); err != nil {
 		return nil, err
 	}
@@ -2693,7 +2796,7 @@ func (s *UserResourceService) CreateProxySource(ctx context.Context, ownerID int
 	if err := validateExternalHTTPURL(ctx, subscriptionURL); err != nil {
 		return nil, err
 	}
-	if err := s.ensureOwnedResourceCapacity(ctx, "proxy_sources", ownerID, userResourceMaxProxySources); err != nil {
+	if err := s.ensureResourceCapacityForOwner(ctx, "proxy_sources", ownerID, userResourceMaxProxySources); err != nil {
 		return nil, err
 	}
 	interval := toInt(payload["refresh_interval_minutes"])
@@ -2715,14 +2818,18 @@ func (s *UserResourceService) CreateProxySource(ctx context.Context, ownerID int
 	err := s.db.QueryRowContext(ctx, `
 INSERT INTO proxy_sources (owner_user_id, name, subscription_url, is_public, refresh_interval_minutes, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-RETURNING id`, ownerID, name, subscriptionURL, isPublic, interval).Scan(&id)
+RETURNING id`, userResourceOwnerValue(ownerID), name, subscriptionURL, isPublic, interval).Scan(&id)
 	if err != nil {
 		return nil, err
 	}
-	return s.GetProxySource(ctx, ownerID, id)
+	return s.getProxySourceForOwner(ctx, ownerID, id)
 }
 
 func (s *UserResourceService) GetProxySource(ctx context.Context, ownerID, sourceID int64) (map[string]any, error) {
+	return s.getProxySourceForOwner(ctx, userResourceOwner(ownerID), sourceID)
+}
+
+func (s *UserResourceService) getProxySourceForOwner(ctx context.Context, ownerID *int64, sourceID int64) (map[string]any, error) {
 	if err := s.ensureDB(); err != nil {
 		return nil, err
 	}
@@ -2731,8 +2838,8 @@ SELECT id, owner_user_id, name, subscription_url, is_public, refresh_interval_mi
        last_synced_at, last_sync_status, last_sync_error, last_imported_count,
        created_at, updated_at
 FROM proxy_sources
-WHERE id = $1 AND owner_user_id = $2 AND deleted_at IS NULL
-LIMIT 1`, sourceID, ownerID)
+WHERE id = $1 AND owner_user_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL
+LIMIT 1`, sourceID, userResourceOwnerValue(ownerID))
 	if err != nil {
 		return nil, err
 	}
@@ -2747,6 +2854,14 @@ LIMIT 1`, sourceID, ownerID)
 }
 
 func (s *UserResourceService) UpdateProxySource(ctx context.Context, ownerID, sourceID int64, payload map[string]any) (map[string]any, error) {
+	return s.updateProxySourceForOwner(ctx, userResourceOwner(ownerID), sourceID, payload)
+}
+
+func (s *UserResourceService) UpdateSystemProxySource(ctx context.Context, sourceID int64, payload map[string]any) (map[string]any, error) {
+	return s.updateProxySourceForOwner(ctx, nil, sourceID, payload)
+}
+
+func (s *UserResourceService) updateProxySourceForOwner(ctx context.Context, ownerID *int64, sourceID int64, payload map[string]any) (map[string]any, error) {
 	if err := s.ensureDB(); err != nil {
 		return nil, err
 	}
@@ -2790,10 +2905,10 @@ func (s *UserResourceService) UpdateProxySource(ctx context.Context, ownerID, so
 		visibilityChanged = true
 	}
 	if len(assignments) == 0 {
-		return s.GetProxySource(ctx, ownerID, sourceID)
+		return s.getProxySourceForOwner(ctx, ownerID, sourceID)
 	}
 	assignments = append(assignments, "updated_at = NOW()")
-	args = append(args, sourceID, ownerID)
+	args = append(args, sourceID, userResourceOwnerValue(ownerID))
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -2801,7 +2916,7 @@ func (s *UserResourceService) UpdateProxySource(ctx context.Context, ownerID, so
 	defer func() { _ = tx.Rollback() }()
 	res, err := tx.ExecContext(ctx, fmt.Sprintf(`
 UPDATE proxy_sources SET %s
-WHERE id = $%d AND owner_user_id = $%d AND deleted_at IS NULL`, strings.Join(assignments, ", "), len(args)-1, len(args)), args...)
+WHERE id = $%d AND owner_user_id IS NOT DISTINCT FROM $%d AND deleted_at IS NULL`, strings.Join(assignments, ", "), len(args)-1, len(args)), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2813,18 +2928,26 @@ WHERE id = $%d AND owner_user_id = $%d AND deleted_at IS NULL`, strings.Join(ass
 		if _, err := tx.ExecContext(ctx, `
 UPDATE proxies
 SET is_public = $1, updated_at = NOW()
-WHERE owner_user_id = $2 AND deleted_at IS NULL AND extra->>'source_id' = $3`,
-			isPublic, ownerID, strconv.FormatInt(sourceID, 10)); err != nil {
+WHERE owner_user_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL AND extra->>'source_id' = $3`,
+			isPublic, userResourceOwnerValue(ownerID), strconv.FormatInt(sourceID, 10)); err != nil {
 			return nil, err
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return s.GetProxySource(ctx, ownerID, sourceID)
+	return s.getProxySourceForOwner(ctx, ownerID, sourceID)
 }
 
 func (s *UserResourceService) DeleteProxySource(ctx context.Context, ownerID, sourceID int64) error {
+	return s.deleteProxySourceForOwner(ctx, userResourceOwner(ownerID), sourceID)
+}
+
+func (s *UserResourceService) DeleteSystemProxySource(ctx context.Context, sourceID int64) error {
+	return s.deleteProxySourceForOwner(ctx, nil, sourceID)
+}
+
+func (s *UserResourceService) deleteProxySourceForOwner(ctx context.Context, ownerID *int64, sourceID int64) error {
 	if err := s.ensureDB(); err != nil {
 		return err
 	}
@@ -2835,7 +2958,7 @@ func (s *UserResourceService) DeleteProxySource(ctx context.Context, ownerID, so
 	defer func() { _ = tx.Rollback() }()
 	res, err := tx.ExecContext(ctx, `
 UPDATE proxy_sources SET deleted_at = NOW(), updated_at = NOW()
-WHERE id = $1 AND owner_user_id = $2 AND deleted_at IS NULL`, sourceID, ownerID)
+WHERE id = $1 AND owner_user_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL`, sourceID, userResourceOwnerValue(ownerID))
 	if err != nil {
 		return err
 	}
@@ -2859,14 +2982,22 @@ WHERE id = $1 AND owner_user_id = $2 AND deleted_at IS NULL`, sourceID, ownerID)
 	}
 	for _, proxyID := range staleIDs {
 		if err := stopProxyRuntimesWithRetry(proxyID); err != nil {
-			slog.Error("user proxy source runtime cleanup failed", "owner_user_id", ownerID, "source_id", sourceID, "proxy_id", proxyID, "error", err)
+			slog.Error("proxy source runtime cleanup failed", "owner_user_id", userResourceOwnerValue(ownerID), "source_id", sourceID, "proxy_id", proxyID, "error", err)
 		}
 	}
 	return nil
 }
 
 func (s *UserResourceService) SyncProxySource(ctx context.Context, ownerID, sourceID int64) (*ProxySourceSyncResult, error) {
-	source, err := s.GetProxySource(ctx, ownerID, sourceID)
+	return s.syncProxySourceForOwner(ctx, userResourceOwner(ownerID), sourceID)
+}
+
+func (s *UserResourceService) SyncSystemProxySource(ctx context.Context, sourceID int64) (*ProxySourceSyncResult, error) {
+	return s.syncProxySourceForOwner(ctx, nil, sourceID)
+}
+
+func (s *UserResourceService) syncProxySourceForOwner(ctx context.Context, ownerID *int64, sourceID int64) (*ProxySourceSyncResult, error) {
+	source, err := s.getProxySourceForOwner(ctx, ownerID, sourceID)
 	if err != nil {
 		return nil, err
 	}
@@ -2886,7 +3017,12 @@ func (s *UserResourceService) SyncProxySource(ctx context.Context, ownerID, sour
 		return nil, err
 	}
 	status, importedCount, _ := proxySourceSyncSummary(imported)
-	s.enqueueImportedProxyQualityChecks(ownerID, proxyIDsForProxySourceQualityChecks(imported))
+	qualityProxyIDs := proxyIDsForProxySourceQualityChecks(imported)
+	if ownerID == nil {
+		s.enqueueSystemProxyQualityChecks(qualityProxyIDs)
+	} else {
+		s.enqueueImportedProxyQualityChecks(*ownerID, qualityProxyIDs)
+	}
 	return &ProxySourceSyncResult{
 		SourceID:      sourceID,
 		Status:        status,
@@ -2899,7 +3035,7 @@ func (s *UserResourceService) SyncProxySource(ctx context.Context, ownerID, sour
 	}, nil
 }
 
-func (s *UserResourceService) syncProxySourceNodes(ctx context.Context, ownerID, sourceID int64, sourceName, raw string, isPublic bool) (*ProxyImportResult, error) {
+func (s *UserResourceService) syncProxySourceNodes(ctx context.Context, ownerID *int64, sourceID int64, sourceName, raw string, isPublic bool) (*ProxyImportResult, error) {
 	nodes := parseProxyNodeLines(raw)
 	if len(nodes) > userResourceBatchMaxItems {
 		return nil, infraerrors.BadRequest("USER_RESOURCE_BATCH_TOO_LARGE", "proxy imports cannot exceed 1000 nodes")
@@ -2918,7 +3054,7 @@ func (s *UserResourceService) syncProxySourceNodes(ctx context.Context, ownerID,
 	keyOccurrences := make(map[string]int, len(nodes))
 	for index, node := range nodes {
 		if node.Err != "" {
-			result.Errors = append(result.Errors, fmt.Sprintf("entry %d: %s", index+1, node.Err))
+			result.Errors = append(result.Errors, formatProxyImportError(index, node.Err))
 			continue
 		}
 		baseKey := proxySourceNodeBaseKey(node)
@@ -2949,7 +3085,7 @@ func (s *UserResourceService) syncProxySourceNodes(ctx context.Context, ownerID,
 				"expiry_warn_days": 7,
 			})
 		}
-		if err := s.normalizeAndValidateProxyPayload(ctx, ownerID, proxyID, existing, payload); err != nil {
+		if err := s.normalizeAndValidateProxyPayloadForOwner(ctx, ownerID, proxyID, existing, payload); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("entry %d: validation failed", index+1))
 			continue
 		}
@@ -2966,8 +3102,8 @@ func (s *UserResourceService) syncProxySourceNodes(ctx context.Context, ownerID,
 	var lockedSourceID int64
 	if err := tx.QueryRowContext(ctx, `
 SELECT id FROM proxy_sources
-WHERE id = $1 AND owner_user_id = $2 AND deleted_at IS NULL
-FOR UPDATE`, sourceID, ownerID).Scan(&lockedSourceID); err != nil {
+WHERE id = $1 AND owner_user_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL
+FOR UPDATE`, sourceID, userResourceOwnerValue(ownerID)).Scan(&lockedSourceID); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrUserResourceNotFound
 		}
@@ -2983,9 +3119,9 @@ FOR UPDATE`, sourceID, ownerID).Scan(&lockedSourceID); err != nil {
 			newCount++
 		}
 	}
-	if newCount > 0 {
+	if newCount > 0 && ownerID != nil {
 		var ownedCount int
-		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM proxies WHERE owner_user_id = $1 AND deleted_at IS NULL", ownerID).Scan(&ownedCount); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM proxies WHERE owner_user_id IS NOT DISTINCT FROM $1 AND deleted_at IS NULL", userResourceOwnerValue(ownerID)).Scan(&ownedCount); err != nil {
 			return nil, err
 		}
 		if ownedCount+newCount > userResourceMaxProxies {
@@ -2997,7 +3133,7 @@ FOR UPDATE`, sourceID, ownerID).Scan(&lockedSourceID); err != nil {
 		payload := clonePayload(candidate.payload)
 		if current := currentByKey[candidate.key]; current != nil {
 			proxyID := urToInt64(current["id"])
-			if err := s.updateOwnedWith(ctx, tx, "proxies", ownerID, proxyID, proxyWritableColumns, payload); err != nil {
+			if err := s.updateForOwnerWith(ctx, tx, "proxies", ownerID, proxyID, proxyWritableColumns, payload); err != nil {
 				return nil, err
 			}
 			updatedRuntimeIDs = append(updatedRuntimeIDs, proxyID)
@@ -3009,7 +3145,7 @@ FOR UPDATE`, sourceID, ownerID).Scan(&lockedSourceID); err != nil {
 			"expiry_warn_days": 7,
 			"extra":            map[string]any{},
 		})
-		proxyID, err := s.insertOwnedWith(ctx, tx, "proxies", ownerID, proxyWritableColumns, payload, []string{"name", "protocol", "host", "port"})
+		proxyID, err := s.insertForOwnerWith(ctx, tx, "proxies", ownerID, proxyWritableColumns, payload, []string{"name", "protocol", "host", "port"})
 		if err != nil {
 			return nil, err
 		}
@@ -3036,7 +3172,7 @@ FOR UPDATE`, sourceID, ownerID).Scan(&lockedSourceID); err != nil {
 UPDATE proxy_sources
 SET last_synced_at = NOW(), last_sync_status = $1, last_sync_error = $2,
     last_imported_count = $3, updated_at = NOW()
-WHERE id = $4 AND owner_user_id = $5 AND deleted_at IS NULL`, status, errorText, importedCount, sourceID, ownerID)
+WHERE id = $4 AND owner_user_id IS NOT DISTINCT FROM $5 AND deleted_at IS NULL`, status, errorText, importedCount, sourceID, userResourceOwnerValue(ownerID))
 	if err != nil {
 		return nil, err
 	}
@@ -3054,19 +3190,19 @@ WHERE id = $4 AND owner_user_id = $5 AND deleted_at IS NULL`, status, errorText,
 	}
 	for _, proxyID := range runtimeIDs {
 		if err := stopProxyRuntimesWithRetry(proxyID); err != nil {
-			slog.Error("user proxy source runtime cleanup failed after sync", "owner_user_id", ownerID, "source_id", sourceID, "proxy_id", proxyID, "error", err)
+			slog.Error("proxy source runtime cleanup failed after sync", "owner_user_id", userResourceOwnerValue(ownerID), "source_id", sourceID, "proxy_id", proxyID, "error", err)
 		}
 	}
 	return result, nil
 }
 
-func proxySourceNodesByKey(ctx context.Context, db userResourceDBTX, ownerID, sourceID int64) (map[string]map[string]any, error) {
+func proxySourceNodesByKey(ctx context.Context, db userResourceDBTX, ownerID *int64, sourceID int64) (map[string]map[string]any, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT id, owner_user_id, is_public, kind, name, protocol, host, port,
        username, password, status, expires_at, fallback_mode, backup_proxy_id,
        expiry_warn_days, COALESCE(extra, '{}'::jsonb)::text AS extra
 FROM proxies
-WHERE owner_user_id = $1 AND deleted_at IS NULL AND extra->>'source_id' = $2`, ownerID, strconv.FormatInt(sourceID, 10))
+WHERE owner_user_id IS NOT DISTINCT FROM $1 AND deleted_at IS NULL AND extra->>'source_id' = $2`, userResourceOwnerValue(ownerID), strconv.FormatInt(sourceID, 10))
 	if err != nil {
 		return nil, err
 	}
@@ -3084,10 +3220,10 @@ WHERE owner_user_id = $1 AND deleted_at IS NULL AND extra->>'source_id' = $2`, o
 	return result, nil
 }
 
-func proxySourceMutationItem(proxyID, ownerID int64, payload map[string]any) map[string]any {
+func proxySourceMutationItem(proxyID int64, ownerID *int64, payload map[string]any) map[string]any {
 	item := clonePayload(payload)
 	item["id"] = proxyID
-	item["owner_user_id"] = ownerID
+	item["owner_user_id"] = userResourceOwnerValue(ownerID)
 	item["has_auth"] = urAsString(payload["username"]) != "" || urAsString(payload["password"]) != ""
 	return item
 }
@@ -3096,6 +3232,7 @@ func proxySourceSyncSummary(result *ProxyImportResult) (string, int, string) {
 	if result == nil {
 		return "error", 0, "proxy source sync returned no result"
 	}
+	result.Errors = redactProxyImportErrors(result.Errors)
 	status := "success"
 	if len(result.Errors) > 0 {
 		status = "partial"
@@ -3111,11 +3248,11 @@ func proxySourceSyncSummary(result *ProxyImportResult) (string, int, string) {
 	return status, importedCount, errorText
 }
 
-func (s *UserResourceService) recordProxySourceSyncError(ctx context.Context, ownerID, sourceID int64, syncErr error) error {
+func (s *UserResourceService) recordProxySourceSyncError(ctx context.Context, ownerID *int64, sourceID int64, syncErr error) error {
 	res, err := s.db.ExecContext(ctx, `
 UPDATE proxy_sources
 SET last_synced_at = NOW(), last_sync_status = 'error', last_sync_error = $1, updated_at = NOW()
-WHERE id = $2 AND owner_user_id = $3 AND deleted_at IS NULL`, safeSyncError(syncErr), sourceID, ownerID)
+WHERE id = $2 AND owner_user_id IS NOT DISTINCT FROM $3 AND deleted_at IS NULL`, safeSyncError(syncErr), sourceID, userResourceOwnerValue(ownerID))
 	if err != nil {
 		return err
 	}
@@ -3125,14 +3262,14 @@ WHERE id = $2 AND owner_user_id = $3 AND deleted_at IS NULL`, safeSyncError(sync
 	return nil
 }
 
-func (s *UserResourceService) disableMissingProxySourceNodesWith(ctx context.Context, db userResourceDBTX, ownerID, sourceID int64, activeKeys []string) ([]int64, []int64, error) {
+func (s *UserResourceService) disableMissingProxySourceNodesWith(ctx context.Context, db userResourceDBTX, ownerID *int64, sourceID int64, activeKeys []string) ([]int64, []int64, error) {
 	rows, err := db.QueryContext(ctx, `
 UPDATE proxies
 SET status = 'disabled', updated_at = NOW()
-WHERE owner_user_id = $1 AND deleted_at IS NULL AND status <> 'disabled'
+WHERE owner_user_id IS NOT DISTINCT FROM $1 AND deleted_at IS NULL AND status <> 'disabled'
   AND extra->>'source_id' = $2
   AND NOT (extra->>'source_node_key' = ANY($3))
-RETURNING id`, ownerID, strconv.FormatInt(sourceID, 10), pq.Array(activeKeys))
+RETURNING id`, userResourceOwnerValue(ownerID), strconv.FormatInt(sourceID, 10), pq.Array(activeKeys))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -4062,14 +4199,21 @@ func (s *UserResourceService) validateOwnedAccountIDs(ctx context.Context, owner
 }
 
 func (s *UserResourceService) validateProxySelectable(ctx context.Context, ownerID, proxyID int64) error {
+	return s.validateProxySelectableForOwner(ctx, userResourceOwner(ownerID), proxyID)
+}
+
+func (s *UserResourceService) validateProxySelectableForOwner(ctx context.Context, ownerID *int64, proxyID int64) error {
 	var ok bool
 	err := s.db.QueryRowContext(ctx, `
 SELECT EXISTS (
   SELECT 1 FROM proxies
   WHERE id = $1 AND deleted_at IS NULL
     AND status = 'active' AND (expires_at IS NULL OR expires_at > NOW())
-    AND (owner_user_id = $2 OR is_public = true)
-)`, proxyID, ownerID).Scan(&ok)
+    AND (
+      ($2::bigint IS NULL AND owner_user_id IS NULL)
+      OR ($2::bigint IS NOT NULL AND (owner_user_id = $2 OR is_public = true))
+    )
+)`, proxyID, userResourceOwnerValue(ownerID)).Scan(&ok)
 	if err != nil {
 		return err
 	}
@@ -4159,17 +4303,21 @@ func (s *UserResourceService) validateGroupSubscriberIDs(ctx context.Context, ow
 }
 
 func (s *UserResourceService) insertOwned(ctx context.Context, table string, ownerID int64, specs map[string]columnSpec, payload map[string]any, required []string) (int64, error) {
-	return s.insertOwnedWith(ctx, s.db, table, ownerID, specs, payload, required)
+	return s.insertForOwnerWith(ctx, s.db, table, userResourceOwner(ownerID), specs, payload, required)
 }
 
 func (s *UserResourceService) insertOwnedWith(ctx context.Context, db userResourceDBTX, table string, ownerID int64, specs map[string]columnSpec, payload map[string]any, required []string) (int64, error) {
+	return s.insertForOwnerWith(ctx, db, table, userResourceOwner(ownerID), specs, payload, required)
+}
+
+func (s *UserResourceService) insertForOwnerWith(ctx context.Context, db userResourceDBTX, table string, ownerID *int64, specs map[string]columnSpec, payload map[string]any, required []string) (int64, error) {
 	for _, key := range required {
 		if _, ok := payload[key]; !ok || isBlank(payload[key]) {
 			return 0, infraerrors.BadRequest("RESOURCE_REQUIRED_FIELD", key+" is required")
 		}
 	}
 	cols := []string{"owner_user_id", "created_at", "updated_at"}
-	args := []any{ownerID, time.Now(), time.Now()}
+	args := []any{userResourceOwnerValue(ownerID), time.Now(), time.Now()}
 	placeholders := []string{"$1", "$2", "$3"}
 	keys := urSortedKeys(payload)
 	for _, key := range keys {
@@ -4194,10 +4342,14 @@ func (s *UserResourceService) insertOwnedWith(ctx context.Context, db userResour
 }
 
 func (s *UserResourceService) updateOwned(ctx context.Context, table string, ownerID, id int64, specs map[string]columnSpec, payload map[string]any) error {
-	return s.updateOwnedWith(ctx, s.db, table, ownerID, id, specs, payload)
+	return s.updateForOwnerWith(ctx, s.db, table, userResourceOwner(ownerID), id, specs, payload)
 }
 
 func (s *UserResourceService) updateOwnedWith(ctx context.Context, db userResourceDBTX, table string, ownerID, id int64, specs map[string]columnSpec, payload map[string]any) error {
+	return s.updateForOwnerWith(ctx, db, table, userResourceOwner(ownerID), id, specs, payload)
+}
+
+func (s *UserResourceService) updateForOwnerWith(ctx context.Context, db userResourceDBTX, table string, ownerID *int64, id int64, specs map[string]columnSpec, payload map[string]any) error {
 	assignments := []string{}
 	args := []any{}
 	for _, key := range urSortedKeys(payload) {
@@ -4216,8 +4368,8 @@ func (s *UserResourceService) updateOwnedWith(ctx context.Context, db userResour
 		return nil
 	}
 	assignments = append(assignments, "updated_at = NOW()")
-	args = append(args, id, ownerID)
-	query := fmt.Sprintf("UPDATE %s SET %s WHERE id = $%d AND owner_user_id = $%d AND deleted_at IS NULL", table, strings.Join(assignments, ", "), len(args)-1, len(args))
+	args = append(args, id, userResourceOwnerValue(ownerID))
+	query := fmt.Sprintf("UPDATE %s SET %s WHERE id = $%d AND owner_user_id IS NOT DISTINCT FROM $%d AND deleted_at IS NULL", table, strings.Join(assignments, ", "), len(args)-1, len(args))
 	res, err := db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return translateUserResourceProxyConstraintError(err)
@@ -5232,6 +5384,48 @@ func RedactProxyPageForUserResponse(page *UserResourcePage) {
 	}
 }
 
+func redactProxyImportErrorText(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "proxy import failed"
+	}
+	value = resourceAuthHeaderPattern.ReplaceAllString(value, `$1***`)
+	value = logredact.RedactText(value,
+		"api_key", "apikey", "authorization", "host", "key", "node", "password",
+		"proxy_authorization", "proxy-authorization", "raw", "secret", "subscription_url",
+		"token", "uri", "url", "username",
+	)
+	value = proxyImportURLPattern.ReplaceAllString(value, "<proxy-uri-redacted>")
+	value = proxyImportCredentialPattern.ReplaceAllString(value, "<proxy-credentials-redacted>")
+	value = proxyImportEndpointPattern.ReplaceAllString(value, "<proxy-endpoint-redacted>")
+	value = proxyImportOpaqueSecretPattern.ReplaceAllString(value, "***")
+	value = strings.TrimSpace(value)
+	if value == "" || value == "***" {
+		return "proxy import failed"
+	}
+	const maxProxyImportErrorRunes = 512
+	runes := []rune(value)
+	if len(runes) > maxProxyImportErrorRunes {
+		value = string(runes[:maxProxyImportErrorRunes])
+	}
+	return value
+}
+
+func formatProxyImportError(index int, detail string) string {
+	return fmt.Sprintf("entry %d: %s", index+1, redactProxyImportErrorText(detail))
+}
+
+func redactProxyImportErrors(items []string) []string {
+	if len(items) == 0 {
+		return items
+	}
+	redacted := make([]string, len(items))
+	for index, item := range items {
+		redacted[index] = redactProxyImportErrorText(item)
+	}
+	return redacted
+}
+
 func RedactProxyImportResultForUserResponse(result *ProxyImportResult) {
 	if result == nil {
 		return
@@ -5242,6 +5436,7 @@ func RedactProxyImportResultForUserResponse(result *ProxyImportResult) {
 	for _, item := range result.Updated {
 		RedactProxyForUserResponse(item)
 	}
+	result.Errors = redactProxyImportErrors(result.Errors)
 }
 
 func RedactProxySourceSyncResultForUserResponse(result *ProxySourceSyncResult) {
@@ -5254,6 +5449,7 @@ func RedactProxySourceSyncResultForUserResponse(result *ProxySourceSyncResult) {
 	for _, item := range result.Updated {
 		RedactProxyForUserResponse(item)
 	}
+	result.Errors = redactProxyImportErrors(result.Errors)
 }
 
 func RedactProxyForUserResponse(item map[string]any) {
@@ -5435,6 +5631,10 @@ func sanitizeImportPayload(payload map[string]any) map[string]any {
 }
 
 func (s *UserResourceService) getSelectableProxyRaw(ctx context.Context, ownerID, proxyID int64) (map[string]any, error) {
+	return s.getSelectableProxyRawForOwner(ctx, userResourceOwner(ownerID), proxyID)
+}
+
+func (s *UserResourceService) getSelectableProxyRawForOwner(ctx context.Context, ownerID *int64, proxyID int64) (map[string]any, error) {
 	if err := s.ensureDB(); err != nil {
 		return nil, err
 	}
@@ -5447,8 +5647,11 @@ SELECT
 FROM proxies p
 WHERE p.id = $1
   AND p.deleted_at IS NULL
-  AND (p.owner_user_id = $2 OR p.is_public = true)
-LIMIT 1`, proxyID, ownerID)
+  AND (
+    ($2::bigint IS NULL AND p.owner_user_id IS NULL)
+    OR ($2::bigint IS NOT NULL AND (p.owner_user_id = $2 OR p.is_public = true))
+  )
+LIMIT 1`, proxyID, userResourceOwnerValue(ownerID))
 	if err != nil {
 		return nil, err
 	}
@@ -5605,7 +5808,7 @@ func safeSyncError(err error) string {
 	if err == nil {
 		return ""
 	}
-	msg := err.Error()
+	msg := redactProxyImportErrorText(err.Error())
 	if len(msg) > 1000 {
 		msg = msg[:1000]
 	}

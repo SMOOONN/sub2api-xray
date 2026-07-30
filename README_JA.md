@@ -38,7 +38,7 @@ Sub2API Xray は [Sub2API](https://github.com/Wei-Shaw/sub2api) の継続的に�
 
 ## 現在のリリース
 
-現在の統合テスト版は、上流 `v0.1.168` をベースにした `v0.1.168-xray3-beta1` です。最新の正式リリースは引き続き `v0.1.165-xray3` です。詳細は [GitHub Release](https://github.com/SMNNagarajan/sub2api-xray/releases/tag/v0.1.165-xray3) を参照してください。
+現在の正式リリースは、上流 `v0.1.168` をベースにした `v0.1.168-xray3` です。詳細は [GitHub Release](https://github.com/SMNNagarajan/sub2api-xray/releases/tag/v0.1.168-xray3) を参照してください。
 
 ## 重要なお知らせ
 

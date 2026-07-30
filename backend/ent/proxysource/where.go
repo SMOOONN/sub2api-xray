@@ -284,6 +284,16 @@ func OwnerUserIDLTE(v int64) predicate.ProxySource {
 	return predicate.ProxySource(sql.FieldLTE(FieldOwnerUserID, v))
 }
 
+// OwnerUserIDIsNil applies the IsNil predicate on the "owner_user_id" field.
+func OwnerUserIDIsNil() predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldIsNull(FieldOwnerUserID))
+}
+
+// OwnerUserIDNotNil applies the NotNil predicate on the "owner_user_id" field.
+func OwnerUserIDNotNil() predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldNotNull(FieldOwnerUserID))
+}
+
 // NameEQ applies the EQ predicate on the "name" field.
 func NameEQ(v string) predicate.ProxySource {
 	return predicate.ProxySource(sql.FieldEQ(FieldName, v))
