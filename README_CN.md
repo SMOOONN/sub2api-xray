@@ -4,7 +4,7 @@
 
 # Sub2API Xray
 
-Sub2API Xray 是 [Sub2API](https://github.com/Wei-Shaw/sub2api) 的持续维护分支。在保留原版网关能力的基础上，新增用户私有资源池、订阅分发和内置 Xray 代理运行时。
+Sub2API Xray 是 [Sub2API](https://github.com/Wei-Shaw/sub2api) 的持续维护分支。在保留官方网关能力的基础上，新增用户私有资源池、订阅分发和内置 Xray 代理运行时。
 
 [![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
@@ -20,36 +20,38 @@ Sub2API Xray 是 [Sub2API](https://github.com/Wei-Shaw/sub2api) 的持续维护�
 
 ## 项目定位
 
-本仓库由独立维护者维护，并非原版项目的官方发行渠道。上游更新会经过合并与验证后引入；Xray 定制版本使用 `v<上游版本>-xray<修订号>` 格式，并且只从本仓库检查更新。
+本仓库由独立维护者维护，并非官方项目的发行渠道。官方更新会在合并和验证后引入；Xray 定制发行版使用 `v<官方版本>-xray<修订号>` 格式，并且只从本仓库检查更新。
 
-## 与原版的主要差异
+## 与官方版本的主要差异
 
 | 范围 | Sub2API Xray 新增能力 |
 |------|-----------------------|
-| 用户资源工作台 | 普通用户可以私有管理自己的分组、账号、代理、分配订阅和兑换码。 |
+| 用户资源工作台 | 普通用户可以私有管理自己的分组、账号、代理、已分配订阅和兑换码。 |
 | 分组与账号体验 | 用户侧表单与管理员流程对齐，覆盖路由、额度、倍率、RPM、导入导出、测试和批量操作。 |
-| 代理运行时 | 支持标准 HTTP/SOCKS 代理，以及由 Xray 承载的 `vmess`、`vless`、`trojan`、Shadowsocks、SOCKS、HTTP 节点；支持同步 Base64 和 Clash 订阅源。 |
+| 代理运行时 | 支持标准 HTTP/SOCKS 代理，以及 VMess、VLESS、Trojan、Shadowsocks、Hysteria、TUIC、AnyTLS、Naive、WireGuard 等节点；支持同步 Base64、Clash 和 sing-box 订阅源。 |
 | 订阅分发 | 用户可以直接分配订阅或生成订阅兑换码，支持重复兑换码和兑换详情。 |
 | 订阅健康 | 订阅用户可以查看号池健康状态，并对不可用订阅执行退订。 |
-| 使用诊断 | 用户可以查看自己的调用、自己的账号调用及经过脱敏的上游错误，字段与管理员视图对齐。 |
+| 使用诊断 | 用户可以查看自己的调用、账号调用及脱敏后的上游错误，字段与管理员视图对齐。 |
 | 所有权安全 | 私有资源始终按所有者隔离；公开代理只暴露安全元数据，普通用户无法访问其他用户的资源池。 |
 
 用户资源工作台由 `enable_user_resources` 控制，升级后的实例默认关闭，需要管理员确认后启用。
 
-## 当前发行版
+## 当前开发版本
 
-当前正式版本为 `v0.1.168-xray3`，基于原版 `v0.1.168`，详见其 [GitHub Release](https://github.com/SMNNagarajan/sub2api-xray/releases/tag/v0.1.168-xray3)。
+当前本地开发版本为 `0.1.173-xray3-beta1`，已同步到官方 `0.1.173` 对应的最新 `main` 提交。在 beta 完成审核并正式发布前，最新正式 Xray 版本仍为 [v0.1.168-xray3](https://github.com/SMNNagarajan/sub2api-xray/releases/tag/v0.1.168-xray3)。
 
-## 重要提醒
+## ⚠️ 重要提醒
 
-- **服务条款风险**：使用上游账号可能违反服务商条款，部署前请自行核对相关协议。
-- **合规使用**：请仅在适用法律允许的地区和用途内运行本项目。
-- **数据保护**：账号凭据、代理订阅、API Key 和日志均属于敏感数据，请使用强密钥、HTTPS、可靠备份并限制管理员权限。
-- **无商业授权**：本仓库不授权任何第三方以项目名义开展商业运营，实例运营者需对自己的服务和用户独立负责。
+使用本项目前，请务必仔细阅读以下内容：
+
+- **🚨 服务条款风险**：使用本项目可能违反 Anthropic 等上游服务商的服务条款。请在使用前仔细阅读相关服务商的用户协议，由此产生的一切风险由用户自行承担。
+- **⚖️ 合规使用**：请在符合您所在国家或地区法律法规的前提下使用本项目，严禁将其用于任何违法违规用途。
+- **📖 免责声明**：本项目仅供技术学习与研究使用，作者不对因使用本项目导致的账户封禁、服务中断、数据丢失或其他任何直接或间接损失承担责任。
+- **🚫 无商业授权**：本项目从未授权任何个人或组织基于本项目开展任何形式的商业化运营。任何以本项目名义或基于本项目从事的商业行为均与本项目及其开发者无关，由此产生的一切纠纷、损失和法律责任由行为主体自行承担。
 
 ## 项目概述
 
-Sub2API Xray 是用于分发和管理 AI 产品订阅配额的 API 网关。用户通过平台生成的 API Key 调用上游 AI 服务，平台负责鉴权、计费、负载均衡、调度和请求转发。
+Sub2API Xray 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的 API 配额。用户通过平台生成的 API Key 调用上游 AI 服务，平台负责鉴权、计费、负载均衡和请求转发。
 
 ## 核心功能
 
@@ -76,7 +78,7 @@ Sub2API Xray 是用于分发和管理 AI 产品订阅配额的 API 网关。用�
 
 | 组件 | 技术 |
 |------|------|
-| 后端 | Go 1.26.5, Gin, Ent |
+| 后端 | Go 1.25.7, Gin, Ent |
 | 前端 | Vue 3.4+, Vite 5+, TailwindCSS |
 | 数据库 | PostgreSQL 15+ |
 | 缓存/队列 | Redis 7+ |
@@ -468,8 +470,17 @@ gateway:
 - `security.response_headers.enabled` 可启用可配置响应头过滤（关闭时使用默认白名单）
 - `security.csp` 配置 Content-Security-Policy
 - `billing.circuit_breaker` 计费异常时 fail-closed
-- `server.trusted_proxies` 启用可信代理解析 X-Forwarded-For
+- `security.trust_forwarded_ip_for_api_key_acl` 控制旧版原始转发头接管（为升级兼容默认开启）；关闭后严格使用 `server.trusted_proxies`，其中只应填写直接连接 Sub2API 的精确代理 CIDR
+- `security.forwarded_client_ip_headers` 最多配置 16 个第三方 CDN 客户端 IP 请求头；仅在旧版接管开启时按顺序优先于内置请求头解析
 - `turnstile.required` 在 release 模式强制启用 Turnstile
+
+自定义客户端 IP 请求头可通过 YAML 配置，也可使用逗号分隔的环境变量：
+
+```bash
+SECURITY_FORWARDED_CLIENT_IP_HEADERS=True-Client-IP,X-CDN-Client-IP
+```
+
+请求头名称会经过合法性校验、规范化和大小写无关去重。管理员可在安全设置中动态更新列表，无需重启；新安装会持久化 YAML/环境变量默认值，旧安装缺少数据库字段时会自动回填。关闭旧版接管后，自定义头和内置原始转发头均被忽略，只使用 `server.trusted_proxies`。开启接管时必须限制源站仅允许 CDN/代理访问，并确保边缘代理覆盖所有受信客户端 IP 请求头。完整迁移规则和信任边界见 [`deploy/EDGE_SECURITY.md`](deploy/EDGE_SECURITY.md)。
 
 **网关防御纵深建议（重点）**
 
@@ -654,9 +665,21 @@ sub2api/
     └── install.sh            # 一键安装脚本
 ```
 
+## Star History
+
+<a href="https://star-history.com/#SMNNagarajan/sub2api-xray&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=SMNNagarajan/sub2api-xray&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=SMNNagarajan/sub2api-xray&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=SMNNagarajan/sub2api-xray&type=Date" />
+ </picture>
+</a>
+
+---
+
 ## 社区致谢
 
-- [LINUX DO](https://linux.do/) - 新的理想型社区
+- [LINUX DO](https://linux.do/) - 新的理想型社区。
 
 ## 许可证
 

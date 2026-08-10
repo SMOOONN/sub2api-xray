@@ -39,7 +39,7 @@ func (s *UserResourceService) GetAccountTestModels(ctx context.Context, ownerID,
 
 // StreamAccountTest runs the same SSE test used by account management after
 // enforcing ownership at the user-resource boundary.
-func (s *UserResourceService) StreamAccountTest(c *gin.Context, ownerID, accountID int64, modelID, prompt, mode string) error {
+func (s *UserResourceService) StreamAccountTest(c *gin.Context, ownerID, accountID int64, modelID, prompt, mode string, opts ...AccountTestOptions) error {
 	if err := s.ensureOwned(c.Request.Context(), "accounts", ownerID, accountID); err != nil {
 		return err
 	}
@@ -52,6 +52,7 @@ func (s *UserResourceService) StreamAccountTest(c *gin.Context, ownerID, account
 		strings.TrimSpace(modelID),
 		strings.TrimSpace(prompt),
 		strings.TrimSpace(mode),
+		firstAccountTestOptions(opts),
 	)
 }
 

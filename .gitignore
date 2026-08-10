@@ -150,3 +150,5 @@ output/
 # Local review/deployment artifacts (may contain environment-specific data)
 /artifacts/
 /deploy/docker-compose.review.yml
+# Vitest / Vite cache at repo root
+.vite/

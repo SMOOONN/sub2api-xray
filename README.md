@@ -20,7 +20,7 @@ English | [中文](README_CN.md) | [日本語](README_JA.md)
 
 ## Project Scope
 
-This repository is independently maintained and is not the upstream project's official distribution. Upstream changes are merged deliberately, while Xray-specific changes use the `v<upstream>-xray<revision>` version scheme and update only from this repository.
+This repository is independently maintained and is not the upstream project's official distribution. Upstream changes are merged deliberately, while Xray-specific releases use the `v<upstream>-xray<revision>` version scheme and update only from this repository.
 
 ## Differences from Upstream
 
@@ -28,7 +28,7 @@ This repository is independently maintained and is not the upstream project's of
 |------|------------------------|
 | User resource workspace | Users can privately manage their own groups, accounts, proxies, assigned subscriptions, and redeem codes. |
 | Group and account parity | User-facing group and account forms align with the administrator workflow, including routing, quota, multiplier, RPM, import/export, testing, and batch operations. |
-| Proxy runtime | Standard HTTP/SOCKS proxies and Xray-backed `vmess`, `vless`, `trojan`, Shadowsocks, SOCKS, and HTTP nodes are supported. Base64 and Clash subscription sources can be synchronized. |
+| Proxy runtime | Standard HTTP/SOCKS proxies and Xray-backed VMess, VLESS, Trojan, Shadowsocks, Hysteria, TUIC, AnyTLS, Naive, and WireGuard nodes are supported. Base64, Clash, and sing-box subscription sources can be synchronized. |
 | Subscription distribution | Users can assign subscriptions or distribute subscription redeem codes, including repeatable codes and redemption details. |
 | Subscription health | Subscribers can see account-pool health and unsubscribe from unavailable subscriptions. |
 | Usage diagnostics | Users can inspect their own usage, account usage, and redacted upstream errors with administrator-level detail. |
@@ -36,20 +36,22 @@ This repository is independently maintained and is not the upstream project's of
 
 The user resource workspace is controlled by `enable_user_resources` and is disabled by default on upgraded installations.
 
-## Current Release
+## Development Version
 
-The current formal release is `v0.1.168-xray3`, based on upstream `v0.1.168`; see its [GitHub release](https://github.com/SMNNagarajan/sub2api-xray/releases/tag/v0.1.168-xray3).
+The current local development version is `0.1.173-xray3-beta1`, synchronized to the latest official `main` commit for version `0.1.173`. The latest formal Xray release remains [v0.1.168-xray3](https://github.com/SMNNagarajan/sub2api-xray/releases/tag/v0.1.168-xray3) until this beta is reviewed and released.
 
-## Important Notice
+## ⚠️ Important Notice
 
-- **Terms of service risk**: Use of upstream accounts may violate a provider's terms. Review the relevant agreements before deployment.
-- **Compliant use**: Operate the project only where and how permitted by applicable law.
-- **Data protection**: Treat account credentials, proxy subscriptions, API keys, and logs as sensitive data. Use strong secrets, HTTPS, backups, and restricted administrator access.
-- **No commercial authorization**: This repository does not authorize third-party commercial operation in its name. Operators remain responsible for their own services and users.
+Please read the following carefully before using this project:
+
+- **🚨 Terms of Service Risk**: Using this project may violate the terms of service of Anthropic and other upstream providers. Please review the relevant providers' user agreements before use; all risks arising from such use are borne solely by the user.
+- **⚖️ Compliant Use**: Use this project only in compliance with the laws and regulations of your country or region. Any unlawful use is strictly prohibited.
+- **📖 Disclaimer**: This project is provided for technical learning and research purposes only. The authors assume no liability for account bans, service interruptions, data loss, or any other direct or indirect damages resulting from the use of this project.
+- **🚫 No Commercial Authorization**: The developers of this project have never authorized any individual or organization to conduct any form of commercial operation based on this project. Any commercial activity conducted in the name of or based on this project is unrelated to this project and its developers, and all resulting disputes, losses, and legal liabilities shall be borne solely by the party conducting such activity.
 
 ## Overview
 
-Sub2API Xray is an AI API gateway for distributing and managing quotas from AI product subscriptions. Users call upstream AI services through platform-generated API keys, while the platform handles authentication, billing, load balancing, scheduling, and request forwarding.
+Sub2API Xray is an AI API gateway platform designed to distribute and manage API quotas from AI product subscriptions. Users can access upstream AI services through platform-generated API Keys, while the platform handles authentication, billing, load balancing, and request forwarding.
 
 ## Features
 
@@ -61,6 +63,7 @@ Sub2API Xray is an AI API gateway for distributing and managing quotas from AI p
 - **Rate Limiting** - Configurable request and token rate limits
 - **Built-in Payment System** - Supports EasyPay, Alipay, WeChat Pay, and Stripe for user self-service top-up, no separate payment service needed ([Configuration Guide](docs/PAYMENT.md))
 - **Admin Dashboard** - Web interface for monitoring and management
+- **Composite Groups** - Admin routing layer that resolves requested models to concrete providers for multi-provider groups ([Operator Guide](docs/COMPOSITE_GROUPS.md))
 - **External System Integration** - Embed external systems (e.g. ticketing) via iframe to extend the admin dashboard
 
 ## Ecosystem
@@ -76,7 +79,7 @@ Community projects that extend or integrate with Sub2API:
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Go 1.26.5, Gin, Ent |
+| Backend | Go 1.25.7, Gin, Ent |
 | Frontend | Vue 3.4+, Vite 5+, TailwindCSS |
 | Database | PostgreSQL 15+ |
 | Cache/Queue | Redis 7+ |
@@ -436,8 +439,17 @@ Additional security-related options are available in `config.yaml`:
 - `security.response_headers.enabled` to enable configurable response header filtering (disabled uses default allowlist)
 - `security.csp` to control Content-Security-Policy headers
 - `billing.circuit_breaker` to fail closed on billing errors
-- `server.trusted_proxies` to enable X-Forwarded-For parsing
+- `security.trust_forwarded_ip_for_api_key_acl` enables legacy raw forwarded-header takeover (enabled by default for upgrade compatibility); disable it to enforce `server.trusted_proxies`, which should contain only the exact proxy CIDRs that connect directly to Sub2API
+- `security.forwarded_client_ip_headers` configures up to 16 third-party CDN client-IP header names; they are checked in order before the built-in headers only while legacy takeover is enabled
 - `turnstile.required` to require Turnstile in release mode
+
+Custom client-IP headers can be set in YAML or as a comma-separated environment variable:
+
+```bash
+SECURITY_FORWARDED_CLIENT_IP_HEADERS=True-Client-IP,X-CDN-Client-IP
+```
+
+Header names are validated, canonicalized, and de-duplicated. The admin security settings can update the list without a restart; new installations persist YAML/environment defaults and existing installations backfill a missing database value. When legacy takeover is disabled, all custom and built-in raw forwarding headers are ignored and Gin uses only `server.trusted_proxies`. While takeover is enabled, firewall the origin to CDN/proxy addresses and make the edge overwrite every trusted client-IP header. See [`deploy/EDGE_SECURITY.md`](deploy/EDGE_SECURITY.md) for the complete migration and trust-boundary rules.
 
 **⚠️ Security Warning: HTTP URL Configuration**
 
@@ -504,8 +516,20 @@ override this limit.
 The connection cap is coordinated through Redis using a 60-second lease that
 is refreshed every 20 seconds. A process that cannot confirm a lease for a
 full lease lifetime closes its local WebSocket rather than continuing outside
-the global cap. Use `http_bridge` for client-WebSocket/upstream-HTTP operation
-when rolling out or mitigating upstream WebSocket issues.
+the global cap.
+
+Enable the v2 mode router before selecting an account-level WS mode such as
+`http_bridge`:
+
+```yaml
+gateway:
+  openai_ws:
+    mode_router_v2_enabled: true
+```
+
+Or set `GATEWAY_OPENAI_WS_MODE_ROUTER_V2_ENABLED=true` in the environment.
+Use `http_bridge` for client-WebSocket/upstream-HTTP operation when rolling out
+or mitigating upstream WebSocket issues.
 
 #### ⚠️ Important: Creating the Admin Account
 
@@ -601,7 +625,7 @@ The Grok OAuth flow uses PKCE and does not require committing private secrets. T
 | `XAI_OAUTH_AUTHORIZE_URL` | `https://auth.x.ai/oauth2/authorize` |
 | `XAI_OAUTH_TOKEN_URL` | `https://auth.x.ai/oauth2/token` |
 | `XAI_BASE_URL` | `https://api.x.ai/v1`; runtime-diagnostics override (account `base_url` controls request forwarding) |
-| `XAI_GROK_CLI_VERSION` | `0.2.93`; optional override for the client identity sent to `cli-chat-proxy.grok.com` |
+| `XAI_GROK_CLI_VERSION` | `0.2.114`; optional override for the client identity sent to `cli-chat-proxy.grok.com`. The pinned value is also the floor: an override below it is dropped |
 
 Administrators can create Grok OAuth or API-key accounts from the dashboard. OAuth authorization and reauthorization are also available through the admin API:
 
@@ -653,9 +677,9 @@ xAI quota is passive. Sub2API does not invent subscription quota values; it reco
 
 `401` responses temporarily remove accounts with invalid credentials from scheduling. `403` responses are treated as access or entitlement failures instead of token-refresh loops. `429` responses use `Retry-After` or a short cooldown to temporarily remove the account from scheduling.
 
-New Grok image and video generation requests use a media-specific eligibility check. An OAuth account is excluded from new media generation when its recorded weekly or monthly billing probe returns `403`; chat requests and video status lookups are not affected by this media-only quarantine. If no eligible account remains, the media endpoint returns HTTP `503` with error type `grok_media_no_eligible_account` instead of forwarding the request to a known-ineligible account.
+New Grok image and video generation requests use a media-specific eligibility check. API-key accounts remain eligible. OAuth accounts require positive paid-entitlement evidence from the xAI billing probe; Free, forbidden, missing, malformed, and inconclusive billing observations are excluded from new media generation. Unobserved OAuth accounts are probed before the first media request is forwarded, and imports run the billing-first quota probe proactively. Chat requests and video status lookups are not affected by this media-only quarantine. If no eligible account remains, the media endpoint returns HTTP `503` with error type `grok_media_no_eligible_account`.
 
-Administrators can override automatic media eligibility through the account create/update API by setting `extra.grok_media_eligible` to `false` (exclude) or `true` (force eligible). On update, set it to `null` to remove the override and return to automatic probe-based behavior; omitting the field preserves the current override. A missing billing observation does not block legacy routing, and a weekly allowance period by itself is not treated as evidence that the account is ineligible.
+Administrators can override automatic media eligibility through the account create/update API by setting `extra.grok_media_eligible` to `false` (exclude) or `true` (force eligible). On update, set it to `null` to remove the override and return to automatic probe-based behavior; omitting the field preserves the current override. A weekly allowance period alone is not treated as a paid tier signal. Successful image responses must contain at least one actual image output; empty HTTP `200` responses trigger account failover instead of being counted and returned as successful generations.
 
 ---
 
@@ -712,6 +736,18 @@ sub2api/
     ├── config.example.yaml   # Full config file for binary deployment
     └── install.sh            # One-click installation script
 ```
+
+## Star History
+
+<a href="https://star-history.com/#SMNNagarajan/sub2api-xray&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=SMNNagarajan/sub2api-xray&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=SMNNagarajan/sub2api-xray&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=SMNNagarajan/sub2api-xray&type=Date" />
+ </picture>
+</a>
+
+---
 
 ## Community Acknowledgement
 

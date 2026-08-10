@@ -939,15 +939,21 @@ func (h *MyResourceHandler) StreamAccountTest(c *gin.Context) {
 		return
 	}
 	var req struct {
-		ModelID string `json:"model_id"`
-		Prompt  string `json:"prompt"`
-		Mode    string `json:"mode"`
+		ModelID      string `json:"model_id"`
+		Prompt       string `json:"prompt"`
+		Mode         string `json:"mode"`
+		ImageDataURL string `json:"image_data_url"`
+		AudioDataURL string `json:"audio_data_url"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil && c.Request.ContentLength != 0 {
 		response.BadRequest(c, "Invalid test request")
 		return
 	}
-	if err := h.userResourceService.StreamAccountTest(c, userID, id, req.ModelID, req.Prompt, req.Mode); err != nil && !c.Writer.Written() {
+	opts := service.AccountTestOptions{
+		ImageDataURL: req.ImageDataURL,
+		AudioDataURL: req.AudioDataURL,
+	}
+	if err := h.userResourceService.StreamAccountTest(c, userID, id, req.ModelID, req.Prompt, req.Mode, opts); err != nil && !c.Writer.Written() {
 		response.ErrorFrom(c, err)
 	}
 }

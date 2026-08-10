@@ -25,7 +25,7 @@
             </button>
           </div>
 
-          <div class="modal-body">
+          <div ref="modalBodyRef" class="modal-body">
             <slot></slot>
           </div>
 
@@ -46,6 +46,7 @@ let dialogIdCounter = 0
 const dialogId = `modal-title-${++dialogIdCounter}`
 
 const dialogRef = ref<HTMLElement | null>(null)
+const modalBodyRef = ref<HTMLElement | null>(null)
 let previousActiveElement: HTMLElement | null = null
 let pendingFocusFrame: number | null = null
 
@@ -131,6 +132,10 @@ watch(
     if (isOpen) {
       previousActiveElement = document.activeElement as HTMLElement
       document.body.classList.add('modal-open')
+      await nextTick()
+      if (modalBodyRef.value) {
+        modalBodyRef.value.scrollTop = 0
+      }
       await scheduleInitialFocus()
       return
     }

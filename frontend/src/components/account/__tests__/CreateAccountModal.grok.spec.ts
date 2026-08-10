@@ -24,8 +24,13 @@ describe('CreateAccountModal Grok account types', () => {
   })
 
   it('validates and applies upstream config on every Grok OAuth create path', () => {
-    // Admin/user authorization-code exchange, RT batch, and SSO batch paths.
-    expect(source.match(/validateGrokOAuthUpstreamConfig\(\)/g)?.length).toBe(4)
-    expect(source.match(/applyGrokOAuthUpstreamConfig\(credentials\)/g)?.length).toBe(4)
+    // Authorization-code, refresh-token batch, SSO batch, and the official
+    // single-account continuation paths all validate the upstream config.
+    expect(source.match(/validateGrokOAuthUpstreamConfig\(\)/g)?.length).toBe(5)
+    expect(source.match(/applyGrokOAuthUpstreamConfig\(credentials\)/g)?.length).toBe(5)
+  })
+
+  it('hides Grok password authorize option in the create flow', () => {
+    expect(source).toContain(':show-email-password-option="false"')
   })
 })
