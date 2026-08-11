@@ -97,7 +97,10 @@ func TestRedactPublicProxyKeepsOwnerPrivateFieldsForOwner(t *testing.T) {
 	if item["is_owned"] != true {
 		t.Fatalf("owner marker missing from owned proxy: %#v", item)
 	}
-	extra := item["extra"].(map[string]any)
+	extra, ok := item["extra"].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected owner proxy metadata: %#v", item["extra"])
+	}
 	if extra["raw"] != "vless://secret" {
 		t.Fatalf("owner xray raw node should not be redacted: %#v", extra)
 	}

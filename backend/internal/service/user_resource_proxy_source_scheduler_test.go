@@ -155,7 +155,10 @@ func TestStripProxySourceMetadataPreventsUserSpoofing(t *testing.T) {
 		"source_id": int64(9), "source_node_key": "spoofed", "raw": "vless://example",
 	}}
 	stripProxySourceMetadata(payload)
-	extra := payload["extra"].(map[string]any)
+	extra, ok := payload["extra"].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected proxy metadata payload: %#v", payload["extra"])
+	}
 	if _, ok := extra["source_id"]; ok {
 		t.Fatal("user-provided source_id was retained")
 	}

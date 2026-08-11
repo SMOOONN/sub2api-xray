@@ -24,7 +24,35 @@ func NewRedeemCodeRepository(client *dbent.Client) service.RedeemCodeRepository 
 }
 
 func (r *redeemCodeRepository) Create(ctx context.Context, code *service.RedeemCode) error {
-	client := clientFromContext(ctx, r.client)
+	if code.UsedBy == nil {
+		return r.create(ctx, clientFromContext(ctx, r.client), code)
+	}
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return r.create(ctx, tx.Client(), code)
+	}
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if err := r.create(txCtx, tx.Client(), code); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *redeemCodeRepository) create(ctx context.Context, client *dbent.Client, code *service.RedeemCode) error {
+	usedAt := code.UsedAt
+	usedCount := code.UsedCount
+	if code.UsedBy != nil {
+		if usedAt == nil {
+			now := time.Now()
+			usedAt = &now
+		}
+		usedCount = max(usedCount, 1)
+	}
+
 	created, err := client.RedeemCode.Create().
 		SetCode(code.Code).
 		SetNillableOwnerUserID(code.OwnerUserID).
@@ -34,17 +62,31 @@ func (r *redeemCodeRepository) Create(ctx context.Context, code *service.RedeemC
 		SetNotes(code.Notes).
 		SetValidityDays(code.ValidityDays).
 		SetMaxUses(max(code.MaxUses, 1)).
-		SetUsedCount(code.UsedCount).
+		SetUsedCount(usedCount).
 		SetNillableExpiresAt(code.ExpiresAt).
 		SetNillableUsedBy(code.UsedBy).
-		SetNillableUsedAt(code.UsedAt).
+		SetNillableUsedAt(usedAt).
 		SetNillableGroupID(code.GroupID).
 		Save(ctx)
-	if err == nil {
-		code.ID = created.ID
-		code.CreatedAt = created.CreatedAt
+	if err != nil {
+		return err
 	}
-	return err
+	if code.UsedBy != nil {
+		if _, err := client.RedeemCodeUsage.Create().
+			SetRedeemCodeID(created.ID).
+			SetUserID(*code.UsedBy).
+			SetUsedAt(*usedAt).
+			Save(ctx); err != nil {
+			return err
+		}
+	}
+
+	code.ID = created.ID
+	code.CreatedAt = created.CreatedAt
+	code.UsedAt = created.UsedAt
+	code.MaxUses = created.MaxUses
+	code.UsedCount = created.UsedCount
+	return nil
 }
 
 func (r *redeemCodeRepository) CreateBatch(ctx context.Context, codes []service.RedeemCode) error {

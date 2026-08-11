@@ -134,7 +134,11 @@ func TestProxyProbeRuntimeResolverUsesCloneAndCleansUpOnce(t *testing.T) {
 	if proxy.ID != 42 || proxy.Extra["raw"] != "vless://original" {
 		t.Fatalf("resolver mutated the source proxy: %#v", proxy)
 	}
-	if nested := proxy.Extra["nested"].(map[string]any); nested["value"] != "original" {
+	nested, ok := proxy.Extra["nested"].(map[string]any)
+	if !ok {
+		t.Fatalf("resolver returned invalid nested proxy data: %#v", proxy.Extra["nested"])
+	}
+	if nested["value"] != "original" {
 		t.Fatalf("resolver shallow-copied nested proxy data: %#v", nested)
 	}
 }
