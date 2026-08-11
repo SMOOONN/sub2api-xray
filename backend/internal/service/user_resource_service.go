@@ -3093,7 +3093,8 @@ func (s *UserResourceService) syncProxySourceNodes(ctx context.Context, ownerID 
 	}
 	// A non-empty response where every entry failed to parse is not authoritative;
 	// preserve the last known-good nodes so a format regression cannot drop a pool.
-	authoritative := !(len(nodes) > 0 && len(seenKeys) == 0 && len(result.Errors) > 0)
+	allEntriesFailed := len(nodes) > 0 && len(seenKeys) == 0 && len(result.Errors) > 0
+	authoritative := !allEntriesFailed
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -4302,10 +4303,6 @@ func (s *UserResourceService) validateGroupSubscriberIDs(ctx context.Context, ow
 	return nil
 }
 
-func (s *UserResourceService) insertOwned(ctx context.Context, table string, ownerID int64, specs map[string]columnSpec, payload map[string]any, required []string) (int64, error) {
-	return s.insertForOwnerWith(ctx, s.db, table, userResourceOwner(ownerID), specs, payload, required)
-}
-
 func (s *UserResourceService) insertOwnedWith(ctx context.Context, db userResourceDBTX, table string, ownerID int64, specs map[string]columnSpec, payload map[string]any, required []string) (int64, error) {
 	return s.insertForOwnerWith(ctx, db, table, userResourceOwner(ownerID), specs, payload, required)
 }
@@ -4339,10 +4336,6 @@ func (s *UserResourceService) insertForOwnerWith(ctx context.Context, db userRes
 		return 0, err
 	}
 	return id, nil
-}
-
-func (s *UserResourceService) updateOwned(ctx context.Context, table string, ownerID, id int64, specs map[string]columnSpec, payload map[string]any) error {
-	return s.updateForOwnerWith(ctx, s.db, table, userResourceOwner(ownerID), id, specs, payload)
 }
 
 func (s *UserResourceService) updateOwnedWith(ctx context.Context, db userResourceDBTX, table string, ownerID, id int64, specs map[string]columnSpec, payload map[string]any) error {
@@ -5141,27 +5134,6 @@ func urToInt64(v any) int64 {
 	case string:
 		i, _ := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
 		return i
-	default:
-		return 0
-	}
-}
-
-func toFloat(v any) float64 {
-	switch t := v.(type) {
-	case float64:
-		return t
-	case float32:
-		return float64(t)
-	case int:
-		return float64(t)
-	case int64:
-		return float64(t)
-	case json.Number:
-		f, _ := t.Float64()
-		return f
-	case string:
-		f, _ := strconv.ParseFloat(strings.TrimSpace(t), 64)
-		return f
 	default:
 		return 0
 	}

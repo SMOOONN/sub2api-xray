@@ -29,7 +29,11 @@ func TestStoredProxyRuntimeRepresentativeE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal("open representative proxy database")
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close representative proxy database: %v", err)
+		}
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -60,7 +64,11 @@ func TestStoredProxyRuntimeConfigCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal("open representative proxy database")
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close representative proxy database: %v", err)
+		}
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -240,7 +248,11 @@ func requestThroughStoredProxyRuntime(t *testing.T, ctx context.Context, proxyUR
 	if err != nil {
 		t.Fatal("representative proxy request failed")
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("close representative proxy response: %v", err)
+		}
+	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 500 {
 		t.Fatalf("representative proxy request returned HTTP %d", resp.StatusCode)
 	}

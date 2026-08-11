@@ -29,13 +29,13 @@ func TestFinalizeProxyQualityResult_ScoreAndGrade(t *testing.T) {
 
 func TestProxyQualityOverallStatusDistinguishesPartialTargetFailure(t *testing.T) {
 	partial := &ProxyQualityCheckResult{
-		Items: []ProxyQualityCheckItem{{Target: "base_connectivity", Status: "pass"}},
+		Items:       []ProxyQualityCheckItem{{Target: "base_connectivity", Status: "pass"}},
 		FailedCount: 1,
 	}
 	require.Equal(t, "warn", proxyQualityOverallStatus(partial))
 
 	baseFailed := &ProxyQualityCheckResult{
-		Items: []ProxyQualityCheckItem{{Target: "base_connectivity", Status: "fail"}},
+		Items:       []ProxyQualityCheckItem{{Target: "base_connectivity", Status: "fail"}},
 		FailedCount: 1,
 	}
 	require.Equal(t, "failed", proxyQualityOverallStatus(baseFailed))

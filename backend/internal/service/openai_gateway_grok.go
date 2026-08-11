@@ -126,8 +126,9 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 		if resp.Body != nil {
 			_ = resp.Body.Close()
 		}
-		if !isGrokInvalidEncryptedContentResponse(resp.StatusCode, respBody) &&
-			!(isGrokOpaqueBadRequest(resp.StatusCode, respBody) && requestHasGrokEncryptedReasoning(patchedBody)) {
+		retryableEncryptedContent := isGrokInvalidEncryptedContentResponse(resp.StatusCode, respBody) ||
+			(isGrokOpaqueBadRequest(resp.StatusCode, respBody) && requestHasGrokEncryptedReasoning(patchedBody))
+		if !retryableEncryptedContent {
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
 			break
 		}

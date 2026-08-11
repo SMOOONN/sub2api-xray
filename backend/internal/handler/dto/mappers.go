@@ -585,7 +585,7 @@ func RedeemCodeFromServiceAdmin(rc *service.RedeemCode) *AdminRedeemCode {
 		return nil
 	}
 	return &AdminRedeemCode{
-		RedeemCode: redeemCodeFromServiceBase(rc),
+		RedeemCode:  redeemCodeFromServiceBase(rc),
 		OwnerUserID: rc.OwnerUserID,
 		Notes:       rc.Notes,
 	}

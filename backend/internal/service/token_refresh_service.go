@@ -90,7 +90,7 @@ type forceOAuthRefreshExecutor struct {
 }
 
 func (e forceOAuthRefreshExecutor) NeedsRefresh(account *Account, _ time.Duration) bool {
-	return e.OAuthRefreshExecutor != nil && e.OAuthRefreshExecutor.CanRefresh(account)
+	return e.OAuthRefreshExecutor != nil && e.CanRefresh(account)
 }
 
 // NewTokenRefreshService 创建token刷新服务

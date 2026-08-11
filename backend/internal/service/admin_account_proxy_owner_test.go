@@ -83,7 +83,7 @@ func (r *ownerAtomicAccountRepo) UpdateAccountWithGroupsAtomically(ctx context.C
 	committed := *account
 	committed.GroupIDs = append([]int64(nil), groupIDs...)
 	committed.AccountGroups = accountGroupsFromIDs(groupIDs)
-	if err := r.upstreamBillingProbeAccountRepo.Update(ctx, &committed); err != nil {
+	if err := r.Update(ctx, &committed); err != nil {
 		return err
 	}
 	r.groupsByAccount[account.ID] = append([]int64(nil), groupIDs...)
