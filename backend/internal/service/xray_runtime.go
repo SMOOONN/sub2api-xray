@@ -636,7 +636,11 @@ func reserveLocalPort() (int, error) {
 		return 0, err
 	}
 	defer func() { _ = l.Close() }()
-	return l.Addr().(*net.TCPAddr).Port, nil
+	tcpAddr, ok := l.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, fmt.Errorf("unexpected listener address type %T", l.Addr())
+	}
+	return tcpAddr.Port, nil
 }
 
 func waitForLocalPort(ctx context.Context, port int, done <-chan error) error {

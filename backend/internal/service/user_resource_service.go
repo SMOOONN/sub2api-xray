@@ -4481,8 +4481,13 @@ ORDER BY g.sort_order ASC, g.id ASC`, pq.Array(ids))
 		if item == nil {
 			continue
 		}
-		item["groups"] = append(item["groups"].([]map[string]any), map[string]any{"id": groupID, "name": name, "platform": platform, "status": status, "subscription_type": subType})
-		item["group_ids"] = append(item["group_ids"].([]int64), groupID)
+		groups, groupsOK := item["groups"].([]map[string]any)
+		groupIDs, groupIDsOK := item["group_ids"].([]int64)
+		if !groupsOK || !groupIDsOK {
+			return errors.New("account group projection has an invalid shape")
+		}
+		item["groups"] = append(groups, map[string]any{"id": groupID, "name": name, "platform": platform, "status": status, "subscription_type": subType})
+		item["group_ids"] = append(groupIDs, groupID)
 	}
 	return rows.Err()
 }
@@ -5718,7 +5723,11 @@ func fetchProxySubscription(ctx context.Context, subscriptionURL string) (string
 	if err := validateExternalHTTPURL(ctx, subscriptionURL); err != nil {
 		return "", err
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return "", errors.New("default HTTP transport is unavailable")
+	}
+	transport := defaultTransport.Clone()
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(address)

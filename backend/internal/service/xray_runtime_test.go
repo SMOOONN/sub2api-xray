@@ -19,6 +19,24 @@ import (
 	"time"
 )
 
+func requireXrayMap(t *testing.T, value any, name string) map[string]any {
+	t.Helper()
+	result, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("%s has unexpected type %T", name, value)
+	}
+	return result
+}
+
+func requireXrayMapSlice(t *testing.T, value any, name string) []map[string]any {
+	t.Helper()
+	result, ok := value.([]map[string]any)
+	if !ok {
+		t.Fatalf("%s has unexpected type %T", name, value)
+	}
+	return result
+}
+
 func TestBuildXrayOutboundVMess(t *testing.T) {
 	node := map[string]any{
 		"add":  "vmess.example.com",
@@ -41,7 +59,7 @@ func TestBuildXrayOutboundVMess(t *testing.T) {
 	if out["protocol"] != "vmess" {
 		t.Fatalf("protocol mismatch: %v", out["protocol"])
 	}
-	stream := out["streamSettings"].(map[string]any)
+	stream := requireXrayMap(t, out["streamSettings"], "streamSettings")
 	if stream["network"] != "ws" || stream["security"] != "tls" {
 		t.Fatalf("stream settings mismatch: %#v", stream)
 	}
@@ -55,11 +73,11 @@ func TestBuildXrayOutboundVLESSReality(t *testing.T) {
 	if out["protocol"] != "vless" {
 		t.Fatalf("protocol mismatch: %v", out["protocol"])
 	}
-	stream := out["streamSettings"].(map[string]any)
+	stream := requireXrayMap(t, out["streamSettings"], "streamSettings")
 	if stream["network"] != "grpc" || stream["security"] != "reality" {
 		t.Fatalf("stream settings mismatch: %#v", stream)
 	}
-	reality := stream["realitySettings"].(map[string]any)
+	reality := requireXrayMap(t, stream["realitySettings"], "realitySettings")
 	if reality["publicKey"] != "pub" || reality["shortId"] != "abc" {
 		t.Fatalf("reality settings mismatch: %#v", reality)
 	}
@@ -80,21 +98,22 @@ func TestBuildXrayOutboundVLESSXHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build xhttp outbound: %v", err)
 	}
-	stream := out["streamSettings"].(map[string]any)
+	stream := requireXrayMap(t, out["streamSettings"], "streamSettings")
 	if stream["network"] != "xhttp" {
 		t.Fatalf("xhttp network mismatch: %#v", stream)
 	}
-	tls := stream["tlsSettings"].(map[string]any)
+	tls := requireXrayMap(t, stream["tlsSettings"], "tlsSettings")
 	if _, exists := tls["allowInsecure"]; exists {
 		t.Fatalf("removed Xray allowInsecure option was emitted: %#v", tls)
 	}
-	xhttp := stream["xhttpSettings"].(map[string]any)
+	xhttp := requireXrayMap(t, stream["xhttpSettings"], "xhttpSettings")
 	if xhttp["path"] != "/path" || xhttp["mode"] != "stream-up" {
 		t.Fatalf("xhttp settings mismatch: %#v", xhttp)
 	}
-	download := xhttp["extra"].(map[string]any)["downloadSettings"].(map[string]any)
-	downloadXHTTP := download["xhttpSettings"].(map[string]any)
-	downloadTLS := download["tlsSettings"].(map[string]any)
+	xhttpExtra := requireXrayMap(t, xhttp["extra"], "xhttpSettings.extra")
+	download := requireXrayMap(t, xhttpExtra["downloadSettings"], "downloadSettings")
+	downloadXHTTP := requireXrayMap(t, download["xhttpSettings"], "downloadSettings.xhttpSettings")
+	downloadTLS := requireXrayMap(t, download["tlsSettings"], "downloadSettings.tlsSettings")
 	if download["address"] != "203.0.113.20" || download["network"] != "xhttp" || downloadXHTTP["path"] != "/download" || downloadTLS["serverName"] != "download.example.com" {
 		t.Fatalf("xhttp download settings were not preserved: %#v", download)
 	}
@@ -119,12 +138,13 @@ func TestXrayStreamSettingsSupportsCompatibilityAliasesAndKCP(t *testing.T) {
 	if err != nil || kcp["network"] != "kcp" {
 		t.Fatalf("mkcp alias was not normalized: settings=%#v err=%v", kcp, err)
 	}
-	finalMask := kcp["finalmask"].(map[string]any)
-	udp := finalMask["udp"].([]map[string]any)
+	finalMask := requireXrayMap(t, kcp["finalmask"], "finalmask")
+	udp := requireXrayMapSlice(t, finalMask["udp"], "finalmask.udp")
 	if len(udp) != 2 || udp[0]["type"] != "header-srtp" || udp[1]["type"] != "mkcp-aes128gcm" {
 		t.Fatalf("legacy KCP header/seed were not migrated: %#v", finalMask)
 	}
-	if kcp["kcpSettings"].(map[string]any)["mtu"] != 1200 {
+	kcpSettings := requireXrayMap(t, kcp["kcpSettings"], "kcpSettings")
+	if kcpSettings["mtu"] != 1200 {
 		t.Fatalf("KCP tuning was not preserved: %#v", kcp["kcpSettings"])
 	}
 }

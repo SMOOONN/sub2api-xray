@@ -122,7 +122,10 @@ func TestRedactProxyForUserResponseHidesOwnedCredentials(t *testing.T) {
 	if item["username"] != "" || item["password"] != "" {
 		t.Fatalf("owned proxy response leaked credentials: %#v", item)
 	}
-	extra := item["extra"].(map[string]any)
+	extra, ok := item["extra"].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected owned proxy metadata: %#v", item["extra"])
+	}
 	if extra["raw"] != "" || extra["redacted"] != true {
 		t.Fatalf("owned proxy response leaked xray node: %#v", extra)
 	}
@@ -220,7 +223,10 @@ func TestRedactProxyImportResultForUserResponseHidesAllNodeSecrets(t *testing.T)
 		if item["username"] != "" || item["password"] != "" {
 			t.Fatalf("proxy import response leaked credentials: %#v", item)
 		}
-		extra := item["extra"].(map[string]any)
+		extra, ok := item["extra"].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected proxy import metadata: %#v", item["extra"])
+		}
 		if extra["raw"] != "" || extra["redacted"] != true {
 			t.Fatalf("proxy import response leaked node configuration: %#v", extra)
 		}
@@ -257,7 +263,10 @@ func TestRedactProxySourceSyncResultForUserResponseHidesAllNodeSecrets(t *testin
 		if item["password"] != "" {
 			t.Fatalf("proxy source sync response leaked credentials: %#v", item)
 		}
-		extra := item["extra"].(map[string]any)
+		extra, ok := item["extra"].(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected proxy source metadata: %#v", item["extra"])
+		}
 		if extra["raw"] != "" || extra["redacted"] != true {
 			t.Fatalf("proxy source sync response leaked node configuration: %#v", extra)
 		}
@@ -948,7 +957,10 @@ func TestRedactUpstreamErrorsForUserScrubsSecretsAndForeignRequester(t *testing.
 	if item["message"] != "upstream request failed" || item["upstream_error_message"] != "" || item["request_path"] != "" || item["client_request_id"] != "" {
 		t.Fatalf("foreign request details were not removed: %#v", item)
 	}
-	upstreamErrors := item["upstream_errors"].([]any)
+	upstreamErrors, ok := item["upstream_errors"].([]any)
+	if !ok {
+		t.Fatalf("unexpected upstream error collection: %#v", item["upstream_errors"])
+	}
 	if len(upstreamErrors) != 0 {
 		t.Fatalf("foreign upstream error details were not removed: %#v", upstreamErrors)
 	}
