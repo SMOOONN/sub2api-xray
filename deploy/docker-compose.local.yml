@@ -24,7 +24,7 @@ services:
   # Sub2API Application
   # ===========================================================================
   sub2api:
-    image: ghcr.io/smnnagarajan/sub2api-xray:latest
+    image: ghcr.io/smooonn/sub2api-xray:latest
     container_name: sub2api
     restart: unless-stopped
     security_opt:

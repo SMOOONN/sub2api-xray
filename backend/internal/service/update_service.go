@@ -30,7 +30,7 @@ var (
 const (
 	updateCacheKey = "update_check_cache"
 	updateCacheTTL = 1200 // 20 minutes
-	githubRepo     = "SMNNagarajan/sub2api-xray"
+	githubRepo     = "SMOOONN/sub2api-xray"
 
 	// Security: allowed download domains for updates
 	allowedDownloadHost = "github.com"

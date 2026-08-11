@@ -139,9 +139,9 @@ RUN apk add --no-cache ca-certificates curl tar && \
 FROM ${ALPINE_IMAGE}
 
 # Labels
-LABEL maintainer="SMNNagarajan <github.com/SMNNagarajan>"
+LABEL maintainer="SMOOONN <github.com/SMOOONN>"
 LABEL description="Sub2API Xray - AI API Gateway Platform"
-LABEL org.opencontainers.image.source="https://github.com/SMNNagarajan/sub2api-xray"
+LABEL org.opencontainers.image.source="https://github.com/SMOOONN/sub2api-xray"
 
 # Install runtime dependencies
 RUN apk add --no-cache \
