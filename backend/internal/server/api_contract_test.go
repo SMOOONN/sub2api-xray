@@ -364,6 +364,7 @@ func TestAPIContracts(t *testing.T) {
 						"daily_limit_usd": null,
 						"weekly_limit_usd": null,
 						"monthly_limit_usd": null,
+						"long_context_pricing_enabled": false,
 						"image_price_1k": null,
 						"image_price_2k": null,
 						"image_price_4k": null,
@@ -1477,6 +1478,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 		nil, nil, nil, nil,
 		nil, nil, nil, nil,
 		nil, nil, nil, nil,
+		nil,
 	)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
