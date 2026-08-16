@@ -8,7 +8,7 @@
 # =============================================================================
 
 ARG NODE_IMAGE=node:24-alpine
-ARG GOLANG_IMAGE=golang:1.26.5-alpine
+ARG GOLANG_IMAGE=golang:1.26.6-alpine
 ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:18-alpine
 ARG XRAY_IMAGE=ghcr.io/xtls/xray-core:26.3.27

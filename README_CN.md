@@ -6,7 +6,7 @@
 
 Sub2API Xray 是 [Sub2API](https://github.com/Wei-Shaw/sub2api) 的持续维护分支。在保留官方网关能力的基础上，新增用户私有资源池、订阅分发和内置 Xray 代理运行时。
 
-[![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -78,7 +78,7 @@ Sub2API Xray 是一个 AI API 网关平台，用于分发和管理 AI 产品订�
 
 | 组件 | 技术 |
 |------|------|
-| 后端 | Go 1.26.5, Gin, Ent |
+| 后端 | Go 1.26.6, Gin, Ent |
 | 前端 | Vue 3.4+, Vite 5+, TailwindCSS |
 | 数据库 | PostgreSQL 15+ |
 | 缓存/队列 | Redis 7+ |
