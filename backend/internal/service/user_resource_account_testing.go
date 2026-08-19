@@ -122,6 +122,14 @@ func availableUserAccountTestModels(account *Account) []UserAccountTestModel {
 		return mappedUserAccountTestModels(account.GetModelMapping(), defaults)
 	}
 
+	if account.IsCNProvider() {
+		defaults := make([]UserAccountTestModel, 0)
+		for _, id := range userResourceDefaultModelsListCandidateIDs(account.Platform) {
+			defaults = append(defaults, UserAccountTestModel{ID: id, Type: "model", DisplayName: id})
+		}
+		return mappedUserAccountTestModels(account.GetModelMapping(), defaults)
+	}
+
 	defaults := make([]UserAccountTestModel, 0, len(claude.DefaultModels))
 	for _, model := range claude.DefaultModels {
 		defaults = append(defaults, UserAccountTestModel{

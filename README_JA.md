@@ -38,7 +38,7 @@ Sub2API Xray は [Sub2API](https://github.com/Wei-Shaw/sub2api) の継続的に�
 
 ## 現在の開発バージョン
 
-現在の正式版は [v0.1.177-xray4](https://github.com/SMOOONN/sub2api-xray/releases/tag/v0.1.177-xray4) で、公式 `v0.1.177` とそれに対応する最新の `main` コミットに同期済みです。
+現在の正式版は [v0.1.178-xray4](https://github.com/SMOOONN/sub2api-xray/releases/tag/v0.1.178-xray4) で、公式 `v0.1.178` とそれに対応する最新の `main` コミットに同期済みです。
 
 ## ⚠️ 重要なお知らせ
 
@@ -421,12 +421,6 @@ default:
   rate_multiplier: 1.0
 ```
 
-### Sora ステータス（一時的に利用不可）
-
-> ⚠️ Sora 関連の機能は、上流統合およびメディア配信の技術的問題により一時的に利用できません。
-> 現時点では本番環境で Sora に依存しないでください。
-> 既存の `gateway.sora_*` 設定キーは予約されていますが、これらの問題が解決されるまで有効にならない場合があります。
-
 `config.yaml` では追加のセキュリティ関連オプションも利用できます:
 
 - `cors.allowed_origins` - CORS 許可リスト
@@ -603,11 +597,11 @@ sub2api/
 
 ## スター履歴
 
-<a href="https://star-history.com/#SMOOONN/sub2api-xray&Date">
+<a href="https://star-history.dera.page/#SMOOONN/sub2api-xray&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=SMOOONN/sub2api-xray&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=SMOOONN/sub2api-xray&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=SMOOONN/sub2api-xray&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date" />
  </picture>
 </a>
 

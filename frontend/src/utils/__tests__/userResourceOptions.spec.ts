@@ -26,6 +26,9 @@ describe('user resource account options', () => {
     expect(getUserAccountTypeOptions('anthropic').map(option => option.value)).toEqual(['oauth', 'apikey', 'setup-token', 'service_account'])
     expect(getUserAccountTypeOptions('gemini').map(option => option.value)).toEqual(['oauth', 'apikey', 'service_account'])
     expect(getUserAccountTypeOptions('openai').map(option => option.value)).toEqual(['oauth', 'apikey'])
+    expect(getUserAccountTypeOptions('kimi').map(option => option.value)).toEqual(['apikey'])
+    expect(getUserAccountTypeOptions('zhipu').map(option => option.value)).toEqual(['apikey'])
+    expect(getUserAccountTypeOptions('deepseek').map(option => option.value)).toEqual(['apikey'])
   })
 
   it('uses only group values accepted by the service', () => {

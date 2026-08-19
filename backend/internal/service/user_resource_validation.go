@@ -108,7 +108,7 @@ func (s *UserResourceService) normalizeAndValidateGroupPayload(ctx context.Conte
 	}
 	payload["name"] = name
 	platform := strings.ToLower(strings.TrimSpace(urAsString(state["platform"])))
-	if err := validateAllowedValue("platform", platform, PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok); err != nil {
+	if err := validateAllowedValue("platform", platform, PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek); err != nil {
 		return err
 	}
 	if _, ok := payload["platform"]; ok {
@@ -336,7 +336,7 @@ func (s *UserResourceService) normalizeAndValidateAccountPayload(ctx context.Con
 	}
 	payload["name"] = name
 	platform := strings.ToLower(strings.TrimSpace(urAsString(state["platform"])))
-	if err := validateAllowedValue("platform", platform, PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok); err != nil {
+	if err := validateAllowedValue("platform", platform, PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek); err != nil {
 		return err
 	}
 	if _, ok := payload["platform"]; ok {
@@ -400,6 +400,18 @@ func (s *UserResourceService) normalizeAndValidateAccountPayload(ctx context.Con
 		if err := NormalizeHeaderOverrideCredentials(credentials); err != nil {
 			return invalidUserResourceField("credentials", err.Error())
 		}
+		payload["credentials"] = credentials
+	}
+	if IsCNProvider(platform) {
+		credentials, _ := state["credentials"].(map[string]any)
+		if credentials == nil {
+			credentials = map[string]any{}
+		}
+		if err := normalizeAndValidateUserCNAccountCredentials(platform, credentials); err != nil {
+			return err
+		}
+		// Persist normalized defaults on create and when an existing CN account is
+		// updated, so routing and quota probing do not depend on implicit fallbacks.
 		payload["credentials"] = credentials
 	}
 	if raw, ok := payload["extra"]; ok {
@@ -493,6 +505,12 @@ func validateUserAccountCredentials(accountType string, state map[string]any) er
 }
 
 func validateUserAccountPlatformType(platform, accountType string) error {
+	if IsCNProvider(platform) {
+		if accountType == AccountTypeAPIKey {
+			return nil
+		}
+		return invalidUserResourceField("type", "only API key accounts are supported for the selected platform")
+	}
 	switch accountType {
 	case AccountTypeOAuth, AccountTypeAPIKey:
 		return nil
@@ -512,6 +530,34 @@ func validateUserAccountPlatformType(platform, accountType string) error {
 		return nil
 	}
 	return invalidUserResourceField("type", "is not supported for the selected platform")
+}
+
+func normalizeAndValidateUserCNAccountCredentials(platform string, credentials map[string]any) error {
+	mode := strings.ToLower(strings.TrimSpace(urAsString(credentials["account_mode"])))
+	if mode == "" {
+		mode = AccountModePayG
+	}
+	if err := validateAllowedValue("credentials.account_mode", mode, AccountModePayG, AccountModeCoding); err != nil {
+		return err
+	}
+	if platform == PlatformDeepseek && mode == AccountModeCoding {
+		return invalidUserResourceField("credentials.account_mode", "DeepSeek does not support coding mode")
+	}
+
+	protocol := strings.ToLower(strings.TrimSpace(urAsString(credentials["api_protocol"])))
+	if protocol == "" {
+		protocol = APIProtocolChatCompletions
+	}
+	if err := validateAllowedValue("credentials.api_protocol", protocol, APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses); err != nil {
+		return err
+	}
+	if protocol == APIProtocolResponses && platform != PlatformDeepseek {
+		return invalidUserResourceField("credentials.api_protocol", "responses protocol is only supported by DeepSeek")
+	}
+
+	credentials["account_mode"] = mode
+	credentials["api_protocol"] = protocol
+	return nil
 }
 
 func normalizeUserAccountType(value string) string {

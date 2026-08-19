@@ -1,6 +1,83 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { defineComponent } from 'vue'
+import { mount } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/api/client', () => ({
+  apiClient: {
+    post: vi.fn(),
+  },
+}))
+
+vi.mock('@/stores/app', () => ({
+  useAppStore: () => ({
+    showError: vi.fn(),
+    showSuccess: vi.fn(),
+    showWarning: vi.fn(),
+  }),
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    isSimpleMode: true,
+  }),
+}))
+
+vi.mock('@/api/admin', () => ({
+  adminAPI: {
+    accounts: {
+      checkMixedChannelRisk: vi.fn().mockResolvedValue({ has_risk: false }),
+    },
+    settings: {
+      getWebSearchEmulationConfig: vi.fn().mockResolvedValue({ enabled: false, providers: [] }),
+      getSettings: vi.fn().mockResolvedValue({}),
+    },
+    tlsFingerprintProfiles: {
+      list: vi.fn().mockResolvedValue([]),
+    },
+  },
+}))
+
+vi.mock('@/api/admin/accounts', () => ({
+  getAntigravityDefaultModelMapping: vi.fn().mockResolvedValue([]),
+}))
+
+vi.mock('vue-i18n', async () => {
+  const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
+  return {
+    ...actual,
+    useI18n: () => ({ t: (key: string) => key }),
+  }
+})
+
+import CreateAccountModal from '../CreateAccountModal.vue'
+
+const BaseDialogStub = defineComponent({
+  name: 'BaseDialog',
+  props: { show: { type: Boolean, default: false } },
+  template: '<div v-if="show"><slot /><slot name="footer" /></div>',
+})
+
+function mountModal() {
+  return mount(CreateAccountModal, {
+    props: { show: true, proxies: [], groups: [], scope: 'admin' },
+    global: {
+      stubs: {
+        BaseDialog: BaseDialogStub,
+        OAuthAuthorizationFlow: true,
+        ConfirmDialog: true,
+        Select: true,
+        Icon: true,
+        PlatformIcon: true,
+        ProxySelector: true,
+        GroupSelector: true,
+        ModelWhitelistSelector: true,
+        QuotaLimitCard: true,
+      },
+    },
+  })
+}
 
 const source = readFileSync(
   resolve(process.cwd(), 'src/components/account/CreateAccountModal.vue'),
@@ -8,13 +85,22 @@ const source = readFileSync(
 )
 
 describe('CreateAccountModal Grok account types', () => {
-  it('offers API-key setup alongside OAuth with the official xAI default', () => {
+  it('offers API-key setup alongside OAuth with the official xAI default', async () => {
+    const wrapper = mountModal()
+    const grokButton = wrapper.findAll('button').find(button => button.text().trim() === 'Grok')
+
+    expect(grokButton).toBeDefined()
+    await grokButton?.trigger('click')
+    await wrapper.get('[data-testid="grok-account-type-api-key"]').trigger('click')
+
+    expect(wrapper.get('input[type="password"]').attributes('placeholder')).toBe('xai-...')
     expect(source).toContain('data-testid="grok-account-type-api-key"')
     expect(source).toContain("@click=\"accountCategory = 'apikey'\"")
     expect(source).toContain("newPlatform === 'grok'")
     expect(source).toContain("? 'https://api.x.ai/v1'")
     expect(source).toContain("form.platform === 'grok'")
-    expect(source).toContain("? 'xai-...'")
+    expect(source).toContain(':placeholder="apiKeyValuePlaceholder"')
+    expect(source).toContain("return 'xai-...'")
   })
 
   it('exposes custom upstream URL and header override for the OAuth create flow', () => {

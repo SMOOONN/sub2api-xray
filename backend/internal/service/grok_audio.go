@@ -89,7 +89,7 @@ func (s *OpenAIGatewayService) ForwardGrokVoice(ctx context.Context, c *gin.Cont
 		proxyURL = account.Proxy.URL()
 	}
 	started := time.Now()
-	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(ProtectUserOwnedUpstreamRequest(req, account, proxyURL), proxyURL, account.ID, account.Concurrency)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(started).Milliseconds())
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
@@ -149,7 +149,8 @@ func (s *OpenAIGatewayService) ProxyGrokRealtime(ctx context.Context, c *gin.Con
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	upstream, _, _, err := dialer.Dial(ctx, u.String(), headers, proxyURL)
+	dialCtx := withOpenAIWSNetworkPolicy(ctx, account, proxyURL)
+	upstream, _, _, err := dialer.Dial(dialCtx, u.String(), headers, proxyURL)
 	if err != nil {
 		return false, err
 	}

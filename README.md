@@ -38,7 +38,7 @@ The user resource workspace is controlled by `enable_user_resources` and is disa
 
 ## Development Version
 
-The current formal Xray release is [v0.1.177-xray4](https://github.com/SMOOONN/sub2api-xray/releases/tag/v0.1.177-xray4), synchronized with official `v0.1.177` and its latest corresponding `main` commits.
+The current formal Xray release is [v0.1.178-xray4](https://github.com/SMOOONN/sub2api-xray/releases/tag/v0.1.178-xray4), synchronized with official `v0.1.178` and its latest corresponding `main` commits.
 
 ## ⚠️ Important Notice
 
@@ -423,12 +423,6 @@ default:
   rate_multiplier: 1.0
 ```
 
-### Sora Status (Temporarily Unavailable)
-
-> ⚠️ Sora-related features are temporarily unavailable due to technical issues in upstream integration and media delivery.
-> Please do not rely on Sora in production at this time.
-> Existing `gateway.sora_*` configuration keys are reserved and may not take effect until these issues are resolved.
-
 Additional security-related options are available in `config.yaml`:
 
 - `cors.allowed_origins` for CORS allowlist
@@ -739,11 +733,11 @@ sub2api/
 
 ## Star History
 
-<a href="https://star-history.com/#SMOOONN/sub2api-xray&Date">
+<a href="https://star-history.dera.page/#SMOOONN/sub2api-xray&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=SMOOONN/sub2api-xray&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=SMOOONN/sub2api-xray&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=SMOOONN/sub2api-xray&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date" />
  </picture>
 </a>
 

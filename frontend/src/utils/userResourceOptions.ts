@@ -6,7 +6,9 @@ export const USER_ACCOUNT_TYPE_OPTIONS = [
 ] as const
 
 export function getUserAccountTypeOptions(platform: string) {
-  const allowed = platform === 'anthropic'
+  const allowed = ['kimi', 'zhipu', 'deepseek'].includes(platform)
+    ? ['apikey']
+    : platform === 'anthropic'
     ? ['oauth', 'apikey', 'setup-token', 'service_account']
     : platform === 'gemini'
       ? ['oauth', 'apikey', 'service_account']

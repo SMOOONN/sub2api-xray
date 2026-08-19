@@ -54,3 +54,50 @@ func TestValidateUserAccountCredentialsChecksStructuredTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeAndValidateUserCNAccountCredentials(t *testing.T) {
+	tests := []struct {
+		name      string
+		platform  string
+		input     map[string]any
+		wantMode  string
+		wantProto string
+		wantError bool
+	}{
+		{name: "defaults", platform: PlatformKimi, input: map[string]any{}, wantMode: AccountModePayG, wantProto: APIProtocolChatCompletions},
+		{name: "kimi coding anthropic", platform: PlatformKimi, input: map[string]any{"account_mode": "coding", "api_protocol": "anthropic"}, wantMode: AccountModeCoding, wantProto: APIProtocolAnthropic},
+		{name: "deepseek responses", platform: PlatformDeepseek, input: map[string]any{"account_mode": "payg", "api_protocol": "responses"}, wantMode: AccountModePayG, wantProto: APIProtocolResponses},
+		{name: "deepseek coding rejected", platform: PlatformDeepseek, input: map[string]any{"account_mode": "coding"}, wantError: true},
+		{name: "kimi responses rejected", platform: PlatformKimi, input: map[string]any{"api_protocol": "responses"}, wantError: true},
+		{name: "invalid protocol rejected", platform: PlatformZhipu, input: map[string]any{"api_protocol": "invalid"}, wantError: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := normalizeAndValidateUserCNAccountCredentials(tt.platform, tt.input)
+			if tt.wantError {
+				if err == nil {
+					t.Fatal("expected invalid CN credentials to be rejected")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("valid CN credentials were rejected: %v", err)
+			}
+			if got := tt.input["account_mode"]; got != tt.wantMode {
+				t.Fatalf("account_mode = %v, want %s", got, tt.wantMode)
+			}
+			if got := tt.input["api_protocol"]; got != tt.wantProto {
+				t.Fatalf("api_protocol = %v, want %s", got, tt.wantProto)
+			}
+		})
+	}
+}
+
+func TestNormalizeUserOAuthPlatformRejectsCNProviders(t *testing.T) {
+	for _, platform := range []string{PlatformKimi, PlatformZhipu, PlatformDeepseek} {
+		if _, err := normalizeUserOAuthPlatform(platform); err == nil {
+			t.Fatalf("expected %s to be rejected from user OAuth", platform)
+		}
+	}
+}

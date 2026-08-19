@@ -51,6 +51,18 @@ func TestAvailableUserAccountTestModelsOpenAIPassthroughUsesDefaults(t *testing.
 	}
 }
 
+func TestAvailableUserAccountTestModelsCNProvidersUseProviderDefaults(t *testing.T) {
+	expected := map[string]string{
+		PlatformKimi: "kimi-k2.6", PlatformZhipu: "glm-5.2", PlatformDeepseek: "deepseek-chat",
+	}
+	for platform, firstModel := range expected {
+		models := availableUserAccountTestModels(&Account{Platform: platform, Type: AccountTypeAPIKey})
+		if len(models) == 0 || models[0].ID != firstModel {
+			t.Fatalf("platform %s should expose provider test models: %#v", platform, models)
+		}
+	}
+}
+
 func TestStreamAccountTestRejectsForeignAccountBeforeUpstreamTest(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

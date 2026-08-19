@@ -1439,6 +1439,9 @@ const platformOptions: SelectOption[] = [
   { value: 'gemini', label: 'Gemini' },
   { value: 'antigravity', label: 'Antigravity' },
   { value: 'grok', label: 'Grok' },
+  { value: 'kimi', label: 'Kimi' },
+  { value: 'zhipu', label: 'Zhipu GLM' },
+  { value: 'deepseek', label: 'DeepSeek' },
 ]
 const platformFilterOptions = computed<SelectOption[]>(() => [
   { value: '', label: mr('filters.allPlatforms') },
@@ -1792,6 +1795,12 @@ function groupPlatformClass(platform: string): string {
         ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
         : platform === 'grok'
           ? 'bg-zinc-200 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100'
+          : platform === 'kimi'
+            ? 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400'
+            : platform === 'zhipu'
+              ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400'
+              : platform === 'deepseek'
+                ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400'
           : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
   return `inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${tone}`
 }
@@ -1808,12 +1817,18 @@ function platformLabel(value: unknown): string {
           ? 'Antigravity'
           : platform === 'grok'
             ? 'Grok'
+            : platform === 'kimi'
+              ? 'Kimi'
+              : platform === 'zhipu'
+                ? 'Zhipu GLM'
+                : platform === 'deepseek'
+                  ? 'DeepSeek'
             : platform || '-'
 }
 
 function normalizeGroupPlatform(value: unknown): GroupPlatform {
   const platform = String(value || '')
-  return ['anthropic', 'openai', 'gemini', 'antigravity', 'grok'].includes(platform)
+  return ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek'].includes(platform)
     ? platform as GroupPlatform
     : 'anthropic'
 }

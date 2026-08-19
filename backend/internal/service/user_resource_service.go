@@ -85,10 +85,12 @@ type UserResourceService struct {
 }
 
 type UserUpstreamModelsPreviewInput struct {
-	Platform string `json:"platform"`
-	Type     string `json:"type"`
-	BaseURL  string `json:"base_url"`
-	APIKey   string `json:"api_key"`
+	Platform    string `json:"platform"`
+	Type        string `json:"type"`
+	BaseURL     string `json:"base_url"`
+	APIKey      string `json:"api_key"`
+	AccountMode string `json:"account_mode"`
+	APIProtocol string `json:"api_protocol"`
 }
 
 type userResourceDBTX interface {
@@ -1020,10 +1022,10 @@ func (s *UserResourceService) GetGroupModelsListCandidates(ctx context.Context, 
 	if platform == "" {
 		platform = PlatformAnthropic
 	}
-	if err := validateAllowedValue("platform", platform, PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok); err != nil {
+	if err := validateAllowedValue("platform", platform, PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek); err != nil {
 		return nil, err
 	}
-	candidates := defaultModelsListCandidateIDs(platform)
+	candidates := userResourceDefaultModelsListCandidateIDs(platform)
 	if groupID <= 0 {
 		return candidates, nil
 	}
@@ -1070,6 +1072,19 @@ WHERE ag.group_id = $1 AND a.owner_user_id = $2 AND a.deleted_at IS NULL
 	}
 	sort.Strings(additions)
 	return append(candidates, additions...), nil
+}
+
+func userResourceDefaultModelsListCandidateIDs(platform string) []string {
+	switch platform {
+	case PlatformKimi:
+		return []string{"kimi-k2.6", "kimi-k2.5", "kimi-k2-thinking", "kimi-k2", "kimi-k3", "kimi-for-coding", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"}
+	case PlatformZhipu:
+		return []string{"glm-5.2", "glm-5.1", "glm-5", "glm-4.7", "glm-4.6", "glm-4.5", "glm-4-flash"}
+	case PlatformDeepseek:
+		return []string{"deepseek-chat", "deepseek-reasoner", "deepseek-v4-pro", "deepseek-v4-flash"}
+	default:
+		return defaultModelsListCandidateIDs(platform)
+	}
 }
 
 func (s *UserResourceService) GetGroupUserOverrides(ctx context.Context, ownerID, groupID int64) ([]UserGroupRateEntry, error) {
@@ -1448,7 +1463,7 @@ func (s *UserResourceService) SyncAccountUpstreamModelsPreview(ctx context.Conte
 
 	platform := strings.ToLower(strings.TrimSpace(input.Platform))
 	switch platform {
-	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok:
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek:
 	default:
 		return nil, infraerrors.BadRequest("USER_MODEL_SYNC_PLATFORM_INVALID", "platform does not support upstream model sync")
 	}
@@ -1468,6 +1483,31 @@ func (s *UserResourceService) SyncAccountUpstreamModelsPreview(ctx context.Conte
 	}
 
 	credentials := map[string]any{"api_key": apiKey}
+	if IsCNProvider(platform) {
+		accountMode := strings.ToLower(strings.TrimSpace(input.AccountMode))
+		if accountMode == "" {
+			accountMode = AccountModePayG
+		}
+		if err := validateAllowedValue("account_mode", accountMode, AccountModePayG, AccountModeCoding); err != nil {
+			return nil, err
+		}
+		if platform == PlatformDeepseek && accountMode == AccountModeCoding {
+			return nil, infraerrors.BadRequest("USER_MODEL_SYNC_ACCOUNT_MODE_INVALID", "DeepSeek does not support coding account mode")
+		}
+
+		apiProtocol := strings.ToLower(strings.TrimSpace(input.APIProtocol))
+		if apiProtocol == "" {
+			apiProtocol = APIProtocolChatCompletions
+		}
+		if err := validateAllowedValue("api_protocol", apiProtocol, APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses); err != nil {
+			return nil, err
+		}
+		if apiProtocol == APIProtocolResponses && platform != PlatformDeepseek {
+			return nil, infraerrors.BadRequest("USER_MODEL_SYNC_API_PROTOCOL_INVALID", "responses protocol is only supported by DeepSeek")
+		}
+		credentials["account_mode"] = accountMode
+		credentials["api_protocol"] = apiProtocol
+	}
 	if baseURL != "" {
 		credentials["base_url"] = baseURL
 		if err := validateUserOwnedAccountURLs(ctx, map[string]any{"credentials": credentials}); err != nil {
@@ -1524,6 +1564,7 @@ func (s *UserResourceService) CreateAccount(ctx context.Context, ownerID int64, 
 		"credentials":           map[string]any{},
 		"extra":                 map[string]any{},
 	})
+	prepareUserResourceCodexExtraForCreate(payload)
 	if err := s.normalizeAndValidateAccountPayload(ctx, ownerID, nil, payload); err != nil {
 		return nil, err
 	}
@@ -1580,6 +1621,7 @@ func (s *UserResourceService) UpdateAccount(ctx context.Context, ownerID, accoun
 		existingCredentials, _ := existing["credentials"].(map[string]any)
 		payload["credentials"] = MergePreservingSensitiveCreds(existingCredentials, incoming)
 	}
+	prepareUserResourceCodexExtraForUpdate(existing, payload)
 	if err := s.normalizeAndValidateAccountPayload(ctx, ownerID, existing, payload); err != nil {
 		return nil, err
 	}
@@ -1850,6 +1892,42 @@ func (s *UserResourceService) ImportAccounts(ctx context.Context, ownerID int64,
 	return result, nil
 }
 
+func prepareUserResourceCodexExtraForCreate(payload map[string]any) {
+	if payload == nil {
+		return
+	}
+	extra, _ := payload["extra"].(map[string]any)
+	payload["extra"] = prepareCodexFingerprintExtraForCreate(
+		strings.ToLower(strings.TrimSpace(urAsString(payload["platform"]))),
+		normalizeUserAccountType(urAsString(payload["type"])),
+		extra,
+	)
+}
+
+func prepareUserResourceCodexExtraForUpdate(existing, payload map[string]any) {
+	if payload == nil {
+		return
+	}
+	desiredPlatform := strings.ToLower(strings.TrimSpace(urAsString(existing["platform"])))
+	if value, ok := payload["platform"]; ok {
+		desiredPlatform = strings.ToLower(strings.TrimSpace(urAsString(value)))
+	}
+	desiredType := normalizeUserAccountType(urAsString(existing["type"]))
+	if value, ok := payload["type"]; ok {
+		desiredType = normalizeUserAccountType(urAsString(value))
+	}
+	existingExtra, _ := existing["extra"].(map[string]any)
+	desiredExtra := existingExtra
+	if value, ok := payload["extra"].(map[string]any); ok {
+		desiredExtra = value
+	}
+	payload["extra"] = prepareCodexFingerprintExtraForUpdate(&Account{
+		Platform: desiredPlatform,
+		Type:     desiredType,
+		Extra:    existingExtra,
+	}, desiredExtra)
+}
+
 func (s *UserResourceService) BatchUpdateAccounts(ctx context.Context, ownerID int64, ids []int64, fields map[string]any) (map[string]any, error) {
 	if err := s.ensureDB(); err != nil {
 		return nil, err
@@ -1887,6 +1965,7 @@ func (s *UserResourceService) BatchUpdateAccounts(ctx context.Context, ownerID i
 			existingCredentials, _ := existing["credentials"].(map[string]any)
 			normalized["credentials"] = MergePreservingSensitiveCreds(existingCredentials, incoming)
 		}
+		prepareUserResourceCodexExtraForUpdate(existing, normalized)
 		if err := s.normalizeAndValidateAccountPayload(ctx, ownerID, existing, normalized); err != nil {
 			return nil, err
 		}

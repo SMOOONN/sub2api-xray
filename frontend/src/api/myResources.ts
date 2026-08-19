@@ -76,6 +76,8 @@ export interface SyncUpstreamPreviewParams {
   type: string
   base_url?: string
   api_key: string
+  account_mode?: string
+  api_protocol?: string
 }
 
 export interface GeminiOAuthCapabilities {

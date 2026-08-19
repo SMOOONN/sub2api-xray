@@ -304,7 +304,8 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 	upstreamReq.Header.Set(liveAttestationHeader, attestation)
 	applyLiveUpstreamIdentityHeaders(upstreamReq.Header)
 
-	resp, err := s.httpUpstream.Do(upstreamReq, resolveAccountProxyURL(account), account.ID, account.Concurrency)
+	proxyURL := resolveAccountProxyURL(account)
+	resp, err := s.httpUpstream.Do(ProtectUserOwnedUpstreamRequest(upstreamReq, account, proxyURL), proxyURL, account.ID, account.Concurrency)
 	if err != nil {
 		logLiveCreateStageFailure(ctx, account.ID, "upstream_transport", err)
 		return nil, err
@@ -451,7 +452,9 @@ func (s *OpenAIGatewayService) dialLiveSideband(ctx context.Context, record *Liv
 		return nil, err
 	}
 	target := strings.TrimRight(chatGPTLiveSidebandBaseURL, "/") + "/" + url.PathEscape(record.CallID)
-	conn, status, _, err := s.getOpenAIWSPassthroughDialer().Dial(ctx, target, headers, resolveAccountProxyURL(account))
+	proxyURL := resolveAccountProxyURL(account)
+	dialCtx := withOpenAIWSNetworkPolicy(ctx, account, proxyURL)
+	conn, status, _, err := s.getOpenAIWSPassthroughDialer().Dial(dialCtx, target, headers, proxyURL)
 	if err != nil {
 		return nil, fmt.Errorf("dial live sideband (status %d): %w", status, err)
 	}

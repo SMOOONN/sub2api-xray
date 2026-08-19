@@ -195,6 +195,20 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(selector.props('ownerUserId')).toBe(null)
   })
 
+  it('exposes CN providers in both scopes and keeps user accounts API-key only', async () => {
+    const adminWrapper = mountModal('admin')
+    const userWrapper = mountModal('user')
+
+    for (const platform of ['Kimi', 'Zhipu GLM', 'DeepSeek']) {
+      expect(adminWrapper.findAll('button').some(button => button.text().includes(platform))).toBe(true)
+      expect(userWrapper.findAll('button').some(button => button.text().includes(platform))).toBe(true)
+
+      await selectButtonByText(userWrapper, platform)
+      expect(userWrapper.find('form#create-account-form input[type="password"]').exists()).toBe(true)
+      expect(userWrapper.findComponent(OAuthAuthorizationFlowStub).exists()).toBe(false)
+    }
+  })
+
   it('creates a user-scoped OpenAI Responses API account through /my/accounts', async () => {
     const wrapper = mountModal('user')
     await selectButtonByText(wrapper, 'OpenAI')

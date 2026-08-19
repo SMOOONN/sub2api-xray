@@ -143,7 +143,15 @@
           </template>
           <template #cell-today_stats="{ row }"><span class="font-medium text-gray-900 dark:text-white">{{ row.today_request_count || 0 }}</span><span class="ml-1 text-xs text-gray-500">req</span></template>
           <template #cell-groups="{ row }"><div class="flex max-w-56 flex-wrap gap-1"><span v-for="group in row.groups || []" :key="group.id" class="badge badge-gray">{{ group.name }}</span><span v-if="!(row.groups || []).length">-</span></div></template>
-          <template #cell-usage="{ row }"><div class="text-xs text-gray-500"><div>{{ row.session_window_status || '-' }}</div><div v-if="row.rate_limit_reset_at">{{ formatDate(row.rate_limit_reset_at) }}</div></div></template>
+          <template #cell-usage="{ row }">
+            <div class="text-xs text-gray-500">
+              <template v-if="cnUsageSummary(row).length">
+                <div v-for="line in cnUsageSummary(row)" :key="line">{{ line }}</div>
+              </template>
+              <div v-else>{{ row.session_window_status || '-' }}</div>
+              <div v-if="row.rate_limit_reset_at">{{ formatDate(row.rate_limit_reset_at) }}</div>
+            </div>
+          </template>
           <template #cell-proxy="{ row }"><div class="max-w-44"><div class="truncate">{{ row.proxy_name || '-' }}</div><div v-if="row.proxy_protocol" class="text-xs uppercase text-gray-500">{{ row.proxy_protocol }}</div></div></template>
           <template #cell-priority="{ row }">{{ row.priority ?? 0 }}</template>
           <template #cell-rate_multiplier="{ row }"><span class="font-mono text-sm">{{ Number(row.rate_multiplier ?? 1).toFixed(2) }}x</span></template>
@@ -327,9 +335,19 @@ const visibleColumns = computed(() => allColumns.value.filter(column => !hiddenC
 const toggleableColumns = computed(() => allColumns.value.filter(column => !['select', 'actions'].includes(column.key)))
 const allSelected = computed(() => accounts.value.length > 0 && accounts.value.every(row => selectedIds.value.includes(Number(row.id))))
 
-const platformOptions: SelectOption[] = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok'].map(value => ({
+const platformLabels: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  gemini: 'Gemini',
+  antigravity: 'Antigravity',
+  grok: 'Grok',
+  kimi: 'Kimi',
+  zhipu: 'Zhipu GLM',
+  deepseek: 'DeepSeek',
+}
+const platformOptions: SelectOption[] = Object.entries(platformLabels).map(([value, label]) => ({
   value,
-  label: value === 'anthropic' ? 'Anthropic' : value === 'openai' ? 'OpenAI' : value[0].toUpperCase() + value.slice(1),
+  label,
 }))
 const platformFilterOptions = computed(() => [{ value: '', label: t('admin.accounts.allPlatforms') }, ...platformOptions])
 const typeFilterOptions = computed(() => [{ value: '', label: t('admin.accounts.allTypes') }, ...USER_ACCOUNT_TYPE_OPTIONS.map(option => ({ value: option.value, label: accountTypeLabel(option.value) }))])
@@ -602,6 +620,22 @@ function accountTypeLabel(type: unknown) {
   return value
 }
 function credentialEmail(row: ResourceItem) { return String(row.extra?.email || row.credentials?.email || '') }
+function cnUsageSummary(row: ResourceItem): string[] {
+  if (!['kimi', 'zhipu', 'deepseek'].includes(String(row.platform || ''))) return []
+  const extra = (row.extra && typeof row.extra === 'object' ? row.extra : {}) as Record<string, unknown>
+  const platform = String(row.platform)
+  const lines: string[] = []
+  const balance = extra[`${platform}_balance`]
+  if (typeof balance === 'number') {
+    const currency = typeof extra[`${platform}_balance_currency`] === 'string' ? String(extra[`${platform}_balance_currency`]) : ''
+    lines.push(`${currency ? `${currency} ` : ''}${balance.toFixed(2)}`)
+  }
+  const used5h = extra[`${platform}_5h_used_percent`]
+  const weekly = extra[`${platform}_weekly_used_percent`]
+  if (typeof used5h === 'number') lines.push(`5h ${used5h.toFixed(0)}%`)
+  if (typeof weekly === 'number') lines.push(`7d ${weekly.toFixed(0)}%`)
+  return lines
+}
 function formatDate(value: unknown) {
   if (!value) return '-'
   const normalized = typeof value === 'number' && value < 1_000_000_000_000 ? value * 1000 : value

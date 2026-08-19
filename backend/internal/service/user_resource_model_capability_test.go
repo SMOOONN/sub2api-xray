@@ -139,6 +139,57 @@ func TestSyncAccountUpstreamModelsPreviewIsEphemeralAndPublicOnly(t *testing.T) 
 	}
 }
 
+func TestSyncAccountUpstreamModelsPreviewCarriesCNModeAndProtocol(t *testing.T) {
+	upstream := &userModelSyncHTTPUpstream{responseBody: `{"data":[{"id":"kimi-for-coding"}]}`}
+	testService := &AccountTestService{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
+	svc := NewUserResourceService(nil, nil, nil, nil)
+	svc.SetAccountMaintenanceServices(testService, nil)
+
+	models, err := svc.SyncAccountUpstreamModelsPreview(context.Background(), 41, UserUpstreamModelsPreviewInput{
+		Platform:    PlatformKimi,
+		Type:        AccountTypeAPIKey,
+		APIKey:      "temporary-secret",
+		AccountMode: AccountModeCoding,
+		APIProtocol: APIProtocolAnthropic,
+	})
+	if err != nil {
+		t.Fatalf("CN preview returned error: %v", err)
+	}
+	if strings.Join(models, ",") != "kimi-for-coding" {
+		t.Fatalf("unexpected CN models: %#v", models)
+	}
+	if upstream.request == nil {
+		t.Fatal("expected a CN upstream model request")
+	}
+	if got := upstream.request.URL.String(); got != "https://api.kimi.com/coding/v1/models" {
+		t.Fatalf("CN account mode/protocol were not applied: %s", got)
+	}
+	if got := upstream.request.Header.Get("Authorization"); got != "Bearer temporary-secret" {
+		t.Fatalf("temporary CN credential was not applied: %q", got)
+	}
+}
+
+func TestSyncAccountUpstreamModelsPreviewRejectsInvalidCNProtocolCombination(t *testing.T) {
+	upstream := &userModelSyncHTTPUpstream{responseBody: `{"data":[{"id":"should-not-run"}]}`}
+	testService := &AccountTestService{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
+	svc := NewUserResourceService(nil, nil, nil, nil)
+	svc.SetAccountMaintenanceServices(testService, nil)
+
+	_, err := svc.SyncAccountUpstreamModelsPreview(context.Background(), 41, UserUpstreamModelsPreviewInput{
+		Platform:    PlatformKimi,
+		Type:        AccountTypeAPIKey,
+		APIKey:      "temporary-secret",
+		AccountMode: AccountModePayG,
+		APIProtocol: APIProtocolResponses,
+	})
+	if err == nil {
+		t.Fatal("expected Kimi responses preview to be rejected")
+	}
+	if upstream.calls != 0 {
+		t.Fatalf("invalid CN preview reached upstream: calls=%d", upstream.calls)
+	}
+}
+
 func TestSyncAccountUpstreamModelsPreviewRejectsPrivateBaseURLBeforeHTTP(t *testing.T) {
 	upstream := &userModelSyncHTTPUpstream{responseBody: `{"data":[{"id":"should-not-run"}]}`}
 	testService := &AccountTestService{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
