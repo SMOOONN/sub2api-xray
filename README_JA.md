@@ -6,7 +6,7 @@
 
 Sub2API Xray は [Sub2API](https://github.com/Wei-Shaw/sub2api) の継続的に保守されるフォークです。公式ゲートウェイ機能を維持しながら、ユーザー専用リソースプール、サブスクリプション配布、組み込み Xray プロキシランタイムを追加します。
 
-[![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.27.0-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -38,7 +38,7 @@ Sub2API Xray は [Sub2API](https://github.com/Wei-Shaw/sub2api) の継続的に�
 
 ## 現在の開発バージョン
 
-現在の正式版は [v0.1.178-xray4](https://github.com/SMOOONN/sub2api-xray/releases/tag/v0.1.178-xray4) で、公式 `v0.1.178` とそれに対応する最新の `main` コミットに同期済みです。
+現在の正式版は [v0.1.183-xray4](https://github.com/smmooooonn/sub2api-xray/releases/tag/v0.1.183-xray4) で、公式 `v0.1.183` とそれに対応する最新の `main` コミットに同期済みです。
 
 ## ⚠️ 重要なお知らせ
 
@@ -78,7 +78,7 @@ Sub2API を拡張・統合するコミュニティプロジェクト:
 
 | コンポーネント | 技術 |
 |-----------|------------|
-| バックエンド | Go 1.26.6, Gin, Ent |
+| バックエンド | Go 1.27.0, Gin, Ent |
 | フロントエンド | Vue 3.4+, Vite 5+, TailwindCSS |
 | データベース | PostgreSQL 15+ |
 | キャッシュ/キュー | Redis 7+ |
@@ -113,7 +113,7 @@ GitHub Releases からビルド済みバイナリをダウンロードするワ�
 #### インストール手順
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/install.sh | sudo bash
 ```
 
 スクリプトは以下を実行します:
@@ -163,7 +163,7 @@ sudo journalctl -u sub2api -f
 sudo systemctl restart sub2api
 
 # アンインストール
-curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/install.sh | sudo bash -s -- uninstall -y
+curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/install.sh | sudo bash -s -- uninstall -y
 ```
 
 ---
@@ -186,7 +186,7 @@ PostgreSQL と Redis のコンテナを含む Docker Compose でデプロイし�
 mkdir -p sub2api-deploy && cd sub2api-deploy
 
 # デプロイ準備スクリプトをダウンロードして実行
-curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/docker-deploy.sh | bash
+curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/docker-deploy.sh | bash
 
 # サービスを起動
 docker compose up -d
@@ -208,7 +208,7 @@ docker compose logs -f sub2api
 
 ```bash
 # 1. リポジトリをクローン
-git clone https://github.com/SMOOONN/sub2api-xray.git
+git clone https://github.com/smmooooonn/sub2api-xray.git
 cd sub2api/deploy
 
 # 2. 環境設定ファイルをコピー
@@ -338,7 +338,7 @@ rm -rf data/ postgres_data/ redis_data/
 Apple シリコン搭載 Mac と macOS 26 では、Apple `container` 1.1.0 以降を使用して Sub2API、PostgreSQL、Redis の完全なスタックを実行できます:
 
 ```bash
-git clone https://github.com/SMOOONN/sub2api-xray.git
+git clone https://github.com/smmooooonn/sub2api-xray.git
 cd sub2api/deploy
 ./apple-container.sh init
 ./apple-container.sh up
@@ -364,7 +364,7 @@ cd sub2api/deploy
 
 ```bash
 # 1. リポジトリをクローン
-git clone https://github.com/SMOOONN/sub2api-xray.git
+git clone https://github.com/smmooooonn/sub2api-xray.git
 cd sub2api
 
 # 2. pnpm をインストール（未インストールの場合）
@@ -597,11 +597,11 @@ sub2api/
 
 ## スター履歴
 
-<a href="https://star-history.dera.page/#SMOOONN/sub2api-xray&Date">
+<a href="https://star-history.dera.page/#smmooooonn/sub2api-xray&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date" />
-   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=smmooooonn/sub2api-xray&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=smmooooonn/sub2api-xray&type=Date" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=smmooooonn/sub2api-xray&type=Date" />
  </picture>
 </a>
 

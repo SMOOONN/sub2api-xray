@@ -6,13 +6,21 @@ const {
   adminPreviewSyncMock,
   userAccountSyncMock,
   userPreviewSyncMock,
-  copyToClipboard
+  copyToClipboard,
+  showError,
+  showSuccess,
+  showInfo,
+  showWarning
 } = vi.hoisted(() => ({
   adminAccountSyncMock: vi.fn(),
   adminPreviewSyncMock: vi.fn(),
   userAccountSyncMock: vi.fn(),
   userPreviewSyncMock: vi.fn(),
-  copyToClipboard: vi.fn()
+  copyToClipboard: vi.fn().mockResolvedValue(true),
+  showError: vi.fn(),
+  showSuccess: vi.fn(),
+  showInfo: vi.fn(),
+  showWarning: vi.fn()
 }))
 
 vi.mock('@/api/admin/accounts', () => ({
@@ -35,9 +43,10 @@ vi.mock('@/api/myResources', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showInfo: vi.fn(),
-    showSuccess: vi.fn(),
-    showError: vi.fn()
+    showError,
+    showSuccess,
+    showInfo,
+    showWarning
   })
 }))
 
@@ -70,11 +79,12 @@ function syncButton(wrapper: ReturnType<typeof mount>) {
   return button
 }
 
-function mountSelector() {
+function mountSelector(props: Record<string, unknown> = {}) {
   return mount(ModelWhitelistSelector, {
     props: {
       modelValue: [],
-      platform: 'openai'
+      platform: 'openai',
+      ...props,
     },
     global: globalOptions
   })
@@ -100,6 +110,10 @@ describe('ModelWhitelistSelector', () => {
     adminPreviewSyncMock.mockResolvedValue({ models: ['admin-preview'] })
     userAccountSyncMock.mockResolvedValue({ models: ['user-model'] })
     userPreviewSyncMock.mockResolvedValue({ models: ['user-preview'] })
+    showError.mockReset()
+    showSuccess.mockReset()
+    showInfo.mockReset()
+    showWarning.mockReset()
   })
 
   it('keeps the existing admin account sync as the default', async () => {
@@ -239,5 +253,72 @@ describe('ModelWhitelistSelector', () => {
 
     expect(wrapper.emitted('update:modelValue')).toEqual([[['gpt-5.6-sol']]])
     expect(copyToClipboard).not.toHaveBeenCalled()
+  })
+
+  it('warns when model IDs sync but capability metadata is incomplete', async () => {
+    adminAccountSyncMock.mockResolvedValue({
+      models: ['x-preview-f-free'],
+      warnings: [
+        {
+          code: 'upstream_model_metadata_incomplete',
+          message: 'Model IDs were synced, but capability metadata could not be updated.'
+        }
+      ]
+    })
+    const wrapper = mount(ModelWhitelistSelector, {
+      props: {
+        modelValue: [],
+        platform: 'openai',
+        accountId: 46
+      },
+      global: {
+        stubs: {
+          ModelIcon: true
+        }
+      }
+    })
+
+    const syncButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'admin.accounts.syncUpstreamModels')
+    expect(syncButton).toBeDefined()
+    await syncButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['x-preview-f-free']]])
+    expect(showWarning).toHaveBeenCalledWith('admin.accounts.syncUpstreamModelsMetadataIncomplete')
+    expect(showSuccess).not.toHaveBeenCalled()
+  })
+
+  it('reports a successful preview so account creation can persist metadata', async () => {
+    adminPreviewSyncMock.mockResolvedValue({
+      models: ['x-preview-f-free'],
+      metadata: {
+        'x-preview-f-free': {
+          id: 'x-preview-f-free',
+          reasoning: true,
+          supported_reasoning_levels: ['low', 'high', 'max'],
+        },
+      },
+    })
+    const wrapper = mountSelector({
+      syncCredentials: {
+        platform: 'openai',
+        type: 'apikey',
+        base_url: 'https://opencode.ai/zen/v1',
+        api_key: 'test-key',
+      },
+    })
+    const syncButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'admin.accounts.syncUpstreamModels')
+
+    expect(syncButton).toBeDefined()
+    await syncButton?.trigger('click')
+    await flushPromises()
+
+    expect(adminPreviewSyncMock).toHaveBeenCalledOnce()
+    expect(wrapper.emitted('upstream-synced')).toEqual([[]])
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['x-preview-f-free']]])
   })
 })

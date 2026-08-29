@@ -7,7 +7,7 @@
 # =============================================================================
 
 ARG NODE_IMAGE=node:24-alpine
-ARG GOLANG_IMAGE=golang:1.26.6-alpine
+ARG GOLANG_IMAGE=golang:1.27.0-alpine
 ARG ALPINE_IMAGE=alpine:3.20
 ARG GOPROXY=https://goproxy.cn,direct
 ARG GOSUMDB=sum.golang.google.cn
@@ -86,7 +86,7 @@ FROM ${ALPINE_IMAGE}
 # Labels
 LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
 LABEL description="Sub2API Xray - AI API Gateway Platform"
-LABEL org.opencontainers.image.source="https://github.com/SMOOONN/sub2api-xray"
+LABEL org.opencontainers.image.source="https://github.com/smmooooonn/sub2api-xray"
 
 # Install runtime dependencies
 RUN apk add --no-cache \

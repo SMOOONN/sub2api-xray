@@ -6,7 +6,7 @@
 
 Sub2API Xray is a maintained fork of [Sub2API](https://github.com/Wei-Shaw/sub2api). It keeps upstream gateway capabilities while adding private user resource pools, subscription distribution, and an embedded Xray proxy runtime.
 
-[![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.27.0-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -38,7 +38,7 @@ The user resource workspace is controlled by `enable_user_resources` and is disa
 
 ## Development Version
 
-The current formal Xray release is [v0.1.178-xray4](https://github.com/SMOOONN/sub2api-xray/releases/tag/v0.1.178-xray4), synchronized with official `v0.1.178` and its latest corresponding `main` commits.
+The current formal Xray release is [v0.1.183-xray4](https://github.com/smmooooonn/sub2api-xray/releases/tag/v0.1.183-xray4), synchronized with official `v0.1.183` and its latest corresponding `main` commits.
 
 ## ⚠️ Important Notice
 
@@ -79,7 +79,7 @@ Community projects that extend or integrate with Sub2API:
 
 | Component | Technology |
 |-----------|------------|
-| Backend | Go 1.26.6, Gin, Ent |
+| Backend | Go 1.27.0, Gin, Ent |
 | Frontend | Vue 3.4+, Vite 5+, TailwindCSS |
 | Database | PostgreSQL 15+ |
 | Cache/Queue | Redis 7+ |
@@ -114,7 +114,7 @@ One-click installation script that downloads pre-built binaries from GitHub Rele
 #### Installation Steps
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/install.sh | sudo bash
 ```
 
 The script will:
@@ -164,7 +164,7 @@ sudo journalctl -u sub2api -f
 sudo systemctl restart sub2api
 
 # Uninstall
-curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/install.sh | sudo bash -s -- uninstall -y
+curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/install.sh | sudo bash -s -- uninstall -y
 ```
 
 ---
@@ -187,7 +187,7 @@ Use the automated deployment script for easy setup:
 mkdir -p sub2api-deploy && cd sub2api-deploy
 
 # Download and run deployment preparation script
-curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/docker-deploy.sh | bash
+curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/docker-deploy.sh | bash
 
 # Start services
 docker compose up -d
@@ -209,7 +209,7 @@ If you prefer manual setup:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/SMOOONN/sub2api-xray.git
+git clone https://github.com/smmooooonn/sub2api-xray.git
 cd sub2api/deploy
 
 # 2. Copy environment configuration
@@ -339,7 +339,7 @@ rm -rf data/ postgres_data/ redis_data/
 Apple-silicon Macs running macOS 26 can run the full Sub2API, PostgreSQL, and Redis stack with Apple `container` 1.1.0 or newer:
 
 ```bash
-git clone https://github.com/SMOOONN/sub2api-xray.git
+git clone https://github.com/smmooooonn/sub2api-xray.git
 cd sub2api/deploy
 ./apple-container.sh init
 ./apple-container.sh up
@@ -365,7 +365,7 @@ Build and run from source code for development or customization.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/SMOOONN/sub2api-xray.git
+git clone https://github.com/smmooooonn/sub2api-xray.git
 cd sub2api
 
 # 2. Install pnpm (if not already installed)
@@ -733,11 +733,11 @@ sub2api/
 
 ## Star History
 
-<a href="https://star-history.dera.page/#SMOOONN/sub2api-xray&Date">
+<a href="https://star-history.dera.page/#smmooooonn/sub2api-xray&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date" />
-   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=smmooooonn/sub2api-xray&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=smmooooonn/sub2api-xray&type=Date" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=smmooooonn/sub2api-xray&type=Date" />
  </picture>
 </a>
 

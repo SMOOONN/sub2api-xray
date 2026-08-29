@@ -6,7 +6,7 @@
 
 Sub2API Xray 是 [Sub2API](https://github.com/Wei-Shaw/sub2api) 的持续维护分支。在保留官方网关能力的基础上，新增用户私有资源池、订阅分发和内置 Xray 代理运行时。
 
-[![Go](https://img.shields.io/badge/Go-1.26.6-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.27.0-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -38,7 +38,7 @@ Sub2API Xray 是 [Sub2API](https://github.com/Wei-Shaw/sub2api) 的持续维护�
 
 ## 当前开发版本
 
-当前正式版本为 [v0.1.178-xray4](https://github.com/SMOOONN/sub2api-xray/releases/tag/v0.1.178-xray4)，已同步官方 `v0.1.178` 及其对应的最新 `main` 提交。
+当前正式版本为 [v0.1.183-xray4](https://github.com/smmooooonn/sub2api-xray/releases/tag/v0.1.183-xray4)，已同步官方 `v0.1.183` 及其对应的最新 `main` 提交。
 
 ## ⚠️ 重要提醒
 
@@ -78,7 +78,7 @@ Sub2API Xray 是一个 AI API 网关平台，用于分发和管理 AI 产品订�
 
 | 组件 | 技术 |
 |------|------|
-| 后端 | Go 1.26.6, Gin, Ent |
+| 后端 | Go 1.27.0, Gin, Ent |
 | 前端 | Vue 3.4+, Vite 5+, TailwindCSS |
 | 数据库 | PostgreSQL 15+ |
 | 缓存/队列 | Redis 7+ |
@@ -113,7 +113,7 @@ Nginx 默认会丢弃名称中含下划线的请求头（如 `session_id`），�
 #### 安装步骤
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/install.sh | sudo bash
 ```
 
 脚本会自动：
@@ -163,7 +163,7 @@ sudo journalctl -u sub2api -f
 sudo systemctl restart sub2api
 
 # 卸载
-curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/install.sh | sudo bash -s -- uninstall -y
+curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/install.sh | sudo bash -s -- uninstall -y
 ```
 
 ---
@@ -186,7 +186,7 @@ curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/ins
 mkdir -p sub2api-deploy && cd sub2api-deploy
 
 # 下载并运行部署准备脚本
-curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/docker-deploy.sh | bash
+curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/docker-deploy.sh | bash
 
 # 启动服务
 docker compose up -d
@@ -208,7 +208,7 @@ docker compose logs -f sub2api
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/SMOOONN/sub2api-xray.git
+git clone https://github.com/smmooooonn/sub2api-xray.git
 cd sub2api/deploy
 
 # 2. 复制环境配置文件
@@ -350,7 +350,7 @@ rm -rf data/ postgres_data/ redis_data/
 Apple 芯片 Mac 在 macOS 26 上可使用 Apple `container` 1.1.0 或更高版本运行完整的 Sub2API、PostgreSQL 和 Redis：
 
 ```bash
-git clone https://github.com/SMOOONN/sub2api-xray.git
+git clone https://github.com/smmooooonn/sub2api-xray.git
 cd sub2api/deploy
 ./apple-container.sh init
 ./apple-container.sh up
@@ -376,7 +376,7 @@ cd sub2api/deploy
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/SMOOONN/sub2api-xray.git
+git clone https://github.com/smmooooonn/sub2api-xray.git
 cd sub2api
 
 # 2. 安装 pnpm（如果还没有安装）
@@ -640,11 +640,11 @@ sub2api/
 
 ## Star History
 
-<a href="https://star-history.dera.page/#SMOOONN/sub2api-xray&Date">
+<a href="https://star-history.dera.page/#smmooooonn/sub2api-xray&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date" />
-   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=smmooooonn/sub2api-xray&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=smmooooonn/sub2api-xray&type=Date" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=smmooooonn/sub2api-xray&type=Date" />
  </picture>
 </a>
 

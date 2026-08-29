@@ -8,7 +8,7 @@
 # =============================================================================
 
 ARG NODE_IMAGE=node:24-alpine
-ARG GOLANG_IMAGE=golang:1.26.6-alpine
+ARG GOLANG_IMAGE=golang:1.27.0-alpine
 ARG ALPINE_IMAGE=alpine:3.21
 ARG POSTGRES_IMAGE=postgres:18-alpine
 ARG XRAY_IMAGE=ghcr.io/xtls/xray-core:26.3.27
@@ -139,9 +139,9 @@ RUN apk add --no-cache ca-certificates curl tar && \
 FROM ${ALPINE_IMAGE}
 
 # Labels
-LABEL maintainer="SMOOONN <github.com/SMOOONN>"
+LABEL maintainer="smmooooonn <github.com/smmooooonn>"
 LABEL description="Sub2API Xray - AI API Gateway Platform"
-LABEL org.opencontainers.image.source="https://github.com/SMOOONN/sub2api-xray"
+LABEL org.opencontainers.image.source="https://github.com/smmooooonn/sub2api-xray"
 
 # Install runtime dependencies
 RUN apk add --no-cache \
