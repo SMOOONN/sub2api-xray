@@ -456,7 +456,7 @@ func (m *XrayRuntimeManager) start(ctx context.Context, proxyID int64, ownerUser
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(m.workDir, 0o700); err != nil {
+	if err := os.MkdirAll(m.workDir, 0o700); err != nil { //nolint:gosec // G703: workDir 仅来自启动环境变量 XRAY_WORK_DIR（运维配置）或 os.TempDir()，非请求输入
 		return nil, err
 	}
 	config := buildXrayRuntimeConfig(port, outbound, blockPrivateDestinations)
@@ -467,15 +467,15 @@ func (m *XrayRuntimeManager) start(ctx context.Context, proxyID int64, ownerUser
 	prefix := fmt.Sprintf("proxy-%d-%s", proxyID, hash[:12])
 	configPath := filepath.Join(m.workDir, prefix+".json")
 	logPath := filepath.Join(m.workDir, prefix+".log")
-	if err := os.WriteFile(configPath, rawConfig, 0o600); err != nil {
+	if err := os.WriteFile(configPath, rawConfig, 0o600); err != nil { //nolint:gosec // G703: 同上；文件名为 proxy-<int64>-<hash 前 12 位>，不含路径分隔符
 		return nil, err
 	}
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // G703: 同上
 	if err != nil {
 		_ = os.Remove(configPath)
 		return nil, err
 	}
-	cmd := exec.CommandContext(context.Background(), bin, "run", "-config", configPath)
+	cmd := exec.CommandContext(context.Background(), bin, "run", "-config", configPath) //nolint:gosec // G702: bin 仅来自启动环境变量 XRAY_BIN（运维配置）或 exec.LookPath("xray")，参数为固定字面量 + 上面自建的 configPath，非请求输入
 	if m.commandFactory != nil {
 		cmd = m.commandFactory(bin, configPath)
 	}

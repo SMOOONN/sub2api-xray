@@ -106,7 +106,7 @@ func TestStoredProxyRuntimeConfigCheck(t *testing.T) {
 		if err := os.WriteFile(path, config, 0o600); err != nil {
 			t.Fatalf("write stored proxy %d config: %v", id, err)
 		}
-		if output, err := exec.Command(bin, "run", "-test", "-config", path).CombinedOutput(); err != nil {
+		if output, err := exec.Command(bin, "run", "-test", "-config", path).CombinedOutput(); err != nil { //nolint:gosec // G702: bin 来自测试者自设的环境变量，path 为 t.TempDir() + 数字文件名，非请求输入
 			t.Fatalf("xray rejected stored proxy %d config: %v: %s", id, err, strings.TrimSpace(string(output)))
 		}
 	}
