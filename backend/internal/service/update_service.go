@@ -667,6 +667,11 @@ type parsedVersion struct {
 func parseVersion(v string) parsedVersion {
 	v = strings.TrimPrefix(v, "v")
 	core, suffix, hasSuffix := strings.Cut(v, "-xray")
+	// 官方 0.1.184 新增：剥离非 -xray 的预发布后缀（-beta1、-rc1 等）。
+	// 不剥离时 Atoi("184-rc1") 会失败并把该段静默算成 0。
+	if idx := strings.IndexByte(core, '-'); idx != -1 {
+		core = core[:idx]
+	}
 	parts := strings.Split(core, ".")
 	result := parsedVersion{}
 	for i := 0; i < len(parts) && i < 3; i++ {

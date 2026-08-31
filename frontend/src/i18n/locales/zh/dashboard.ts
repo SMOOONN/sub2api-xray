@@ -340,6 +340,7 @@ export default {
 	  modelVariant: '疑似版本变体',
 	  modelMismatch: '模型不一致',
     reasoningEffort: '推理强度',
+    requestedReasoningEffort: '请求推理强度',
     endpoint: '端点',
     endpointDistribution: '端点分布',
     inbound: '入站',
@@ -360,6 +361,10 @@ export default {
     ws: 'WS',
     stream: '流式',
     sync: '同步',
+    nativeCompactionV2: '压缩',
+    compactionFilter: '请求类别',
+    allCompactionTypes: '全部请求',
+    compactionOnly: '仅原生压缩',
     cyber: '安全策略',
     live: 'Live',
     unknown: '未知',
@@ -476,7 +481,6 @@ export default {
     // 配额快照展示（MonitorQuotaView，管理端与用户端共用）
     quota: {
       unavailable: '配额信息不可用',
-      resetSoon: '即将重置',
       windows: {
         '5h': '5 小时',
         '7d': '7 天',
