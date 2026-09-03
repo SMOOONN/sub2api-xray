@@ -20,6 +20,7 @@ func TestAdminProxyResourceRoutesPrecedeDynamicProxyRoute(t *testing.T) {
 		`proxies.POST("/import", h.Admin.Proxy.ImportProxyNodes)`,
 		`proxies.GET("/sources", h.Admin.Proxy.ListProxySources)`,
 		`proxies.POST("/sources", h.Admin.Proxy.CreateProxySource)`,
+		`proxies.POST("/sources/sync-all", h.Admin.Proxy.SyncAllProxySources)`,
 		`proxies.PUT("/sources/:id", h.Admin.Proxy.UpdateProxySource)`,
 		`proxies.DELETE("/sources/:id", h.Admin.Proxy.DeleteProxySource)`,
 		`proxies.POST("/sources/:id/sync", h.Admin.Proxy.SyncProxySource)`,

@@ -239,3 +239,18 @@ func (h *ProxyHandler) SyncProxySource(c *gin.Context) {
 	service.RedactProxySourceSyncResultForUserResponse(result)
 	response.Success(c, result)
 }
+
+// SyncAllProxySources refreshes every system-owned proxy subscription source.
+// POST /api/v1/admin/proxies/sources/sync-all
+func (h *ProxyHandler) SyncAllProxySources(c *gin.Context) {
+	resourceService, ok := h.systemProxyResourceService(c)
+	if !ok {
+		return
+	}
+	result, err := resourceService.SyncAllSystemProxySources(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}

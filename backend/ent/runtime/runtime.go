@@ -1788,6 +1788,18 @@ func init() {
 	proxysourceDescLastImportedCount := proxysourceFields[8].Descriptor()
 	// proxysource.DefaultLastImportedCount holds the default value on creation for the last_imported_count field.
 	proxysource.DefaultLastImportedCount = proxysourceDescLastImportedCount.Default.(int)
+	// proxysourceDescSyncEnabled is the schema descriptor for sync_enabled field.
+	proxysourceDescSyncEnabled := proxysourceFields[9].Descriptor()
+	// proxysource.DefaultSyncEnabled holds the default value on creation for the sync_enabled field.
+	proxysource.DefaultSyncEnabled = proxysourceDescSyncEnabled.Default.(bool)
+	// proxysourceDescSubTrafficUsed is the schema descriptor for sub_traffic_used field.
+	proxysourceDescSubTrafficUsed := proxysourceFields[10].Descriptor()
+	// proxysource.DefaultSubTrafficUsed holds the default value on creation for the sub_traffic_used field.
+	proxysource.DefaultSubTrafficUsed = proxysourceDescSubTrafficUsed.Default.(int64)
+	// proxysourceDescSubTrafficTotal is the schema descriptor for sub_traffic_total field.
+	proxysourceDescSubTrafficTotal := proxysourceFields[11].Descriptor()
+	// proxysource.DefaultSubTrafficTotal holds the default value on creation for the sub_traffic_total field.
+	proxysource.DefaultSubTrafficTotal = proxysourceDescSubTrafficTotal.Default.(int64)
 	redeemcodeFields := schema.RedeemCode{}.Fields()
 	_ = redeemcodeFields
 	// redeemcodeDescCode is the schema descriptor for code field.

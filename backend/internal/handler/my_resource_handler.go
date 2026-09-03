@@ -62,6 +62,7 @@ func myListOptions(c *gin.Context) service.UserResourceListOptions {
 		UserID:    parseInt64Query(c, "user_id"),
 		APIKeyID:  parseInt64Query(c, "api_key_id"),
 		AccountID: parseInt64Query(c, "account_id"),
+		SourceID:  parseInt64Query(c, "source_id"),
 		StartDate: c.Query("start_date"),
 		EndDate:   c.Query("end_date"),
 		Timezone:  c.Query("timezone"),
@@ -1193,6 +1194,21 @@ func (h *MyResourceHandler) SyncProxySource(c *gin.Context) {
 		return
 	}
 	service.RedactProxySourceSyncResultForUserResponse(result)
+	response.Success(c, result)
+}
+
+// SyncAllProxySources refreshes every source the caller owns. The aggregate
+// result carries counts only, so there is nothing node-shaped left to redact.
+func (h *MyResourceHandler) SyncAllProxySources(c *gin.Context) {
+	userID, ok := h.currentUser(c)
+	if !ok {
+		return
+	}
+	result, err := h.userResourceService.SyncAllProxySources(c.Request.Context(), userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	response.Success(c, result)
 }
 

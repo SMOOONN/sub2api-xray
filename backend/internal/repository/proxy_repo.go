@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -339,16 +340,17 @@ func (r *proxyRepository) listWithFiltersAndOwnerScope(ctx context.Context, para
 
 // ListWithFiltersAndAccountCount lists proxies with filters and includes account count per proxy
 func (r *proxyRepository) ListWithFiltersAndAccountCount(ctx context.Context, params pagination.PaginationParams, protocol, status, search string) ([]service.ProxyWithAccountCount, *pagination.PaginationResult, error) {
-	return r.listWithFiltersAndAccountCountAndOwnerScope(ctx, params, protocol, status, search, "")
+	return r.listWithFiltersAndAccountCountAndOwnerScope(ctx, params, protocol, status, search, "", 0)
 }
 
-func (r *proxyRepository) ListWithAccountCountAndOwnerScope(ctx context.Context, params pagination.PaginationParams, protocol, status, search, ownerScope string) ([]service.ProxyWithAccountCount, *pagination.PaginationResult, error) {
-	return r.listWithFiltersAndAccountCountAndOwnerScope(ctx, params, protocol, status, search, ownerScope)
+func (r *proxyRepository) ListWithAccountCountAndOwnerScope(ctx context.Context, params pagination.PaginationParams, protocol, status, search, ownerScope string, sourceID int64) ([]service.ProxyWithAccountCount, *pagination.PaginationResult, error) {
+	return r.listWithFiltersAndAccountCountAndOwnerScope(ctx, params, protocol, status, search, ownerScope, sourceID)
 }
 
-func (r *proxyRepository) listWithFiltersAndAccountCountAndOwnerScope(ctx context.Context, params pagination.PaginationParams, protocol, status, search, ownerScope string) ([]service.ProxyWithAccountCount, *pagination.PaginationResult, error) {
+func (r *proxyRepository) listWithFiltersAndAccountCountAndOwnerScope(ctx context.Context, params pagination.PaginationParams, protocol, status, search, ownerScope string, sourceID int64) ([]service.ProxyWithAccountCount, *pagination.PaginationResult, error) {
 	q := r.client.Proxy.Query()
 	q = applyProxyOwnerScope(q, ownerScope)
+	q = applyProxySourceFilter(q, sourceID)
 	if protocol != "" {
 		q = q.Where(proxy.ProtocolEQ(protocol))
 	}
@@ -392,6 +394,21 @@ func applyProxyOwnerScope(q *dbent.ProxyQuery, ownerScope string) *dbent.ProxyQu
 	default:
 		return q
 	}
+}
+
+// applyProxySourceFilter narrows the list to the nodes one subscription source
+// imported. The link lives in the `extra` JSONB payload, which ent has no typed
+// accessor for, so the key and the value are both bound as query arguments.
+func applyProxySourceFilter(q *dbent.ProxyQuery, sourceID int64) *dbent.ProxyQuery {
+	if sourceID <= 0 {
+		return q
+	}
+	wanted := strconv.FormatInt(sourceID, 10)
+	return q.Where(func(s *entsql.Selector) {
+		s.Where(entsql.P(func(b *entsql.Builder) {
+			b.Ident(s.C(proxy.FieldExtra)).WriteString(" ->> ").Arg("source_id").WriteString(" = ").Arg(wanted)
+		}))
+	})
 }
 
 func (r *proxyRepository) listWithAccountCountSort(ctx context.Context, q *dbent.ProxyQuery, params pagination.PaginationParams, total int) ([]service.ProxyWithAccountCount, *pagination.PaginationResult, error) {

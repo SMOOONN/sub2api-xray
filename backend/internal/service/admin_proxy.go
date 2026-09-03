@@ -37,20 +37,20 @@ func (s *adminServiceImpl) ListProxiesWithAccountCount(ctx context.Context, page
 }
 
 type proxyOwnerScopeRepository interface {
-	ListWithAccountCountAndOwnerScope(ctx context.Context, params pagination.PaginationParams, protocol, status, search, ownerScope string) ([]ProxyWithAccountCount, *pagination.PaginationResult, error)
+	ListWithAccountCountAndOwnerScope(ctx context.Context, params pagination.PaginationParams, protocol, status, search, ownerScope string, sourceID int64) ([]ProxyWithAccountCount, *pagination.PaginationResult, error)
 }
 
 type proxyUserOwnedAccountCounter interface {
 	CountUserOwnedAccountsByProxyID(ctx context.Context, proxyID int64) (int64, error)
 }
 
-func (s *adminServiceImpl) ListProxiesWithAccountCountByOwnerScope(ctx context.Context, page, pageSize int, protocol, status, search, ownerScope, sortBy, sortOrder string) ([]ProxyWithAccountCount, int64, error) {
+func (s *adminServiceImpl) ListProxiesWithAccountCountByOwnerScope(ctx context.Context, page, pageSize int, protocol, status, search, ownerScope string, sourceID int64, sortBy, sortOrder string) ([]ProxyWithAccountCount, int64, error) {
 	repo, ok := s.proxyRepo.(proxyOwnerScopeRepository)
 	if !ok {
 		return nil, 0, infraerrors.ServiceUnavailable("RESOURCE_OWNER_FILTER_UNAVAILABLE", "resource owner filter is not available")
 	}
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize, SortBy: sortBy, SortOrder: sortOrder}
-	proxies, result, err := repo.ListWithAccountCountAndOwnerScope(ctx, params, protocol, status, search, ownerScope)
+	proxies, result, err := repo.ListWithAccountCountAndOwnerScope(ctx, params, protocol, status, search, ownerScope, sourceID)
 	if err != nil {
 		return nil, 0, err
 	}

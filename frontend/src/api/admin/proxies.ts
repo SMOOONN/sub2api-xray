@@ -8,6 +8,7 @@ import type {
   Proxy,
   ProxyAccountSummary,
   ProxyQualityCheckResult,
+  ProxySourceSyncAllResult,
   CreateProxyRequest,
   UpdateProxyRequest,
   PaginatedResponse,
@@ -62,6 +63,14 @@ export interface AdminProxySource {
   last_sync_error?: string | null
   last_synced_at?: string | null
   last_imported_count?: number
+  sync_enabled?: boolean
+  next_sync_at?: string | null
+  node_count?: number
+  active_node_count?: number
+  sub_traffic_used?: number
+  sub_traffic_total?: number
+  sub_expires_at?: string | null
+  sub_info_updated_at?: string | null
   created_at?: string
   updated_at?: string
 }
@@ -71,7 +80,11 @@ export interface AdminProxySourcePayload {
   subscription_url: string
   refresh_interval_minutes: number
   is_public: boolean
+  sync_enabled?: boolean
 }
+
+/** Per-source line of a "sync every source" run. Counts only, never node payloads. */
+export type { ProxySourceSyncAllItem, ProxySourceSyncAllResult } from '@/types'
 
 /**
  * List all proxies with pagination
@@ -87,6 +100,7 @@ export async function list(
     protocol?: string
     status?: 'active' | 'inactive' | 'expired'
     owner_scope?: 'system' | 'user'
+    source_id?: number
     search?: string
     sort_by?: string
     sort_order?: 'asc' | 'desc'
@@ -312,6 +326,12 @@ export async function syncSource(id: number): Promise<AdminProxyImportResult> {
   return data
 }
 
+/** Refresh every system-owned source in one request; paused sources are skipped. */
+export async function syncAllSources(): Promise<ProxySourceSyncAllResult> {
+  const { data } = await apiClient.post<ProxySourceSyncAllResult>('/admin/proxies/sources/sync-all')
+  return data
+}
+
 export async function batchDelete(ids: number[]): Promise<{
   deleted_ids: number[]
   skipped: Array<{ id: number; reason: string }>
@@ -375,7 +395,8 @@ export const proxiesAPI = {
     create: createSource,
     update: updateSource,
     delete: deleteSource,
-    sync: syncSource
+    sync: syncSource,
+    syncAll: syncAllSources
   },
   batchDelete,
   exportData,

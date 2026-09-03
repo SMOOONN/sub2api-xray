@@ -192,6 +192,7 @@ func RegisterUserRoutes(
 				proxies.POST("/import", h.MyResources.ImportProxyNodes)
 				proxies.GET("/sources", h.MyResources.ListProxySources)
 				proxies.POST("/sources", h.MyResources.CreateProxySource)
+				proxies.POST("/sources/sync-all", h.MyResources.SyncAllProxySources)
 				proxies.PUT("/sources/:id", h.MyResources.UpdateProxySource)
 				proxies.DELETE("/sources/:id", h.MyResources.DeleteProxySource)
 				proxies.POST("/sources/:id/sync", h.MyResources.SyncProxySource)

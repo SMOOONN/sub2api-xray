@@ -58,6 +58,26 @@ func (ProxySource) Fields() []ent.Field {
 			SchemaType(map[string]string{dialect.Postgres: "text"}),
 		field.Int("last_imported_count").
 			Default(0),
+		// New fields are appended so the existing ordinals stay put.
+		field.Bool("sync_enabled").
+			Default(true).
+			Comment("Whether the scheduler may refresh this source automatically."),
+		field.Int64("sub_traffic_used").
+			Default(0).
+			Comment("Upload+download reported by the subscription-userinfo header, in bytes."),
+		field.Int64("sub_traffic_total").
+			Default(0).
+			Comment("Plan quota reported by the subscription-userinfo header, in bytes; 0 means unknown."),
+		field.Time("sub_expires_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}).
+			Comment("Plan expiry reported by the subscription-userinfo header."),
+		field.Time("sub_info_updated_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}).
+			Comment("When the subscription-userinfo snapshot above was last refreshed."),
 	}
 }
 

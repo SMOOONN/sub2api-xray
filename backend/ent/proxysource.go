@@ -41,7 +41,17 @@ type ProxySource struct {
 	LastSyncError *string `json:"last_sync_error,omitempty"`
 	// LastImportedCount holds the value of the "last_imported_count" field.
 	LastImportedCount int `json:"last_imported_count,omitempty"`
-	selectValues      sql.SelectValues
+	// Whether the scheduler may refresh this source automatically.
+	SyncEnabled bool `json:"sync_enabled,omitempty"`
+	// Upload+download reported by the subscription-userinfo header, in bytes.
+	SubTrafficUsed int64 `json:"sub_traffic_used,omitempty"`
+	// Plan quota reported by the subscription-userinfo header, in bytes; 0 means unknown.
+	SubTrafficTotal int64 `json:"sub_traffic_total,omitempty"`
+	// Plan expiry reported by the subscription-userinfo header.
+	SubExpiresAt *time.Time `json:"sub_expires_at,omitempty"`
+	// When the subscription-userinfo snapshot above was last refreshed.
+	SubInfoUpdatedAt *time.Time `json:"sub_info_updated_at,omitempty"`
+	selectValues     sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -49,13 +59,13 @@ func (*ProxySource) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case proxysource.FieldIsPublic:
+		case proxysource.FieldIsPublic, proxysource.FieldSyncEnabled:
 			values[i] = new(sql.NullBool)
-		case proxysource.FieldID, proxysource.FieldOwnerUserID, proxysource.FieldRefreshIntervalMinutes, proxysource.FieldLastImportedCount:
+		case proxysource.FieldID, proxysource.FieldOwnerUserID, proxysource.FieldRefreshIntervalMinutes, proxysource.FieldLastImportedCount, proxysource.FieldSubTrafficUsed, proxysource.FieldSubTrafficTotal:
 			values[i] = new(sql.NullInt64)
 		case proxysource.FieldName, proxysource.FieldSubscriptionURL, proxysource.FieldLastSyncStatus, proxysource.FieldLastSyncError:
 			values[i] = new(sql.NullString)
-		case proxysource.FieldCreatedAt, proxysource.FieldUpdatedAt, proxysource.FieldDeletedAt, proxysource.FieldLastSyncedAt:
+		case proxysource.FieldCreatedAt, proxysource.FieldUpdatedAt, proxysource.FieldDeletedAt, proxysource.FieldLastSyncedAt, proxysource.FieldSubExpiresAt, proxysource.FieldSubInfoUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -154,6 +164,38 @@ func (_m *ProxySource) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.LastImportedCount = int(value.Int64)
 			}
+		case proxysource.FieldSyncEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field sync_enabled", values[i])
+			} else if value.Valid {
+				_m.SyncEnabled = value.Bool
+			}
+		case proxysource.FieldSubTrafficUsed:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field sub_traffic_used", values[i])
+			} else if value.Valid {
+				_m.SubTrafficUsed = value.Int64
+			}
+		case proxysource.FieldSubTrafficTotal:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field sub_traffic_total", values[i])
+			} else if value.Valid {
+				_m.SubTrafficTotal = value.Int64
+			}
+		case proxysource.FieldSubExpiresAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field sub_expires_at", values[i])
+			} else if value.Valid {
+				_m.SubExpiresAt = new(time.Time)
+				*_m.SubExpiresAt = value.Time
+			}
+		case proxysource.FieldSubInfoUpdatedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field sub_info_updated_at", values[i])
+			} else if value.Valid {
+				_m.SubInfoUpdatedAt = new(time.Time)
+				*_m.SubInfoUpdatedAt = value.Time
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -233,6 +275,25 @@ func (_m *ProxySource) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("last_imported_count=")
 	builder.WriteString(fmt.Sprintf("%v", _m.LastImportedCount))
+	builder.WriteString(", ")
+	builder.WriteString("sync_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SyncEnabled))
+	builder.WriteString(", ")
+	builder.WriteString("sub_traffic_used=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SubTrafficUsed))
+	builder.WriteString(", ")
+	builder.WriteString("sub_traffic_total=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SubTrafficTotal))
+	builder.WriteString(", ")
+	if v := _m.SubExpiresAt; v != nil {
+		builder.WriteString("sub_expires_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.SubInfoUpdatedAt; v != nil {
+		builder.WriteString("sub_info_updated_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

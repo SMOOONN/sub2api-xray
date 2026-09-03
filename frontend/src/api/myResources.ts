@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { ClaudeModel, ProxyQualityCheckResult } from '@/types'
+import type { ClaudeModel, ProxyQualityCheckResult, ProxySourceSyncAllResult } from '@/types'
 
 export interface ResourcePage<T = Record<string, any>> {
   items: T[]
@@ -21,6 +21,7 @@ export interface ResourceListParams {
   user_id?: number | string
   api_key_id?: number | string
   account_id?: number | string
+  source_id?: number | string
   start_date?: string
   end_date?: string
   timezone?: string
@@ -185,6 +186,7 @@ export const myResourcesApi = {
       update: async (id: number, payload: ResourceItem) => (await apiClient.put<ResourceItem>(`/my/proxies/sources/${id}`, payload)).data,
       delete: async (id: number) => (await apiClient.delete(`/my/proxies/sources/${id}`)).data,
       sync: async (id: number) => (await apiClient.post(`/my/proxies/sources/${id}/sync`)).data,
+      syncAll: async () => (await apiClient.post<ProxySourceSyncAllResult>('/my/proxies/sources/sync-all')).data,
     },
   },
   assignedSubscriptions: {

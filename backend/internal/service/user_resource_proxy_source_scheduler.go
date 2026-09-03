@@ -84,6 +84,7 @@ func (s *UserResourceService) runDueProxySourceSyncs(ctx context.Context) {
 SELECT id, owner_user_id
 FROM proxy_sources
 WHERE deleted_at IS NULL
+  AND sync_enabled
   AND (last_synced_at IS NULL OR last_synced_at + (refresh_interval_minutes * INTERVAL '1 minute') <= NOW())
   AND (last_sync_status <> 'syncing' OR updated_at < NOW() - INTERVAL '10 minutes')
 ORDER BY COALESCE(last_synced_at, created_at) ASC
@@ -169,6 +170,7 @@ func (s *UserResourceService) claimDueProxySource(ctx context.Context, source du
 UPDATE proxy_sources
 SET last_sync_status = 'syncing', last_sync_error = NULL, updated_at = NOW()
 WHERE id = $1 AND owner_user_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL
+  AND sync_enabled
   AND (last_synced_at IS NULL OR last_synced_at + (refresh_interval_minutes * INTERVAL '1 minute') <= NOW())
   AND (last_sync_status <> 'syncing' OR updated_at < NOW() - INTERVAL '10 minutes')`, source.ID, dueProxySourceOwnerValue(source.OwnerID))
 	if err != nil {

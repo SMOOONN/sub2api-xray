@@ -81,6 +81,16 @@ func (h *ProxyHandler) List(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	// Optional: narrow the list to the nodes one subscription source imported.
+	var sourceID int64
+	if raw := strings.TrimSpace(c.Query("source_id")); raw != "" {
+		parsed, parseErr := strconv.ParseInt(raw, 10, 64)
+		if parseErr != nil || parsed <= 0 {
+			response.BadRequest(c, "Invalid source_id")
+			return
+		}
+		sourceID = parsed
+	}
 	// 标准化和验证 search 参数
 	search = strings.TrimSpace(search)
 	if len(search) > 100 {
@@ -89,10 +99,10 @@ func (h *ProxyHandler) List(c *gin.Context) {
 
 	var proxies []service.ProxyWithAccountCount
 	var total int64
-	if ownerScope == "" {
+	if ownerScope == "" && sourceID == 0 {
 		proxies, total, err = h.adminService.ListProxiesWithAccountCount(c.Request.Context(), page, pageSize, protocol, status, search, sortBy, sortOrder)
 	} else if scoped, ok := h.adminService.(proxyOwnerScopeLister); ok {
-		proxies, total, err = scoped.ListProxiesWithAccountCountByOwnerScope(c.Request.Context(), page, pageSize, protocol, status, search, ownerScope, sortBy, sortOrder)
+		proxies, total, err = scoped.ListProxiesWithAccountCountByOwnerScope(c.Request.Context(), page, pageSize, protocol, status, search, ownerScope, sourceID, sortBy, sortOrder)
 	} else {
 		response.InternalError(c, "Resource owner filter is not available")
 		return

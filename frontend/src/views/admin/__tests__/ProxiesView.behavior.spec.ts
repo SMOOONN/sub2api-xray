@@ -16,6 +16,7 @@ const {
   updateSource,
   deleteSource,
   syncSource,
+  syncAllSources,
   showError,
   showSuccess,
   showInfo,
@@ -29,6 +30,7 @@ const {
   updateSource: vi.fn(),
   deleteSource: vi.fn(),
   syncSource: vi.fn(),
+  syncAllSources: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
   showInfo: vi.fn(),
@@ -54,6 +56,7 @@ vi.mock('@/api/admin', () => ({
         update: updateSource,
         delete: deleteSource,
         sync: syncSource,
+        syncAll: syncAllSources,
       },
     },
   },
@@ -240,6 +243,17 @@ describe('admin ProxiesView behavior', () => {
     updateSource.mockResolvedValue(createProxySource(1))
     deleteSource.mockResolvedValue({ message: 'success' })
     syncSource.mockResolvedValue({ created_count: 0 })
+    syncAllSources.mockResolvedValue({
+      total: 0,
+      success_count: 0,
+      partial_count: 0,
+      failed_count: 0,
+      skipped_count: 0,
+      deferred_count: 0,
+      created_count: 0,
+      updated_count: 0,
+      items: [],
+    })
     testProxy.mockResolvedValue({ success: true, latency_ms: 10, message: 'ok' })
     checkProxyQuality.mockResolvedValue({
       score: 100,
@@ -439,6 +453,65 @@ describe('admin ProxiesView behavior', () => {
     expect(deleteSource).toHaveBeenCalledWith(101)
     expect(listSources).toHaveBeenLastCalledWith(1, 100)
     expect(wrapper.text()).not.toContain('source-101')
+
+    wrapper.unmount()
+  })
+
+  it('pauses a single source, syncs every source, and filters the list by source', async () => {
+    const managed: AdminProxySource = {
+      ...createProxySource(7, 'source-7'),
+      node_count: 9,
+      active_node_count: 4,
+    }
+    listSources.mockResolvedValue({ ...paginated([managed], 1, 1, 1), page_size: 100 })
+    syncAllSources.mockResolvedValue({
+      total: 1,
+      success_count: 1,
+      partial_count: 0,
+      failed_count: 0,
+      skipped_count: 0,
+      deferred_count: 0,
+      created_count: 2,
+      updated_count: 3,
+      items: [],
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="admin-proxy-source-manager-button"]').trigger('click')
+    await flushPromises()
+
+    // Pausing resends the whole record with only sync_enabled flipped.
+    await wrapper.get('[data-test="admin-proxy-source-toggle-7"]').trigger('click')
+    await flushPromises()
+    expect(updateSource).toHaveBeenCalledWith(7, {
+      name: 'source-7',
+      subscription_url: 'https://source-7.example.com/subscription',
+      refresh_interval_minutes: 60,
+      is_public: false,
+      sync_enabled: false,
+    })
+    expect(showSuccess).toHaveBeenCalledWith('admin.proxies.sourceSyncPaused')
+
+    // Sync-all reports counts only: no node payloads, no subscription URLs.
+    await wrapper.get('[data-test="admin-proxy-source-sync-all"]').trigger('click')
+    await flushPromises()
+    expect(syncAllSources).toHaveBeenCalledTimes(1)
+    expect(showSuccess).toHaveBeenCalledWith('admin.proxies.sourceSyncAllDone')
+    const summary = wrapper.get('[data-test="admin-proxy-source-sync-all-summary"]').text()
+    expect(summary).toContain('admin.proxies.sourceSyncAllSummary')
+    expect(summary).toContain('"created":2')
+    expect(summary).toContain('"updated":3')
+    expect(summary).not.toContain('source-7.example.com')
+
+    // The node-count button closes the manager and reloads page one filtered.
+    listProxies.mockClear()
+    await wrapper.get('[data-test="admin-proxy-source-filter-7"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="admin-proxy-source-manager"]').exists()).toBe(false)
+    const filteredCall = listProxies.mock.calls.at(-1)
+    expect(filteredCall?.[0]).toBe(1)
+    expect(filteredCall?.[2]).toMatchObject({ source_id: 7 })
 
     wrapper.unmount()
   })

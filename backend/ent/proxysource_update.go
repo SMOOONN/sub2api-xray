@@ -219,6 +219,102 @@ func (_u *ProxySourceUpdate) AddLastImportedCount(v int) *ProxySourceUpdate {
 	return _u
 }
 
+// SetSyncEnabled sets the "sync_enabled" field.
+func (_u *ProxySourceUpdate) SetSyncEnabled(v bool) *ProxySourceUpdate {
+	_u.mutation.SetSyncEnabled(v)
+	return _u
+}
+
+// SetNillableSyncEnabled sets the "sync_enabled" field if the given value is not nil.
+func (_u *ProxySourceUpdate) SetNillableSyncEnabled(v *bool) *ProxySourceUpdate {
+	if v != nil {
+		_u.SetSyncEnabled(*v)
+	}
+	return _u
+}
+
+// SetSubTrafficUsed sets the "sub_traffic_used" field.
+func (_u *ProxySourceUpdate) SetSubTrafficUsed(v int64) *ProxySourceUpdate {
+	_u.mutation.ResetSubTrafficUsed()
+	_u.mutation.SetSubTrafficUsed(v)
+	return _u
+}
+
+// SetNillableSubTrafficUsed sets the "sub_traffic_used" field if the given value is not nil.
+func (_u *ProxySourceUpdate) SetNillableSubTrafficUsed(v *int64) *ProxySourceUpdate {
+	if v != nil {
+		_u.SetSubTrafficUsed(*v)
+	}
+	return _u
+}
+
+// AddSubTrafficUsed adds value to the "sub_traffic_used" field.
+func (_u *ProxySourceUpdate) AddSubTrafficUsed(v int64) *ProxySourceUpdate {
+	_u.mutation.AddSubTrafficUsed(v)
+	return _u
+}
+
+// SetSubTrafficTotal sets the "sub_traffic_total" field.
+func (_u *ProxySourceUpdate) SetSubTrafficTotal(v int64) *ProxySourceUpdate {
+	_u.mutation.ResetSubTrafficTotal()
+	_u.mutation.SetSubTrafficTotal(v)
+	return _u
+}
+
+// SetNillableSubTrafficTotal sets the "sub_traffic_total" field if the given value is not nil.
+func (_u *ProxySourceUpdate) SetNillableSubTrafficTotal(v *int64) *ProxySourceUpdate {
+	if v != nil {
+		_u.SetSubTrafficTotal(*v)
+	}
+	return _u
+}
+
+// AddSubTrafficTotal adds value to the "sub_traffic_total" field.
+func (_u *ProxySourceUpdate) AddSubTrafficTotal(v int64) *ProxySourceUpdate {
+	_u.mutation.AddSubTrafficTotal(v)
+	return _u
+}
+
+// SetSubExpiresAt sets the "sub_expires_at" field.
+func (_u *ProxySourceUpdate) SetSubExpiresAt(v time.Time) *ProxySourceUpdate {
+	_u.mutation.SetSubExpiresAt(v)
+	return _u
+}
+
+// SetNillableSubExpiresAt sets the "sub_expires_at" field if the given value is not nil.
+func (_u *ProxySourceUpdate) SetNillableSubExpiresAt(v *time.Time) *ProxySourceUpdate {
+	if v != nil {
+		_u.SetSubExpiresAt(*v)
+	}
+	return _u
+}
+
+// ClearSubExpiresAt clears the value of the "sub_expires_at" field.
+func (_u *ProxySourceUpdate) ClearSubExpiresAt() *ProxySourceUpdate {
+	_u.mutation.ClearSubExpiresAt()
+	return _u
+}
+
+// SetSubInfoUpdatedAt sets the "sub_info_updated_at" field.
+func (_u *ProxySourceUpdate) SetSubInfoUpdatedAt(v time.Time) *ProxySourceUpdate {
+	_u.mutation.SetSubInfoUpdatedAt(v)
+	return _u
+}
+
+// SetNillableSubInfoUpdatedAt sets the "sub_info_updated_at" field if the given value is not nil.
+func (_u *ProxySourceUpdate) SetNillableSubInfoUpdatedAt(v *time.Time) *ProxySourceUpdate {
+	if v != nil {
+		_u.SetSubInfoUpdatedAt(*v)
+	}
+	return _u
+}
+
+// ClearSubInfoUpdatedAt clears the value of the "sub_info_updated_at" field.
+func (_u *ProxySourceUpdate) ClearSubInfoUpdatedAt() *ProxySourceUpdate {
+	_u.mutation.ClearSubInfoUpdatedAt()
+	return _u
+}
+
 // Mutation returns the ProxySourceMutation object of the builder.
 func (_u *ProxySourceUpdate) Mutation() *ProxySourceMutation {
 	return _u.mutation
@@ -351,6 +447,33 @@ func (_u *ProxySourceUpdate) sqlSave(ctx context.Context) (_node int, err error)
 	}
 	if value, ok := _u.mutation.AddedLastImportedCount(); ok {
 		_spec.AddField(proxysource.FieldLastImportedCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.SyncEnabled(); ok {
+		_spec.SetField(proxysource.FieldSyncEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.SubTrafficUsed(); ok {
+		_spec.SetField(proxysource.FieldSubTrafficUsed, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSubTrafficUsed(); ok {
+		_spec.AddField(proxysource.FieldSubTrafficUsed, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.SubTrafficTotal(); ok {
+		_spec.SetField(proxysource.FieldSubTrafficTotal, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSubTrafficTotal(); ok {
+		_spec.AddField(proxysource.FieldSubTrafficTotal, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.SubExpiresAt(); ok {
+		_spec.SetField(proxysource.FieldSubExpiresAt, field.TypeTime, value)
+	}
+	if _u.mutation.SubExpiresAtCleared() {
+		_spec.ClearField(proxysource.FieldSubExpiresAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.SubInfoUpdatedAt(); ok {
+		_spec.SetField(proxysource.FieldSubInfoUpdatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.SubInfoUpdatedAtCleared() {
+		_spec.ClearField(proxysource.FieldSubInfoUpdatedAt, field.TypeTime)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -563,6 +686,102 @@ func (_u *ProxySourceUpdateOne) AddLastImportedCount(v int) *ProxySourceUpdateOn
 	return _u
 }
 
+// SetSyncEnabled sets the "sync_enabled" field.
+func (_u *ProxySourceUpdateOne) SetSyncEnabled(v bool) *ProxySourceUpdateOne {
+	_u.mutation.SetSyncEnabled(v)
+	return _u
+}
+
+// SetNillableSyncEnabled sets the "sync_enabled" field if the given value is not nil.
+func (_u *ProxySourceUpdateOne) SetNillableSyncEnabled(v *bool) *ProxySourceUpdateOne {
+	if v != nil {
+		_u.SetSyncEnabled(*v)
+	}
+	return _u
+}
+
+// SetSubTrafficUsed sets the "sub_traffic_used" field.
+func (_u *ProxySourceUpdateOne) SetSubTrafficUsed(v int64) *ProxySourceUpdateOne {
+	_u.mutation.ResetSubTrafficUsed()
+	_u.mutation.SetSubTrafficUsed(v)
+	return _u
+}
+
+// SetNillableSubTrafficUsed sets the "sub_traffic_used" field if the given value is not nil.
+func (_u *ProxySourceUpdateOne) SetNillableSubTrafficUsed(v *int64) *ProxySourceUpdateOne {
+	if v != nil {
+		_u.SetSubTrafficUsed(*v)
+	}
+	return _u
+}
+
+// AddSubTrafficUsed adds value to the "sub_traffic_used" field.
+func (_u *ProxySourceUpdateOne) AddSubTrafficUsed(v int64) *ProxySourceUpdateOne {
+	_u.mutation.AddSubTrafficUsed(v)
+	return _u
+}
+
+// SetSubTrafficTotal sets the "sub_traffic_total" field.
+func (_u *ProxySourceUpdateOne) SetSubTrafficTotal(v int64) *ProxySourceUpdateOne {
+	_u.mutation.ResetSubTrafficTotal()
+	_u.mutation.SetSubTrafficTotal(v)
+	return _u
+}
+
+// SetNillableSubTrafficTotal sets the "sub_traffic_total" field if the given value is not nil.
+func (_u *ProxySourceUpdateOne) SetNillableSubTrafficTotal(v *int64) *ProxySourceUpdateOne {
+	if v != nil {
+		_u.SetSubTrafficTotal(*v)
+	}
+	return _u
+}
+
+// AddSubTrafficTotal adds value to the "sub_traffic_total" field.
+func (_u *ProxySourceUpdateOne) AddSubTrafficTotal(v int64) *ProxySourceUpdateOne {
+	_u.mutation.AddSubTrafficTotal(v)
+	return _u
+}
+
+// SetSubExpiresAt sets the "sub_expires_at" field.
+func (_u *ProxySourceUpdateOne) SetSubExpiresAt(v time.Time) *ProxySourceUpdateOne {
+	_u.mutation.SetSubExpiresAt(v)
+	return _u
+}
+
+// SetNillableSubExpiresAt sets the "sub_expires_at" field if the given value is not nil.
+func (_u *ProxySourceUpdateOne) SetNillableSubExpiresAt(v *time.Time) *ProxySourceUpdateOne {
+	if v != nil {
+		_u.SetSubExpiresAt(*v)
+	}
+	return _u
+}
+
+// ClearSubExpiresAt clears the value of the "sub_expires_at" field.
+func (_u *ProxySourceUpdateOne) ClearSubExpiresAt() *ProxySourceUpdateOne {
+	_u.mutation.ClearSubExpiresAt()
+	return _u
+}
+
+// SetSubInfoUpdatedAt sets the "sub_info_updated_at" field.
+func (_u *ProxySourceUpdateOne) SetSubInfoUpdatedAt(v time.Time) *ProxySourceUpdateOne {
+	_u.mutation.SetSubInfoUpdatedAt(v)
+	return _u
+}
+
+// SetNillableSubInfoUpdatedAt sets the "sub_info_updated_at" field if the given value is not nil.
+func (_u *ProxySourceUpdateOne) SetNillableSubInfoUpdatedAt(v *time.Time) *ProxySourceUpdateOne {
+	if v != nil {
+		_u.SetSubInfoUpdatedAt(*v)
+	}
+	return _u
+}
+
+// ClearSubInfoUpdatedAt clears the value of the "sub_info_updated_at" field.
+func (_u *ProxySourceUpdateOne) ClearSubInfoUpdatedAt() *ProxySourceUpdateOne {
+	_u.mutation.ClearSubInfoUpdatedAt()
+	return _u
+}
+
 // Mutation returns the ProxySourceMutation object of the builder.
 func (_u *ProxySourceUpdateOne) Mutation() *ProxySourceMutation {
 	return _u.mutation
@@ -725,6 +944,33 @@ func (_u *ProxySourceUpdateOne) sqlSave(ctx context.Context) (_node *ProxySource
 	}
 	if value, ok := _u.mutation.AddedLastImportedCount(); ok {
 		_spec.AddField(proxysource.FieldLastImportedCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.SyncEnabled(); ok {
+		_spec.SetField(proxysource.FieldSyncEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.SubTrafficUsed(); ok {
+		_spec.SetField(proxysource.FieldSubTrafficUsed, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSubTrafficUsed(); ok {
+		_spec.AddField(proxysource.FieldSubTrafficUsed, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.SubTrafficTotal(); ok {
+		_spec.SetField(proxysource.FieldSubTrafficTotal, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSubTrafficTotal(); ok {
+		_spec.AddField(proxysource.FieldSubTrafficTotal, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.SubExpiresAt(); ok {
+		_spec.SetField(proxysource.FieldSubExpiresAt, field.TypeTime, value)
+	}
+	if _u.mutation.SubExpiresAtCleared() {
+		_spec.ClearField(proxysource.FieldSubExpiresAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.SubInfoUpdatedAt(); ok {
+		_spec.SetField(proxysource.FieldSubInfoUpdatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.SubInfoUpdatedAtCleared() {
+		_spec.ClearField(proxysource.FieldSubInfoUpdatedAt, field.TypeTime)
 	}
 	_node = &ProxySource{config: _u.config}
 	_spec.Assign = _node.assignValues

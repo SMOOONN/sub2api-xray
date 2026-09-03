@@ -16,5 +16,5 @@ type accountOwnerScopeLister interface {
 }
 
 type proxyOwnerScopeLister interface {
-	ListProxiesWithAccountCountByOwnerScope(ctx context.Context, page, pageSize int, protocol, status, search, ownerScope, sortBy, sortOrder string) ([]service.ProxyWithAccountCount, int64, error)
+	ListProxiesWithAccountCountByOwnerScope(ctx context.Context, page, pageSize int, protocol, status, search, ownerScope string, sourceID int64, sortBy, sortOrder string) ([]service.ProxyWithAccountCount, int64, error)
 }

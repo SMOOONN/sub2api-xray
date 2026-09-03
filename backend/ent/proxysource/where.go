@@ -114,6 +114,31 @@ func LastImportedCount(v int) predicate.ProxySource {
 	return predicate.ProxySource(sql.FieldEQ(FieldLastImportedCount, v))
 }
 
+// SyncEnabled applies equality check predicate on the "sync_enabled" field. It's identical to SyncEnabledEQ.
+func SyncEnabled(v bool) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldEQ(FieldSyncEnabled, v))
+}
+
+// SubTrafficUsed applies equality check predicate on the "sub_traffic_used" field. It's identical to SubTrafficUsedEQ.
+func SubTrafficUsed(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldEQ(FieldSubTrafficUsed, v))
+}
+
+// SubTrafficTotal applies equality check predicate on the "sub_traffic_total" field. It's identical to SubTrafficTotalEQ.
+func SubTrafficTotal(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldEQ(FieldSubTrafficTotal, v))
+}
+
+// SubExpiresAt applies equality check predicate on the "sub_expires_at" field. It's identical to SubExpiresAtEQ.
+func SubExpiresAt(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldEQ(FieldSubExpiresAt, v))
+}
+
+// SubInfoUpdatedAt applies equality check predicate on the "sub_info_updated_at" field. It's identical to SubInfoUpdatedAtEQ.
+func SubInfoUpdatedAt(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldEQ(FieldSubInfoUpdatedAt, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.ProxySource {
 	return predicate.ProxySource(sql.FieldEQ(FieldCreatedAt, v))
@@ -702,6 +727,196 @@ func LastImportedCountLT(v int) predicate.ProxySource {
 // LastImportedCountLTE applies the LTE predicate on the "last_imported_count" field.
 func LastImportedCountLTE(v int) predicate.ProxySource {
 	return predicate.ProxySource(sql.FieldLTE(FieldLastImportedCount, v))
+}
+
+// SyncEnabledEQ applies the EQ predicate on the "sync_enabled" field.
+func SyncEnabledEQ(v bool) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldEQ(FieldSyncEnabled, v))
+}
+
+// SyncEnabledNEQ applies the NEQ predicate on the "sync_enabled" field.
+func SyncEnabledNEQ(v bool) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldNEQ(FieldSyncEnabled, v))
+}
+
+// SubTrafficUsedEQ applies the EQ predicate on the "sub_traffic_used" field.
+func SubTrafficUsedEQ(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldEQ(FieldSubTrafficUsed, v))
+}
+
+// SubTrafficUsedNEQ applies the NEQ predicate on the "sub_traffic_used" field.
+func SubTrafficUsedNEQ(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldNEQ(FieldSubTrafficUsed, v))
+}
+
+// SubTrafficUsedIn applies the In predicate on the "sub_traffic_used" field.
+func SubTrafficUsedIn(vs ...int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldIn(FieldSubTrafficUsed, vs...))
+}
+
+// SubTrafficUsedNotIn applies the NotIn predicate on the "sub_traffic_used" field.
+func SubTrafficUsedNotIn(vs ...int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldNotIn(FieldSubTrafficUsed, vs...))
+}
+
+// SubTrafficUsedGT applies the GT predicate on the "sub_traffic_used" field.
+func SubTrafficUsedGT(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldGT(FieldSubTrafficUsed, v))
+}
+
+// SubTrafficUsedGTE applies the GTE predicate on the "sub_traffic_used" field.
+func SubTrafficUsedGTE(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldGTE(FieldSubTrafficUsed, v))
+}
+
+// SubTrafficUsedLT applies the LT predicate on the "sub_traffic_used" field.
+func SubTrafficUsedLT(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldLT(FieldSubTrafficUsed, v))
+}
+
+// SubTrafficUsedLTE applies the LTE predicate on the "sub_traffic_used" field.
+func SubTrafficUsedLTE(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldLTE(FieldSubTrafficUsed, v))
+}
+
+// SubTrafficTotalEQ applies the EQ predicate on the "sub_traffic_total" field.
+func SubTrafficTotalEQ(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldEQ(FieldSubTrafficTotal, v))
+}
+
+// SubTrafficTotalNEQ applies the NEQ predicate on the "sub_traffic_total" field.
+func SubTrafficTotalNEQ(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldNEQ(FieldSubTrafficTotal, v))
+}
+
+// SubTrafficTotalIn applies the In predicate on the "sub_traffic_total" field.
+func SubTrafficTotalIn(vs ...int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldIn(FieldSubTrafficTotal, vs...))
+}
+
+// SubTrafficTotalNotIn applies the NotIn predicate on the "sub_traffic_total" field.
+func SubTrafficTotalNotIn(vs ...int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldNotIn(FieldSubTrafficTotal, vs...))
+}
+
+// SubTrafficTotalGT applies the GT predicate on the "sub_traffic_total" field.
+func SubTrafficTotalGT(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldGT(FieldSubTrafficTotal, v))
+}
+
+// SubTrafficTotalGTE applies the GTE predicate on the "sub_traffic_total" field.
+func SubTrafficTotalGTE(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldGTE(FieldSubTrafficTotal, v))
+}
+
+// SubTrafficTotalLT applies the LT predicate on the "sub_traffic_total" field.
+func SubTrafficTotalLT(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldLT(FieldSubTrafficTotal, v))
+}
+
+// SubTrafficTotalLTE applies the LTE predicate on the "sub_traffic_total" field.
+func SubTrafficTotalLTE(v int64) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldLTE(FieldSubTrafficTotal, v))
+}
+
+// SubExpiresAtEQ applies the EQ predicate on the "sub_expires_at" field.
+func SubExpiresAtEQ(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldEQ(FieldSubExpiresAt, v))
+}
+
+// SubExpiresAtNEQ applies the NEQ predicate on the "sub_expires_at" field.
+func SubExpiresAtNEQ(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldNEQ(FieldSubExpiresAt, v))
+}
+
+// SubExpiresAtIn applies the In predicate on the "sub_expires_at" field.
+func SubExpiresAtIn(vs ...time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldIn(FieldSubExpiresAt, vs...))
+}
+
+// SubExpiresAtNotIn applies the NotIn predicate on the "sub_expires_at" field.
+func SubExpiresAtNotIn(vs ...time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldNotIn(FieldSubExpiresAt, vs...))
+}
+
+// SubExpiresAtGT applies the GT predicate on the "sub_expires_at" field.
+func SubExpiresAtGT(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldGT(FieldSubExpiresAt, v))
+}
+
+// SubExpiresAtGTE applies the GTE predicate on the "sub_expires_at" field.
+func SubExpiresAtGTE(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldGTE(FieldSubExpiresAt, v))
+}
+
+// SubExpiresAtLT applies the LT predicate on the "sub_expires_at" field.
+func SubExpiresAtLT(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldLT(FieldSubExpiresAt, v))
+}
+
+// SubExpiresAtLTE applies the LTE predicate on the "sub_expires_at" field.
+func SubExpiresAtLTE(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldLTE(FieldSubExpiresAt, v))
+}
+
+// SubExpiresAtIsNil applies the IsNil predicate on the "sub_expires_at" field.
+func SubExpiresAtIsNil() predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldIsNull(FieldSubExpiresAt))
+}
+
+// SubExpiresAtNotNil applies the NotNil predicate on the "sub_expires_at" field.
+func SubExpiresAtNotNil() predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldNotNull(FieldSubExpiresAt))
+}
+
+// SubInfoUpdatedAtEQ applies the EQ predicate on the "sub_info_updated_at" field.
+func SubInfoUpdatedAtEQ(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldEQ(FieldSubInfoUpdatedAt, v))
+}
+
+// SubInfoUpdatedAtNEQ applies the NEQ predicate on the "sub_info_updated_at" field.
+func SubInfoUpdatedAtNEQ(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldNEQ(FieldSubInfoUpdatedAt, v))
+}
+
+// SubInfoUpdatedAtIn applies the In predicate on the "sub_info_updated_at" field.
+func SubInfoUpdatedAtIn(vs ...time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldIn(FieldSubInfoUpdatedAt, vs...))
+}
+
+// SubInfoUpdatedAtNotIn applies the NotIn predicate on the "sub_info_updated_at" field.
+func SubInfoUpdatedAtNotIn(vs ...time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldNotIn(FieldSubInfoUpdatedAt, vs...))
+}
+
+// SubInfoUpdatedAtGT applies the GT predicate on the "sub_info_updated_at" field.
+func SubInfoUpdatedAtGT(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldGT(FieldSubInfoUpdatedAt, v))
+}
+
+// SubInfoUpdatedAtGTE applies the GTE predicate on the "sub_info_updated_at" field.
+func SubInfoUpdatedAtGTE(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldGTE(FieldSubInfoUpdatedAt, v))
+}
+
+// SubInfoUpdatedAtLT applies the LT predicate on the "sub_info_updated_at" field.
+func SubInfoUpdatedAtLT(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldLT(FieldSubInfoUpdatedAt, v))
+}
+
+// SubInfoUpdatedAtLTE applies the LTE predicate on the "sub_info_updated_at" field.
+func SubInfoUpdatedAtLTE(v time.Time) predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldLTE(FieldSubInfoUpdatedAt, v))
+}
+
+// SubInfoUpdatedAtIsNil applies the IsNil predicate on the "sub_info_updated_at" field.
+func SubInfoUpdatedAtIsNil() predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldIsNull(FieldSubInfoUpdatedAt))
+}
+
+// SubInfoUpdatedAtNotNil applies the NotNil predicate on the "sub_info_updated_at" field.
+func SubInfoUpdatedAtNotNil() predicate.ProxySource {
+	return predicate.ProxySource(sql.FieldNotNull(FieldSubInfoUpdatedAt))
 }
 
 // And groups predicates with the AND operator between them.

@@ -1002,6 +1002,34 @@ export interface ProxyQualityCheckResult {
   items: ProxyQualityCheckItem[]
 }
 
+/**
+ * One line of a "refresh every subscription source" run. Counts only — node
+ * payloads are deliberately absent so a bulk response cannot leak credentials.
+ * `skipped` means auto-sync is paused for that source; `deferred` means the
+ * request ran out of its time budget and the scheduler will pick the source up.
+ */
+export interface ProxySourceSyncAllItem {
+  source_id: number
+  name: string
+  status: 'success' | 'partial' | 'error' | 'skipped' | 'deferred'
+  imported_count: number
+  created_count: number
+  updated_count: number
+  error?: string
+}
+
+export interface ProxySourceSyncAllResult {
+  total: number
+  success_count: number
+  partial_count: number
+  failed_count: number
+  skipped_count: number
+  deferred_count: number
+  created_count: number
+  updated_count: number
+  items: ProxySourceSyncAllItem[]
+}
+
 // Gemini credentials structure for OAuth and API Key authentication
 export interface GeminiCredentials {
   // API Key authentication

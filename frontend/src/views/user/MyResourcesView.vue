@@ -39,6 +39,14 @@
               @change="applyAlignedFilters"
             />
             <Select
+              v-if="resource === 'proxies' && proxySourceFilterOptions.length > 1"
+              v-model="filters.source_id"
+              class="w-full sm:w-44"
+              :options="proxySourceFilterOptions"
+              :searchable="false"
+              @change="applyAlignedFilters"
+            />
+            <Select
               v-if="showStatusFilter"
               v-model="filters.status"
               class="w-full sm:w-36"
@@ -58,7 +66,7 @@
             </button>
           </div>
 
-          <div :class="resource === 'proxies' ? 'flex flex-1 flex-wrap items-center justify-end gap-2' : 'flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-2 lg:w-auto'">
+          <div :class="resource === 'proxies' ? 'flex w-full grow flex-wrap items-center justify-end gap-2 whitespace-nowrap lg:w-auto' : 'flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-2 lg:w-auto'">
             <button class="btn btn-secondary" :disabled="loading" :title="mr('actions.refresh')" @click="loadData">
               <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
             </button>
@@ -82,32 +90,33 @@
               <Icon name="shield" size="md" class="mr-2" :class="batchQualityChecking ? 'animate-pulse' : ''" />
               <span>{{ batchQualityChecking ? mr('actions.batchProgress', { completed: proxyBatchProgress.completed, total: proxyBatchProgress.total }) : mr('actions.batchQuality') }}</span>
             </button>
+            <button
+              v-if="resource === 'proxies'"
+              class="btn btn-secondary"
+              type="button"
+              :title="mr('actions.sources')"
+              :aria-label="mr('actions.sources')"
+              @click="openProxySources"
+            >
+              <Icon name="link" size="md" class="md:mr-2" />
+              <span class="hidden md:inline">{{ mr('actions.sources') }}</span>
+            </button>
             <div ref="columnSettingsRef" class="relative">
               <button
                 class="btn btn-secondary"
-                :class="resource === 'proxies' ? 'px-2' : ''"
                 type="button"
-                :title="resource === 'proxies' ? t('admin.accounts.moreActions') : mr('actions.columns')"
-                :aria-label="resource === 'proxies' ? t('admin.accounts.moreActions') : mr('actions.columns')"
+                :title="mr('actions.columns')"
+                :aria-label="mr('actions.columns')"
                 @click="showColumnSettings = !showColumnSettings"
               >
-                <Icon :name="resource === 'proxies' ? 'more' : 'grid'" size="md" :class="resource === 'proxies' ? '' : 'mr-2'" />
-                <span v-if="resource !== 'proxies'" class="hidden md:inline">{{ mr('actions.columns') }}</span>
+                <Icon name="grid" size="md" class="md:mr-2" />
+                <span class="hidden md:inline">{{ mr('actions.columns') }}</span>
               </button>
               <div
                 v-if="showColumnSettings && resource === 'proxies'"
                 class="absolute right-0 top-full z-50 mt-1 w-64 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-600 dark:bg-dark-800"
               >
                 <div class="p-2">
-                  <button
-                    type="button"
-                    class="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
-                    @click="showColumnSettings = false; openProxySources()"
-                  >
-                    <Icon name="link" size="sm" class="text-primary-500" />
-                    <span>{{ mr('actions.sources') }}</span>
-                  </button>
-                  <div class="my-2 border-t border-gray-100 dark:border-dark-700"></div>
                   <div class="flex items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
                     <span>{{ mr('actions.visibleColumns') }}</span>
                     <Icon name="grid" size="sm" />
@@ -1122,28 +1131,45 @@
 
     <div v-if="proxySourcesOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4">
       <div class="flex max-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-xl dark:bg-dark-800 sm:max-h-[calc(100dvh-2rem)]">
-        <div class="flex shrink-0 items-center justify-between border-b border-gray-200 p-4 dark:border-dark-700">
+        <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-gray-200 p-4 dark:border-dark-700">
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ mr('sources.title') }}</h2>
-          <button class="btn btn-sm btn-secondary" type="button" @click="proxySourcesOpen = false">{{ t('common.close') }}</button>
+          <div class="flex items-center gap-2">
+            <button
+              class="btn btn-sm btn-secondary"
+              type="button"
+              :disabled="proxySourcesSyncingAll || proxySourcesLoading || proxySources.length === 0"
+              :title="mr('actions.syncAllSources')"
+              @click="syncAllProxySourceItems"
+            >
+              <Icon name="refresh" size="sm" :class="['md:mr-2', proxySourcesSyncingAll ? 'animate-spin' : '']" />
+              <span class="hidden md:inline">{{ mr('actions.syncAllSources') }}</span>
+            </button>
+            <button class="btn btn-sm btn-secondary" type="button" @click="proxySourcesOpen = false">{{ t('common.close') }}</button>
+          </div>
+        </div>
+        <div v-if="proxySourceSyncAllSummary" class="shrink-0 border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs text-gray-600 dark:border-dark-700 dark:bg-dark-900/60 dark:text-dark-200">
+          {{ proxySourceSyncAllSummary }}
         </div>
         <div class="grid min-h-0 flex-1 gap-4 overflow-y-auto overscroll-contain p-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div class="min-w-0 overflow-hidden rounded-lg border border-gray-200 dark:border-dark-700">
+          <div class="min-w-0 overflow-x-auto rounded-lg border border-gray-200 dark:border-dark-700">
             <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-dark-700">
               <thead class="bg-gray-50 dark:bg-dark-900/70">
                 <tr>
                   <th class="px-3 py-3 text-left font-medium text-gray-500 dark:text-dark-300">{{ mr('table.name') }}</th>
                   <th class="px-3 py-3 text-left font-medium text-gray-500 dark:text-dark-300">{{ mr('columns.visibility') }}</th>
+                  <th class="px-3 py-3 text-left font-medium text-gray-500 dark:text-dark-300">{{ mr('sources.nodes') }}</th>
                   <th class="px-3 py-3 text-left font-medium text-gray-500 dark:text-dark-300">{{ mr('table.interval') }}</th>
+                  <th class="px-3 py-3 text-left font-medium text-gray-500 dark:text-dark-300">{{ mr('sources.quota') }}</th>
                   <th class="px-3 py-3 text-left font-medium text-gray-500 dark:text-dark-300">{{ mr('table.status') }}</th>
                   <th class="px-3 py-3 text-right font-medium text-gray-500 dark:text-dark-300">{{ mr('table.actions') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
                 <tr v-if="proxySourcesLoading">
-                  <td colspan="5" class="px-3 py-8 text-center text-gray-500">{{ mr('table.loading') }}</td>
+                  <td colspan="7" class="px-3 py-8 text-center text-gray-500">{{ mr('table.loading') }}</td>
                 </tr>
                 <tr v-else-if="proxySources.length === 0">
-                  <td colspan="5" class="px-3 py-8 text-center text-gray-500">{{ mr('table.noSources') }}</td>
+                  <td colspan="7" class="px-3 py-8 text-center text-gray-500">{{ mr('table.noSources') }}</td>
                 </tr>
                 <tr v-for="source in proxySources" v-else :key="source.id">
                   <td class="max-w-[260px] px-3 py-3">
@@ -1151,7 +1177,26 @@
                     <div class="truncate text-xs text-gray-500 dark:text-dark-400">{{ source.subscription_url }}</div>
                   </td>
                   <td class="px-3 py-3"><span :class="['badge', source.is_public ? 'badge-success' : 'badge-gray']">{{ mr(source.is_public ? 'states.public' : 'states.private') }}</span></td>
-                  <td class="px-3 py-3 text-gray-700 dark:text-dark-100">{{ source.refresh_interval_minutes || 0 }}m</td>
+                  <td class="whitespace-nowrap px-3 py-3 text-gray-700 dark:text-dark-100">
+                    <button
+                      type="button"
+                      class="text-primary-600 hover:underline dark:text-primary-400"
+                      :title="mr('sources.filterBySource')"
+                      @click="filterProxiesBySource(source)"
+                    >
+                      {{ mr('sources.nodeCount', { active: numberValue(source.active_node_count, 0), total: numberValue(source.node_count, 0) }) }}
+                    </button>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-gray-700 dark:text-dark-100">
+                    <div>{{ source.refresh_interval_minutes || 0 }}m</div>
+                    <div class="text-xs text-gray-500 dark:text-dark-400">
+                      {{ source.sync_enabled === false ? mr('sources.syncPaused') : mr('sources.nextSyncAt', { time: formatResourceDate(source.next_sync_at) }) }}
+                    </div>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-gray-700 dark:text-dark-100">
+                    <div>{{ proxySourceTrafficText(source) }}</div>
+                    <div class="text-xs text-gray-500 dark:text-dark-400">{{ mr('sources.expiresAt', { time: formatResourceDate(source.sub_expires_at) }) }}</div>
+                  </td>
                   <td class="px-3 py-3 text-gray-700 dark:text-dark-100">
                     <div>{{ source.last_sync_status || '-' }}</div>
                     <div v-if="source.last_sync_error" class="line-clamp-2 text-xs text-red-600 dark:text-red-300">{{ source.last_sync_error }}</div>
@@ -1159,6 +1204,9 @@
                   <td class="px-3 py-3 text-right">
                     <div class="flex justify-end gap-2">
                       <button class="btn btn-xs btn-secondary" type="button" @click="syncProxySourceItem(source)">{{ mr('actions.sync') }}</button>
+                      <button class="btn btn-xs btn-secondary" type="button" @click="toggleProxySourceSync(source)">
+                        {{ source.sync_enabled === false ? mr('actions.resumeSync') : mr('actions.pauseSync') }}
+                      </button>
                       <button class="btn btn-xs btn-secondary" type="button" @click="editProxySource(source)">{{ t('common.edit') }}</button>
                       <button class="btn btn-xs btn-danger" type="button" @click="deleteProxySource(source)">{{ t('common.delete') }}</button>
                     </div>
@@ -1188,6 +1236,10 @@
               <input v-model="proxySourceForm.is_public" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
               <span class="text-sm font-medium text-gray-700 dark:text-dark-100">{{ mr('fields.publicForAllUsers') }}</span>
             </label>
+            <label class="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 px-3 py-3 dark:border-dark-700">
+              <input v-model="proxySourceForm.sync_enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+              <span class="text-sm font-medium text-gray-700 dark:text-dark-100">{{ mr('fields.autoSyncEnabled') }}</span>
+            </label>
             <div v-if="operationError" class="rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-200">{{ operationError }}</div>
             <button class="btn btn-primary w-full" type="submit" :disabled="saving">{{ proxySourceEditingID ? mr('actions.updateSource') : mr('actions.saveSource') }}</button>
           </form>
@@ -1214,7 +1266,7 @@ import Icon from '@/components/icons/Icon.vue'
 import MyProxyEditorDialog from '@/components/user/MyProxyEditorDialog.vue'
 import { myResourcesApi, type ResourceItem, type ResourcePage, type UserOAuthCredentialsResult, type UserProxyTestResult } from '@/api/myResources'
 import { useAppStore } from '@/stores/app'
-import type { GroupPlatform, ProxyQualityCheckResult } from '@/types'
+import type { GroupPlatform, ProxyQualityCheckResult, ProxySourceSyncAllResult } from '@/types'
 import {
   USER_ACCOUNT_STATUS_OPTIONS,
   USER_GROUP_STATUS_OPTIONS,
@@ -1222,7 +1274,7 @@ import {
   getUserAccountTypeOptions,
 } from '@/utils/userResourceOptions'
 import { extractApiErrorMessage } from '@/utils/apiError'
-import { formatDateTime } from '@/utils/format'
+import { formatBytes, formatDateTime } from '@/utils/format'
 import {
   buildModelsListConfig,
   createModelsListState,
@@ -1417,6 +1469,7 @@ const filters = reactive({
   platform: '',
   type: '',
   protocol: '',
+  source_id: '',
   user_id: '',
   api_key_id: '',
   account_id: '',
@@ -1590,6 +1643,8 @@ const bulkAssignForm = reactive({
 })
 const proxySourcesOpen = ref(false)
 const proxySourcesLoading = ref(false)
+const proxySourcesSyncingAll = ref(false)
+const proxySourceSyncAllResult = ref<ProxySourceSyncAllResult | null>(null)
 const proxySources = ref<ResourceItem[]>([])
 const proxySourceEditingID = ref<number | null>(null)
 const proxySourceForm = reactive({
@@ -1597,6 +1652,32 @@ const proxySourceForm = reactive({
   subscription_url: '',
   refresh_interval_minutes: 1440,
   is_public: false,
+  sync_enabled: true,
+})
+// Source picker for the proxy filter bar. Rendered only when at least one source
+// exists, so the bare "all sources" entry never shows up as a dead control.
+const proxySourceFilterOptions = computed<SelectOption[]>(() => [
+  { value: '', label: mr('filters.allSources') },
+  ...proxySources.value.map(source => ({
+    value: String(source.id),
+    label: stringValue(source.name) || `#${source.id}`,
+  })),
+])
+// One-line recap of the last "sync every source" run. Counts only: node payloads
+// and subscription URLs must never reach this strip.
+const proxySourceSyncAllSummary = computed<string>(() => {
+  const result = proxySourceSyncAllResult.value
+  if (!result) return ''
+  return mr('sources.syncAllSummary', {
+    total: numberValue(result.total, 0),
+    success: numberValue(result.success_count, 0),
+    partial: numberValue(result.partial_count, 0),
+    failed: numberValue(result.failed_count, 0),
+    skipped: numberValue(result.skipped_count, 0),
+    deferred: numberValue(result.deferred_count, 0),
+    created: numberValue(result.created_count, 0),
+    updated: numberValue(result.updated_count, 0),
+  })
 })
 const editorForm = reactive({
   group: {
@@ -1840,6 +1921,7 @@ function clearFilters(): void {
     platform: '',
     type: '',
     protocol: '',
+    source_id: '',
     user_id: '',
     api_key_id: '',
     account_id: '',
@@ -2377,6 +2459,7 @@ async function loadData(): Promise<void> {
       platform: filters.platform || undefined,
       type: filters.type || undefined,
       protocol: filters.protocol || undefined,
+      source_id: filters.source_id ? Number(filters.source_id) : undefined,
       user_id: filters.user_id ? Number(filters.user_id) : undefined,
       api_key_id: filters.api_key_id ? Number(filters.api_key_id) : undefined,
       account_id: filters.account_id ? Number(filters.account_id) : undefined,
@@ -2860,6 +2943,7 @@ async function proxyIDsForBatch(): Promise<number[]> {
       status: filters.status || undefined,
       type: filters.type || undefined,
       protocol: filters.protocol || undefined,
+      source_id: filters.source_id ? Number(filters.source_id) : undefined,
       owned_only: true,
     })
     ids.push(...result.items.map(item => Number(item.id)).filter(id => id > 0))
@@ -3180,6 +3264,7 @@ function resetProxySourceForm(): void {
   proxySourceForm.subscription_url = ''
   proxySourceForm.refresh_interval_minutes = 1440
   proxySourceForm.is_public = false
+  proxySourceForm.sync_enabled = true
 }
 
 async function loadProxySources(): Promise<void> {
@@ -3192,6 +3277,24 @@ async function loadProxySources(): Promise<void> {
   } finally {
     proxySourcesLoading.value = false
   }
+}
+
+// Fills the source filter options without opening the modal. Failures stay silent
+// because the filter is optional: the proxy table must still load without it.
+async function ensureProxySourceOptions(): Promise<void> {
+  if (proxySources.value.length > 0 || proxySourcesLoading.value) return
+  try {
+    const result = await myResourcesApi.proxies.sources.list({ page: 1, page_size: 100 })
+    proxySources.value = result.items || []
+  } catch {
+    proxySources.value = []
+  }
+}
+
+function filterProxiesBySource(source: ResourceItem): void {
+  filters.source_id = String(source.id)
+  proxySourcesOpen.value = false
+  applyAlignedFilters()
 }
 
 async function saveProxySource(): Promise<void> {
@@ -3219,7 +3322,58 @@ function editProxySource(source: ResourceItem): void {
   proxySourceForm.subscription_url = stringValue(source.subscription_url)
   proxySourceForm.refresh_interval_minutes = numberValue(source.refresh_interval_minutes, 1440)
   proxySourceForm.is_public = Boolean(source.is_public)
+  proxySourceForm.sync_enabled = source.sync_enabled !== false
   operationError.value = ''
+}
+
+// Remaining / total traffic reported by the subscription provider. Providers that
+// send no usage header leave both counters at zero, which reads as "unknown".
+function proxySourceTrafficText(source: ResourceItem): string {
+  const used = numberValue(source.sub_traffic_used, 0)
+  const total = numberValue(source.sub_traffic_total, 0)
+  if (total <= 0 && used <= 0) return '-'
+  if (total <= 0) return mr('sources.trafficUsedOnly', { used: formatBytes(used) })
+  const remaining = Math.max(0, total - used)
+  return mr('sources.trafficRemaining', { remaining: formatBytes(remaining), total: formatBytes(total) })
+}
+
+// Pause/resume only flips sync_enabled; the other fields are resent unchanged
+// because the update endpoint replaces the whole source record.
+async function toggleProxySourceSync(source: ResourceItem): Promise<void> {
+  operationError.value = ''
+  const nextEnabled = source.sync_enabled === false
+  try {
+    await myResourcesApi.proxies.sources.update(Number(source.id), {
+      name: stringValue(source.name),
+      subscription_url: stringValue(source.subscription_url),
+      refresh_interval_minutes: numberValue(source.refresh_interval_minutes, 1440),
+      is_public: Boolean(source.is_public),
+      sync_enabled: nextEnabled,
+    })
+    appStore.showSuccess(mr(nextEnabled ? 'messages.sourceSyncResumed' : 'messages.sourceSyncPaused'))
+    await loadProxySources()
+  } catch (error) {
+    operationError.value = extractApiErrorMessage(error, mr('messages.sourceSaveFailed'))
+  }
+}
+
+async function syncAllProxySourceItems(): Promise<void> {
+  if (proxySourcesSyncingAll.value) return
+  operationError.value = ''
+  proxySourcesSyncingAll.value = true
+  try {
+    const result = await myResourcesApi.proxies.sources.syncAll()
+    proxySourceSyncAllResult.value = result || null
+    const failed = numberValue(result?.failed_count, 0)
+    if (failed > 0) appStore.showWarning(mr('messages.sourceSyncAllPartial', { failed }))
+    else appStore.showSuccess(mr('messages.sourceSyncAllDone'))
+    await loadProxySources()
+    await loadData()
+  } catch (error) {
+    operationError.value = extractApiErrorMessage(error, mr('messages.sourceSyncFailed'))
+  } finally {
+    proxySourcesSyncingAll.value = false
+  }
 }
 
 async function syncProxySourceItem(source: ResourceItem): Promise<void> {
@@ -3454,12 +3608,13 @@ watch(resource, () => {
   selectedIds.value = []
   showColumnSettings.value = false
   Object.assign(filters, {
-    search: '', status: '', platform: '', type: '', protocol: '',
+    search: '', status: '', platform: '', type: '', protocol: '', source_id: '',
     user_id: '', api_key_id: '', account_id: '', start_date: '', end_date: '',
   })
   applyAccountFilterFromRoute()
   loadColumnSettings()
   void loadData()
+  void ensureProxySourceOptions()
 })
 
 watch(() => route.query.account_id, () => {
@@ -3502,6 +3657,7 @@ onMounted(() => {
   loadColumnSettings()
   document.addEventListener('click', closeColumnSettingsOnOutsideClick)
   void loadData()
+  void ensureProxySourceOptions()
 })
 
 onUnmounted(() => {

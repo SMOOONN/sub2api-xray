@@ -66,14 +66,78 @@ describe('MyResourcesView responsive localization', () => {
     }
   })
 
-  it('keeps proxy-only secondary tools in a compact menu aligned with IP management', () => {
-    expect(source).toContain(":title=\"resource === 'proxies' ? t('admin.accounts.moreActions') : mr('actions.columns')\"")
-    expect(source).toContain("<Icon :name=\"resource === 'proxies' ? 'more' : 'grid'\"")
-    expect(source).toContain("@click=\"showColumnSettings = false; openProxySources()\"")
+  it('promotes the proxy source manager to a labeled toolbar button', () => {
+    expect(source).toContain(":title=\"mr('actions.sources')\"")
+    expect(source).toContain(":aria-label=\"mr('actions.sources')\"")
+    expect(source).toContain('<Icon name="link" size="md" class="md:mr-2" />')
+    expect(source).toContain("<span class=\"hidden md:inline\">{{ mr('actions.sources') }}</span>")
+    expect(source).toContain('@click="openProxySources"')
+
+    // The remaining dropdown trigger is the column picker for every resource.
+    expect(source).toContain(":title=\"mr('actions.columns')\"")
+    expect(source).toContain('<Icon name="grid" size="md" class="md:mr-2" />')
     expect(source).toContain("mr('actions.visibleColumns')")
-    expect(source).not.toContain("class=\"btn btn-secondary\" :title=\"mr('actions.sources')\"")
+    expect(source).not.toContain("resource === 'proxies' ? t('admin.accounts.moreActions') : mr('actions.columns')")
+    expect(source).not.toContain("<Icon :name=\"resource === 'proxies' ? 'more' : 'grid'\"")
+    expect(source).not.toContain('showColumnSettings = false; openProxySources()')
+
+    // Toolbar order from the approved review: refresh, test, quality, sources, columns.
+    const qualityAction = source.indexOf("mr('actions.batchQuality')")
+    const sourcesAction = source.indexOf("mr('actions.sources')")
+    const columnsAction = source.indexOf("mr('actions.columns')")
+    expect(qualityAction).toBeGreaterThan(-1)
+    expect(qualityAction).toBeLessThan(sourcesAction)
+    expect(sourcesAction).toBeLessThan(columnsAction)
+
     expect(source).toContain("document.addEventListener('click', closeColumnSettingsOnOutsideClick)")
     expect(source).toContain("document.removeEventListener('click', closeColumnSettingsOnOutsideClick)")
+  })
+
+  it('gives the proxy toolbar actions their own wrapped row instead of shrinking them into a column', () => {
+    // flex-1 resolves to flex-basis: 0%, so the action group is never pushed to a new
+    // flex line: it keeps shrinking into whatever space is left beside the filters and
+    // stacks the nine buttons into a narrow column (measured 206px wide / 6 rows once
+    // the source filter joined the row, and narrow enough at 1200px to break labels
+    // mid-word). w-full (basis: 100%) puts the group on its own row, grow with
+    // justify-end keeps it right-aligned there, lg:w-auto lets it share the filter row
+    // again when the viewport can hold both at natural width, and whitespace-nowrap
+    // stops labels from breaking mid-word if it is ever squeezed again.
+    expect(source).toContain(
+      "resource === 'proxies' ? 'flex w-full grow flex-wrap items-center justify-end gap-2 whitespace-nowrap lg:w-auto'"
+    )
+    expect(source).not.toContain("'flex flex-1 flex-wrap items-center justify-end gap-2'")
+    // The non-proxy resources keep the official toolbar contract untouched.
+    expect(source).toContain("'flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-2 lg:w-auto'")
+  })
+
+  it('manages proxy subscription sources from one modal', () => {
+    // Sync every source, then report counts only — never node payloads or URLs.
+    expect(source).toContain("mr('actions.syncAllSources')")
+    expect(source).toContain('@click="syncAllProxySourceItems"')
+    expect(source).toContain('myResourcesApi.proxies.sources.syncAll()')
+    expect(source).toContain("mr('sources.syncAllSummary'")
+
+    // Per-source node counts double as a filter entry point.
+    expect(source).toContain("mr('sources.nodeCount'")
+    expect(source).toContain('@click="filterProxiesBySource(source)"')
+    expect(source).toContain('v-model="filters.source_id"')
+    expect(source).toContain(':options="proxySourceFilterOptions"')
+    expect(source).toContain('source_id: filters.source_id ? Number(filters.source_id) : undefined')
+
+    // Pause/resume plus the next-run and airport-quota columns.
+    expect(source).toContain('@click="toggleProxySourceSync(source)"')
+    expect(source).toContain("mr('actions.pauseSync')")
+    expect(source).toContain("mr('actions.resumeSync')")
+    expect(source).toContain("mr('sources.nextSyncAt'")
+    expect(source).toContain("mr('sources.syncPaused')")
+    expect(source).toContain('proxySourceTrafficText(source)')
+    expect(source).toContain("mr('sources.expiresAt'")
+    expect(source).toContain('v-model="proxySourceForm.sync_enabled"')
+
+    // The widened modal table scrolls locally instead of clipping columns.
+    expect(source).toContain('class="min-w-0 overflow-x-auto rounded-lg border border-gray-200 dark:border-dark-700"')
+    expect(source).toContain('colspan="7"')
+    expect(source).not.toContain('colspan="5"')
   })
 
   it('uses project Select controls and proxy-specific filters', () => {

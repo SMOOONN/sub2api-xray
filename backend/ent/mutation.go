@@ -39151,6 +39151,13 @@ type ProxySourceMutation struct {
 	last_sync_error             *string
 	last_imported_count         *int
 	addlast_imported_count      *int
+	sync_enabled                *bool
+	sub_traffic_used            *int64
+	addsub_traffic_used         *int64
+	sub_traffic_total           *int64
+	addsub_traffic_total        *int64
+	sub_expires_at              *time.Time
+	sub_info_updated_at         *time.Time
 	clearedFields               map[string]struct{}
 	done                        bool
 	oldValue                    func(context.Context) (*ProxySource, error)
@@ -39800,6 +39807,252 @@ func (m *ProxySourceMutation) ResetLastImportedCount() {
 	m.addlast_imported_count = nil
 }
 
+// SetSyncEnabled sets the "sync_enabled" field.
+func (m *ProxySourceMutation) SetSyncEnabled(b bool) {
+	m.sync_enabled = &b
+}
+
+// SyncEnabled returns the value of the "sync_enabled" field in the mutation.
+func (m *ProxySourceMutation) SyncEnabled() (r bool, exists bool) {
+	v := m.sync_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSyncEnabled returns the old "sync_enabled" field's value of the ProxySource entity.
+// If the ProxySource object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProxySourceMutation) OldSyncEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSyncEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSyncEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSyncEnabled: %w", err)
+	}
+	return oldValue.SyncEnabled, nil
+}
+
+// ResetSyncEnabled resets all changes to the "sync_enabled" field.
+func (m *ProxySourceMutation) ResetSyncEnabled() {
+	m.sync_enabled = nil
+}
+
+// SetSubTrafficUsed sets the "sub_traffic_used" field.
+func (m *ProxySourceMutation) SetSubTrafficUsed(i int64) {
+	m.sub_traffic_used = &i
+	m.addsub_traffic_used = nil
+}
+
+// SubTrafficUsed returns the value of the "sub_traffic_used" field in the mutation.
+func (m *ProxySourceMutation) SubTrafficUsed() (r int64, exists bool) {
+	v := m.sub_traffic_used
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubTrafficUsed returns the old "sub_traffic_used" field's value of the ProxySource entity.
+// If the ProxySource object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProxySourceMutation) OldSubTrafficUsed(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubTrafficUsed is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubTrafficUsed requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubTrafficUsed: %w", err)
+	}
+	return oldValue.SubTrafficUsed, nil
+}
+
+// AddSubTrafficUsed adds i to the "sub_traffic_used" field.
+func (m *ProxySourceMutation) AddSubTrafficUsed(i int64) {
+	if m.addsub_traffic_used != nil {
+		*m.addsub_traffic_used += i
+	} else {
+		m.addsub_traffic_used = &i
+	}
+}
+
+// AddedSubTrafficUsed returns the value that was added to the "sub_traffic_used" field in this mutation.
+func (m *ProxySourceMutation) AddedSubTrafficUsed() (r int64, exists bool) {
+	v := m.addsub_traffic_used
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSubTrafficUsed resets all changes to the "sub_traffic_used" field.
+func (m *ProxySourceMutation) ResetSubTrafficUsed() {
+	m.sub_traffic_used = nil
+	m.addsub_traffic_used = nil
+}
+
+// SetSubTrafficTotal sets the "sub_traffic_total" field.
+func (m *ProxySourceMutation) SetSubTrafficTotal(i int64) {
+	m.sub_traffic_total = &i
+	m.addsub_traffic_total = nil
+}
+
+// SubTrafficTotal returns the value of the "sub_traffic_total" field in the mutation.
+func (m *ProxySourceMutation) SubTrafficTotal() (r int64, exists bool) {
+	v := m.sub_traffic_total
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubTrafficTotal returns the old "sub_traffic_total" field's value of the ProxySource entity.
+// If the ProxySource object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProxySourceMutation) OldSubTrafficTotal(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubTrafficTotal is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubTrafficTotal requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubTrafficTotal: %w", err)
+	}
+	return oldValue.SubTrafficTotal, nil
+}
+
+// AddSubTrafficTotal adds i to the "sub_traffic_total" field.
+func (m *ProxySourceMutation) AddSubTrafficTotal(i int64) {
+	if m.addsub_traffic_total != nil {
+		*m.addsub_traffic_total += i
+	} else {
+		m.addsub_traffic_total = &i
+	}
+}
+
+// AddedSubTrafficTotal returns the value that was added to the "sub_traffic_total" field in this mutation.
+func (m *ProxySourceMutation) AddedSubTrafficTotal() (r int64, exists bool) {
+	v := m.addsub_traffic_total
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSubTrafficTotal resets all changes to the "sub_traffic_total" field.
+func (m *ProxySourceMutation) ResetSubTrafficTotal() {
+	m.sub_traffic_total = nil
+	m.addsub_traffic_total = nil
+}
+
+// SetSubExpiresAt sets the "sub_expires_at" field.
+func (m *ProxySourceMutation) SetSubExpiresAt(t time.Time) {
+	m.sub_expires_at = &t
+}
+
+// SubExpiresAt returns the value of the "sub_expires_at" field in the mutation.
+func (m *ProxySourceMutation) SubExpiresAt() (r time.Time, exists bool) {
+	v := m.sub_expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubExpiresAt returns the old "sub_expires_at" field's value of the ProxySource entity.
+// If the ProxySource object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProxySourceMutation) OldSubExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubExpiresAt: %w", err)
+	}
+	return oldValue.SubExpiresAt, nil
+}
+
+// ClearSubExpiresAt clears the value of the "sub_expires_at" field.
+func (m *ProxySourceMutation) ClearSubExpiresAt() {
+	m.sub_expires_at = nil
+	m.clearedFields[proxysource.FieldSubExpiresAt] = struct{}{}
+}
+
+// SubExpiresAtCleared returns if the "sub_expires_at" field was cleared in this mutation.
+func (m *ProxySourceMutation) SubExpiresAtCleared() bool {
+	_, ok := m.clearedFields[proxysource.FieldSubExpiresAt]
+	return ok
+}
+
+// ResetSubExpiresAt resets all changes to the "sub_expires_at" field.
+func (m *ProxySourceMutation) ResetSubExpiresAt() {
+	m.sub_expires_at = nil
+	delete(m.clearedFields, proxysource.FieldSubExpiresAt)
+}
+
+// SetSubInfoUpdatedAt sets the "sub_info_updated_at" field.
+func (m *ProxySourceMutation) SetSubInfoUpdatedAt(t time.Time) {
+	m.sub_info_updated_at = &t
+}
+
+// SubInfoUpdatedAt returns the value of the "sub_info_updated_at" field in the mutation.
+func (m *ProxySourceMutation) SubInfoUpdatedAt() (r time.Time, exists bool) {
+	v := m.sub_info_updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubInfoUpdatedAt returns the old "sub_info_updated_at" field's value of the ProxySource entity.
+// If the ProxySource object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ProxySourceMutation) OldSubInfoUpdatedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubInfoUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubInfoUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubInfoUpdatedAt: %w", err)
+	}
+	return oldValue.SubInfoUpdatedAt, nil
+}
+
+// ClearSubInfoUpdatedAt clears the value of the "sub_info_updated_at" field.
+func (m *ProxySourceMutation) ClearSubInfoUpdatedAt() {
+	m.sub_info_updated_at = nil
+	m.clearedFields[proxysource.FieldSubInfoUpdatedAt] = struct{}{}
+}
+
+// SubInfoUpdatedAtCleared returns if the "sub_info_updated_at" field was cleared in this mutation.
+func (m *ProxySourceMutation) SubInfoUpdatedAtCleared() bool {
+	_, ok := m.clearedFields[proxysource.FieldSubInfoUpdatedAt]
+	return ok
+}
+
+// ResetSubInfoUpdatedAt resets all changes to the "sub_info_updated_at" field.
+func (m *ProxySourceMutation) ResetSubInfoUpdatedAt() {
+	m.sub_info_updated_at = nil
+	delete(m.clearedFields, proxysource.FieldSubInfoUpdatedAt)
+}
+
 // Where appends a list predicates to the ProxySourceMutation builder.
 func (m *ProxySourceMutation) Where(ps ...predicate.ProxySource) {
 	m.predicates = append(m.predicates, ps...)
@@ -39834,7 +40087,7 @@ func (m *ProxySourceMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ProxySourceMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 17)
 	if m.created_at != nil {
 		fields = append(fields, proxysource.FieldCreatedAt)
 	}
@@ -39871,6 +40124,21 @@ func (m *ProxySourceMutation) Fields() []string {
 	if m.last_imported_count != nil {
 		fields = append(fields, proxysource.FieldLastImportedCount)
 	}
+	if m.sync_enabled != nil {
+		fields = append(fields, proxysource.FieldSyncEnabled)
+	}
+	if m.sub_traffic_used != nil {
+		fields = append(fields, proxysource.FieldSubTrafficUsed)
+	}
+	if m.sub_traffic_total != nil {
+		fields = append(fields, proxysource.FieldSubTrafficTotal)
+	}
+	if m.sub_expires_at != nil {
+		fields = append(fields, proxysource.FieldSubExpiresAt)
+	}
+	if m.sub_info_updated_at != nil {
+		fields = append(fields, proxysource.FieldSubInfoUpdatedAt)
+	}
 	return fields
 }
 
@@ -39903,6 +40171,16 @@ func (m *ProxySourceMutation) Field(name string) (ent.Value, bool) {
 		return m.LastSyncError()
 	case proxysource.FieldLastImportedCount:
 		return m.LastImportedCount()
+	case proxysource.FieldSyncEnabled:
+		return m.SyncEnabled()
+	case proxysource.FieldSubTrafficUsed:
+		return m.SubTrafficUsed()
+	case proxysource.FieldSubTrafficTotal:
+		return m.SubTrafficTotal()
+	case proxysource.FieldSubExpiresAt:
+		return m.SubExpiresAt()
+	case proxysource.FieldSubInfoUpdatedAt:
+		return m.SubInfoUpdatedAt()
 	}
 	return nil, false
 }
@@ -39936,6 +40214,16 @@ func (m *ProxySourceMutation) OldField(ctx context.Context, name string) (ent.Va
 		return m.OldLastSyncError(ctx)
 	case proxysource.FieldLastImportedCount:
 		return m.OldLastImportedCount(ctx)
+	case proxysource.FieldSyncEnabled:
+		return m.OldSyncEnabled(ctx)
+	case proxysource.FieldSubTrafficUsed:
+		return m.OldSubTrafficUsed(ctx)
+	case proxysource.FieldSubTrafficTotal:
+		return m.OldSubTrafficTotal(ctx)
+	case proxysource.FieldSubExpiresAt:
+		return m.OldSubExpiresAt(ctx)
+	case proxysource.FieldSubInfoUpdatedAt:
+		return m.OldSubInfoUpdatedAt(ctx)
 	}
 	return nil, fmt.Errorf("unknown ProxySource field %s", name)
 }
@@ -40029,6 +40317,41 @@ func (m *ProxySourceMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetLastImportedCount(v)
 		return nil
+	case proxysource.FieldSyncEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSyncEnabled(v)
+		return nil
+	case proxysource.FieldSubTrafficUsed:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubTrafficUsed(v)
+		return nil
+	case proxysource.FieldSubTrafficTotal:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubTrafficTotal(v)
+		return nil
+	case proxysource.FieldSubExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubExpiresAt(v)
+		return nil
+	case proxysource.FieldSubInfoUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubInfoUpdatedAt(v)
+		return nil
 	}
 	return fmt.Errorf("unknown ProxySource field %s", name)
 }
@@ -40046,6 +40369,12 @@ func (m *ProxySourceMutation) AddedFields() []string {
 	if m.addlast_imported_count != nil {
 		fields = append(fields, proxysource.FieldLastImportedCount)
 	}
+	if m.addsub_traffic_used != nil {
+		fields = append(fields, proxysource.FieldSubTrafficUsed)
+	}
+	if m.addsub_traffic_total != nil {
+		fields = append(fields, proxysource.FieldSubTrafficTotal)
+	}
 	return fields
 }
 
@@ -40060,6 +40389,10 @@ func (m *ProxySourceMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedRefreshIntervalMinutes()
 	case proxysource.FieldLastImportedCount:
 		return m.AddedLastImportedCount()
+	case proxysource.FieldSubTrafficUsed:
+		return m.AddedSubTrafficUsed()
+	case proxysource.FieldSubTrafficTotal:
+		return m.AddedSubTrafficTotal()
 	}
 	return nil, false
 }
@@ -40090,6 +40423,20 @@ func (m *ProxySourceMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddLastImportedCount(v)
 		return nil
+	case proxysource.FieldSubTrafficUsed:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSubTrafficUsed(v)
+		return nil
+	case proxysource.FieldSubTrafficTotal:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSubTrafficTotal(v)
+		return nil
 	}
 	return fmt.Errorf("unknown ProxySource numeric field %s", name)
 }
@@ -40109,6 +40456,12 @@ func (m *ProxySourceMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(proxysource.FieldLastSyncError) {
 		fields = append(fields, proxysource.FieldLastSyncError)
+	}
+	if m.FieldCleared(proxysource.FieldSubExpiresAt) {
+		fields = append(fields, proxysource.FieldSubExpiresAt)
+	}
+	if m.FieldCleared(proxysource.FieldSubInfoUpdatedAt) {
+		fields = append(fields, proxysource.FieldSubInfoUpdatedAt)
 	}
 	return fields
 }
@@ -40135,6 +40488,12 @@ func (m *ProxySourceMutation) ClearField(name string) error {
 		return nil
 	case proxysource.FieldLastSyncError:
 		m.ClearLastSyncError()
+		return nil
+	case proxysource.FieldSubExpiresAt:
+		m.ClearSubExpiresAt()
+		return nil
+	case proxysource.FieldSubInfoUpdatedAt:
+		m.ClearSubInfoUpdatedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown ProxySource nullable field %s", name)
@@ -40179,6 +40538,21 @@ func (m *ProxySourceMutation) ResetField(name string) error {
 		return nil
 	case proxysource.FieldLastImportedCount:
 		m.ResetLastImportedCount()
+		return nil
+	case proxysource.FieldSyncEnabled:
+		m.ResetSyncEnabled()
+		return nil
+	case proxysource.FieldSubTrafficUsed:
+		m.ResetSubTrafficUsed()
+		return nil
+	case proxysource.FieldSubTrafficTotal:
+		m.ResetSubTrafficTotal()
+		return nil
+	case proxysource.FieldSubExpiresAt:
+		m.ResetSubExpiresAt()
+		return nil
+	case proxysource.FieldSubInfoUpdatedAt:
+		m.ResetSubInfoUpdatedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown ProxySource field %s", name)

@@ -588,6 +588,7 @@ type UserResourceListOptions struct {
 	UserID    int64
 	APIKeyID  int64
 	AccountID int64
+	SourceID  int64
 	StartDate string
 	EndDate   string
 	Timezone  string
@@ -626,6 +627,31 @@ type ProxySourceSyncResult struct {
 	Errors        []string         `json:"errors,omitempty"`
 	Created       []map[string]any `json:"created,omitempty"`
 	Updated       []map[string]any `json:"updated,omitempty"`
+}
+
+// ProxySourceSyncAllItem is the per-source line of a "sync every source" run.
+// It deliberately carries counts only: node payloads would leak credentials and
+// subscription URLs into a response that lists every source at once.
+type ProxySourceSyncAllItem struct {
+	SourceID      int64  `json:"source_id"`
+	Name          string `json:"name"`
+	Status        string `json:"status"`
+	ImportedCount int    `json:"imported_count"`
+	CreatedCount  int    `json:"created_count"`
+	UpdatedCount  int    `json:"updated_count"`
+	Error         string `json:"error,omitempty"`
+}
+
+type ProxySourceSyncAllResult struct {
+	Total         int                      `json:"total"`
+	SuccessCount  int                      `json:"success_count"`
+	PartialCount  int                      `json:"partial_count"`
+	FailedCount   int                      `json:"failed_count"`
+	SkippedCount  int                      `json:"skipped_count"`
+	DeferredCount int                      `json:"deferred_count"`
+	CreatedCount  int                      `json:"created_count"`
+	UpdatedCount  int                      `json:"updated_count"`
+	Items         []ProxySourceSyncAllItem `json:"items"`
 }
 
 type UserSubscriptionAssignInput struct {
@@ -2169,6 +2195,11 @@ func (s *UserResourceService) ListProxies(ctx context.Context, ownerID int64, op
 	if opts.Type != "" {
 		where = append(where, "p.kind = "+nextArg(&args, opts.Type))
 	}
+	if opts.SourceID > 0 {
+		// Narrows the existing owner/public scope to one subscription source; it can
+		// never widen visibility because the scope predicate above still applies.
+		where = append(where, "p.extra->>'source_id' = "+nextArg(&args, strconv.FormatInt(opts.SourceID, 10)))
+	}
 	if opts.Search != "" {
 		where = append(where, "(p.name ILIKE "+nextArg(&args, "%"+opts.Search+"%")+" OR (p.owner_user_id = $1 AND p.host ILIKE "+nextArg(&args, "%"+opts.Search+"%")+"))")
 	}
@@ -2808,6 +2839,30 @@ func (s *UserResourceService) saveUserProxyQualitySnapshot(
 	s.saveProxyObservation(ctx, proxyID, info)
 }
 
+// proxySourceSelectColumns is shared by the list and get queries so the two can
+// never drift. `next_sync_at` mirrors the scheduler's due predicate exactly
+// (NULL while auto-sync is paused, NOW() when the source has never synced), and
+// the node counts are derived from the proxies table instead of a stored counter
+// so they cannot go stale.
+const proxySourceSelectColumns = `id, owner_user_id, name, subscription_url, is_public, refresh_interval_minutes,
+       last_synced_at, last_sync_status, last_sync_error, last_imported_count,
+       sync_enabled, sub_traffic_used, sub_traffic_total, sub_expires_at, sub_info_updated_at,
+       CASE
+         WHEN NOT sync_enabled THEN NULL::timestamptz
+         WHEN last_synced_at IS NULL THEN NOW()
+         ELSE last_synced_at + (refresh_interval_minutes * INTERVAL '1 minute')
+       END AS next_sync_at,
+       (SELECT COUNT(*) FROM proxies pn
+         WHERE pn.owner_user_id IS NOT DISTINCT FROM proxy_sources.owner_user_id
+           AND pn.deleted_at IS NULL
+           AND pn.extra->>'source_id' = proxy_sources.id::text)::bigint AS node_count,
+       (SELECT COUNT(*) FROM proxies pn
+         WHERE pn.owner_user_id IS NOT DISTINCT FROM proxy_sources.owner_user_id
+           AND pn.deleted_at IS NULL
+           AND pn.status = 'active'
+           AND pn.extra->>'source_id' = proxy_sources.id::text)::bigint AS active_node_count,
+       created_at, updated_at`
+
 func (s *UserResourceService) ListProxySources(ctx context.Context, ownerID int64, opts UserResourceListOptions) (*UserResourcePage, error) {
 	return s.listProxySourcesForOwner(ctx, userResourceOwner(ownerID), opts)
 }
@@ -2838,9 +2893,7 @@ func (s *UserResourceService) listProxySourcesForOwner(ctx context.Context, owne
 	limitArg := nextArg(&args, pageSize)
 	offsetArg := nextArg(&args, (page-1)*pageSize)
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, owner_user_id, name, subscription_url, is_public, refresh_interval_minutes,
-       last_synced_at, last_sync_status, last_sync_error, last_imported_count,
-       created_at, updated_at
+SELECT `+proxySourceSelectColumns+`
 FROM proxy_sources
 WHERE `+whereSQL+`
 ORDER BY updated_at DESC, id DESC
@@ -2893,11 +2946,19 @@ func (s *UserResourceService) createProxySourceForOwner(ctx context.Context, own
 			return nil, invalidUserResourceField("is_public", err.Error())
 		}
 	}
+	syncEnabled := true
+	if rawSyncEnabled, exists := payload["sync_enabled"]; exists {
+		var err error
+		syncEnabled, err = strictBoolValue(rawSyncEnabled)
+		if err != nil {
+			return nil, invalidUserResourceField("sync_enabled", err.Error())
+		}
+	}
 	var id int64
 	err := s.db.QueryRowContext(ctx, `
-INSERT INTO proxy_sources (owner_user_id, name, subscription_url, is_public, refresh_interval_minutes, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-RETURNING id`, userResourceOwnerValue(ownerID), name, subscriptionURL, isPublic, interval).Scan(&id)
+INSERT INTO proxy_sources (owner_user_id, name, subscription_url, is_public, refresh_interval_minutes, sync_enabled, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+RETURNING id`, userResourceOwnerValue(ownerID), name, subscriptionURL, isPublic, interval, syncEnabled).Scan(&id)
 	if err != nil {
 		return nil, err
 	}
@@ -2913,9 +2974,7 @@ func (s *UserResourceService) getProxySourceForOwner(ctx context.Context, ownerI
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, owner_user_id, name, subscription_url, is_public, refresh_interval_minutes,
-       last_synced_at, last_sync_status, last_sync_error, last_imported_count,
-       created_at, updated_at
+SELECT `+proxySourceSelectColumns+`
 FROM proxy_sources
 WHERE id = $1 AND owner_user_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL
 LIMIT 1`, sourceID, userResourceOwnerValue(ownerID))
@@ -2972,6 +3031,14 @@ func (s *UserResourceService) updateProxySourceForOwner(ctx context.Context, own
 		}
 		args = append(args, interval)
 		assignments = append(assignments, fmt.Sprintf("refresh_interval_minutes = $%d", len(args)))
+	}
+	if _, ok := payload["sync_enabled"]; ok {
+		syncEnabled, err := strictBoolValue(payload["sync_enabled"])
+		if err != nil {
+			return nil, invalidUserResourceField("sync_enabled", err.Error())
+		}
+		args = append(args, syncEnabled)
+		assignments = append(assignments, fmt.Sprintf("sync_enabled = $%d", len(args)))
 	}
 	visibilityChanged := false
 	if _, ok := payload["is_public"]; ok {
@@ -3081,12 +3148,16 @@ func (s *UserResourceService) syncProxySourceForOwner(ctx context.Context, owner
 		return nil, err
 	}
 	subscriptionURL := urAsString(source["subscription_url"])
-	content, err := fetchProxySubscription(ctx, subscriptionURL)
+	content, userInfoHeader, err := fetchProxySubscription(ctx, subscriptionURL)
 	if err != nil {
 		if statusErr := s.recordProxySourceSyncError(ctx, ownerID, sourceID, err); statusErr != nil {
 			return nil, errors.Join(err, fmt.Errorf("record proxy source sync failure: %w", statusErr))
 		}
 		return nil, err
+	}
+	// Informational only: a failure here must not abort a successful import.
+	if infoErr := s.recordProxySourceSubscriptionInfo(ctx, ownerID, sourceID, parseProxySubscriptionUserInfo(userInfoHeader)); infoErr != nil {
+		slog.Warn("record proxy source subscription info failed", "owner_user_id", userResourceOwnerValue(ownerID), "source_id", sourceID, "error", infoErr)
 	}
 	imported, err := s.syncProxySourceNodes(ctx, ownerID, sourceID, urAsString(source["name"]), content, toBool(source["is_public"]))
 	if err != nil {
@@ -3112,6 +3183,104 @@ func (s *UserResourceService) syncProxySourceForOwner(ctx context.Context, owner
 		Created:       imported.Created,
 		Updated:       imported.Updated,
 	}, nil
+}
+
+const (
+	proxySourceSyncStatusSkipped  = "skipped"
+	proxySourceSyncStatusDeferred = "deferred"
+	// proxySourceSyncAllBudget bounds one "sync every source" request. A single
+	// source may spend up to 30s on its own HTTP fetch, so an owner near the
+	// 100-source cap could otherwise hold the request open for most of an hour.
+	// Sources not reached inside the budget come back as `deferred`; they are
+	// already due, so the background scheduler picks them up unattended.
+	proxySourceSyncAllBudget = 100 * time.Second
+	// proxySourceSyncAllErrorLimit keeps the aggregate response small: without it
+	// 100 sources could each contribute a 64 KiB error blob.
+	proxySourceSyncAllErrorLimit = 1000
+)
+
+func (s *UserResourceService) SyncAllProxySources(ctx context.Context, ownerID int64) (*ProxySourceSyncAllResult, error) {
+	return s.syncAllProxySourcesForOwner(ctx, userResourceOwner(ownerID))
+}
+
+func (s *UserResourceService) SyncAllSystemProxySources(ctx context.Context) (*ProxySourceSyncAllResult, error) {
+	return s.syncAllProxySourcesForOwner(ctx, nil)
+}
+
+func (s *UserResourceService) syncAllProxySourcesForOwner(ctx context.Context, ownerID *int64) (*ProxySourceSyncAllResult, error) {
+	sources, err := s.listProxySourceSyncTargets(ctx, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	result := &ProxySourceSyncAllResult{Total: len(sources), Items: make([]ProxySourceSyncAllItem, 0, len(sources))}
+	deadline := time.Now().Add(proxySourceSyncAllBudget)
+	for _, source := range sources {
+		item := ProxySourceSyncAllItem{SourceID: source.id, Name: source.name}
+		if !source.syncEnabled {
+			// A paused source is paused deliberately: syncing it here would revive
+			// nodes the owner froze, and a source they already know is broken would
+			// add a failure line to every single run.
+			item.Status = proxySourceSyncStatusSkipped
+			result.SkippedCount++
+		} else if time.Now().After(deadline) {
+			item.Status = proxySourceSyncStatusDeferred
+			result.DeferredCount++
+		} else if syncResult, syncErr := s.syncProxySourceForOwner(ctx, ownerID, source.id); syncErr != nil {
+			item.Status = "error"
+			item.Error = safeSyncError(syncErr)
+			result.FailedCount++
+		} else {
+			item.Status = syncResult.Status
+			item.ImportedCount = syncResult.ImportedCount
+			item.CreatedCount = syncResult.CreatedCount
+			item.UpdatedCount = syncResult.UpdatedCount
+			item.Error = truncateUTF8(strings.Join(syncResult.Errors, "\n"), proxySourceSyncAllErrorLimit)
+			result.CreatedCount += syncResult.CreatedCount
+			result.UpdatedCount += syncResult.UpdatedCount
+			switch syncResult.Status {
+			case "success":
+				result.SuccessCount++
+			case "partial":
+				result.PartialCount++
+			default:
+				result.FailedCount++
+			}
+		}
+		result.Items = append(result.Items, item)
+	}
+	return result, nil
+}
+
+type proxySourceSyncTarget struct {
+	id          int64
+	name        string
+	syncEnabled bool
+}
+
+func (s *UserResourceService) listProxySourceSyncTargets(ctx context.Context, ownerID *int64) ([]proxySourceSyncTarget, error) {
+	if err := s.ensureDB(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, name, sync_enabled FROM proxy_sources
+WHERE owner_user_id IS NOT DISTINCT FROM $1 AND deleted_at IS NULL
+ORDER BY id ASC`, userResourceOwnerValue(ownerID))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	targets := make([]proxySourceSyncTarget, 0)
+	for rows.Next() {
+		var target proxySourceSyncTarget
+		if err := rows.Scan(&target.id, &target.name, &target.syncEnabled); err != nil {
+			return nil, err
+		}
+		targets = append(targets, target)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return targets, nil
 }
 
 func (s *UserResourceService) syncProxySourceNodes(ctx context.Context, ownerID *int64, sourceID int64, sourceName, raw string, isPublic bool) (*ProxyImportResult, error) {
@@ -5798,13 +5967,16 @@ func isBlockedOutboundIP(ip net.IP) bool {
 	return ip == nil || isPrivateIP(ip) || ip.IsMulticast()
 }
 
-func fetchProxySubscription(ctx context.Context, subscriptionURL string) (string, error) {
+// fetchProxySubscription returns the subscription body plus the raw
+// `subscription-userinfo` response header, which most airport panels use to
+// report the plan's traffic quota and expiry date.
+func fetchProxySubscription(ctx context.Context, subscriptionURL string) (string, string, error) {
 	if err := validateExternalHTTPURL(ctx, subscriptionURL); err != nil {
-		return "", err
+		return "", "", err
 	}
 	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
-		return "", errors.New("default HTTP transport is unavailable")
+		return "", "", errors.New("default HTTP transport is unavailable")
 	}
 	transport := defaultTransport.Clone()
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
@@ -5842,26 +6014,142 @@ func fetchProxySubscription(ctx context.Context, subscriptionURL string) (string
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, subscriptionURL, nil)
 	if err != nil {
-		return "", infraerrors.BadRequest("PROXY_SOURCE_URL_INVALID", "subscription_url is invalid")
+		return "", "", infraerrors.BadRequest("PROXY_SOURCE_URL_INVALID", "subscription_url is invalid")
 	}
 	req.Header.Set("Accept", "text/plain, application/octet-stream, application/yaml, application/json;q=0.5, */*;q=0.1")
 	req.Header.Set("User-Agent", "sub2api-user-proxy-source/1.0")
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", infraerrors.BadRequest("PROXY_SOURCE_FETCH_FAILED", "subscription fetch failed")
+		return "", "", infraerrors.BadRequest("PROXY_SOURCE_FETCH_FAILED", "subscription fetch failed")
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return "", infraerrors.BadRequest("PROXY_SOURCE_FETCH_STATUS", fmt.Sprintf("subscription upstream returned HTTP %d", resp.StatusCode))
+		return "", "", infraerrors.BadRequest("PROXY_SOURCE_FETCH_STATUS", fmt.Sprintf("subscription upstream returned HTTP %d", resp.StatusCode))
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, proxySubscriptionMaxBytes+1))
 	if err != nil {
-		return "", infraerrors.BadRequest("PROXY_SOURCE_READ_FAILED", "subscription read failed")
+		return "", "", infraerrors.BadRequest("PROXY_SOURCE_READ_FAILED", "subscription read failed")
 	}
 	if int64(len(body)) > proxySubscriptionMaxBytes {
-		return "", infraerrors.BadRequest("PROXY_SOURCE_TOO_LARGE", "subscription response is too large")
+		return "", "", infraerrors.BadRequest("PROXY_SOURCE_TOO_LARGE", "subscription response is too large")
 	}
-	return string(body), nil
+	userInfo := resp.Header.Get("Subscription-Userinfo")
+	if len(userInfo) > 512 {
+		userInfo = userInfo[:512]
+	}
+	return string(body), userInfo, nil
+}
+
+// proxySubscriptionUserInfo is the parsed `subscription-userinfo` header. Each
+// Has* flag records whether the upstream actually reported that value, so a
+// panel that omits a field cannot overwrite a previously known snapshot.
+type proxySubscriptionUserInfo struct {
+	TrafficUsed  int64
+	TrafficTotal int64
+	ExpiresAt    *time.Time
+	HasUsed      bool
+	HasTotal     bool
+	HasExpiry    bool
+}
+
+func (info proxySubscriptionUserInfo) hasAny() bool {
+	return info.HasUsed || info.HasTotal || info.HasExpiry
+}
+
+// parseProxySubscriptionUserInfo reads the widely used
+// `upload=..; download=..; total=..; expire=..` form. Unknown keys, malformed
+// numbers and negative values are ignored rather than failing the sync: the
+// snapshot is informational and must never block a node import.
+func parseProxySubscriptionUserInfo(header string) proxySubscriptionUserInfo {
+	info := proxySubscriptionUserInfo{}
+	if strings.TrimSpace(header) == "" {
+		return info
+	}
+	var upload, download int64
+	sawUpload, sawDownload := false, false
+	for _, part := range strings.Split(header, ";") {
+		rawKey, rawValue, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(rawKey))
+		number, ok := parseSubscriptionUserInfoNumber(strings.TrimSpace(rawValue))
+		if !ok {
+			continue
+		}
+		switch key {
+		case "upload":
+			upload, sawUpload = number, true
+		case "download":
+			download, sawDownload = number, true
+		case "total":
+			info.TrafficTotal, info.HasTotal = number, true
+		case "expire":
+			// `expire=0` is how panels report "never expires"; record that as a
+			// known-empty expiry instead of silently keeping a stale date.
+			if number > 0 {
+				expires := time.Unix(number, 0).UTC()
+				info.ExpiresAt = &expires
+			}
+			info.HasExpiry = true
+		}
+	}
+	if sawUpload || sawDownload {
+		info.TrafficUsed = upload + download
+		info.HasUsed = true
+	}
+	return info
+}
+
+func parseSubscriptionUserInfoNumber(value string) (int64, bool) {
+	if value == "" {
+		return 0, false
+	}
+	if parsed, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if parsed < 0 {
+			return 0, false
+		}
+		return parsed, true
+	}
+	// Some panels report decimals (e.g. `total=1073741824.0`).
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) || parsed < 0 || parsed > float64(math.MaxInt64/2) {
+		return 0, false
+	}
+	return int64(parsed), true
+}
+
+// recordProxySourceSubscriptionInfo stores the airport quota/expiry snapshot in
+// its own statement, outside the node-import transaction: the numbers stay valid
+// even when parsing the node list fails.
+func (s *UserResourceService) recordProxySourceSubscriptionInfo(ctx context.Context, ownerID *int64, sourceID int64, info proxySubscriptionUserInfo) error {
+	if !info.hasAny() {
+		return nil
+	}
+	if err := s.ensureDB(); err != nil {
+		return err
+	}
+	assignments := []string{}
+	args := []any{}
+	if info.HasUsed {
+		args = append(args, info.TrafficUsed)
+		assignments = append(assignments, fmt.Sprintf("sub_traffic_used = $%d", len(args)))
+	}
+	if info.HasTotal {
+		args = append(args, info.TrafficTotal)
+		assignments = append(assignments, fmt.Sprintf("sub_traffic_total = $%d", len(args)))
+	}
+	if info.HasExpiry {
+		args = append(args, info.ExpiresAt)
+		assignments = append(assignments, fmt.Sprintf("sub_expires_at = $%d", len(args)))
+	}
+	assignments = append(assignments, "sub_info_updated_at = NOW()", "updated_at = NOW()")
+	args = append(args, sourceID, userResourceOwnerValue(ownerID))
+	_, err := s.db.ExecContext(ctx, fmt.Sprintf(`
+UPDATE proxy_sources SET %s
+WHERE id = $%d AND owner_user_id IS NOT DISTINCT FROM $%d AND deleted_at IS NULL`,
+		strings.Join(assignments, ", "), len(args)-1, len(args)), args...)
+	return err
 }
 
 func safeSyncError(err error) string {

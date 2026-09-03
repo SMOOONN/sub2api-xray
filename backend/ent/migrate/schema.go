@@ -1511,6 +1511,11 @@ var (
 		{Name: "last_sync_status", Type: field.TypeString, Size: 20, Default: "never"},
 		{Name: "last_sync_error", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "last_imported_count", Type: field.TypeInt, Default: 0},
+		{Name: "sync_enabled", Type: field.TypeBool, Default: true},
+		{Name: "sub_traffic_used", Type: field.TypeInt64, Default: 0},
+		{Name: "sub_traffic_total", Type: field.TypeInt64, Default: 0},
+		{Name: "sub_expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "sub_info_updated_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 	}
 	// ProxySourcesTable holds the schema information for the "proxy_sources" table.
 	ProxySourcesTable = &schema.Table{

@@ -38,6 +38,16 @@ const (
 	FieldLastSyncError = "last_sync_error"
 	// FieldLastImportedCount holds the string denoting the last_imported_count field in the database.
 	FieldLastImportedCount = "last_imported_count"
+	// FieldSyncEnabled holds the string denoting the sync_enabled field in the database.
+	FieldSyncEnabled = "sync_enabled"
+	// FieldSubTrafficUsed holds the string denoting the sub_traffic_used field in the database.
+	FieldSubTrafficUsed = "sub_traffic_used"
+	// FieldSubTrafficTotal holds the string denoting the sub_traffic_total field in the database.
+	FieldSubTrafficTotal = "sub_traffic_total"
+	// FieldSubExpiresAt holds the string denoting the sub_expires_at field in the database.
+	FieldSubExpiresAt = "sub_expires_at"
+	// FieldSubInfoUpdatedAt holds the string denoting the sub_info_updated_at field in the database.
+	FieldSubInfoUpdatedAt = "sub_info_updated_at"
 	// Table holds the table name of the proxysource in the database.
 	Table = "proxy_sources"
 )
@@ -57,6 +67,11 @@ var Columns = []string{
 	FieldLastSyncStatus,
 	FieldLastSyncError,
 	FieldLastImportedCount,
+	FieldSyncEnabled,
+	FieldSubTrafficUsed,
+	FieldSubTrafficTotal,
+	FieldSubExpiresAt,
+	FieldSubInfoUpdatedAt,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -97,6 +112,12 @@ var (
 	LastSyncStatusValidator func(string) error
 	// DefaultLastImportedCount holds the default value on creation for the "last_imported_count" field.
 	DefaultLastImportedCount int
+	// DefaultSyncEnabled holds the default value on creation for the "sync_enabled" field.
+	DefaultSyncEnabled bool
+	// DefaultSubTrafficUsed holds the default value on creation for the "sub_traffic_used" field.
+	DefaultSubTrafficUsed int64
+	// DefaultSubTrafficTotal holds the default value on creation for the "sub_traffic_total" field.
+	DefaultSubTrafficTotal int64
 )
 
 // OrderOption defines the ordering options for the ProxySource queries.
@@ -165,4 +186,29 @@ func ByLastSyncError(opts ...sql.OrderTermOption) OrderOption {
 // ByLastImportedCount orders the results by the last_imported_count field.
 func ByLastImportedCount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLastImportedCount, opts...).ToFunc()
+}
+
+// BySyncEnabled orders the results by the sync_enabled field.
+func BySyncEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSyncEnabled, opts...).ToFunc()
+}
+
+// BySubTrafficUsed orders the results by the sub_traffic_used field.
+func BySubTrafficUsed(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubTrafficUsed, opts...).ToFunc()
+}
+
+// BySubTrafficTotal orders the results by the sub_traffic_total field.
+func BySubTrafficTotal(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubTrafficTotal, opts...).ToFunc()
+}
+
+// BySubExpiresAt orders the results by the sub_expires_at field.
+func BySubExpiresAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubExpiresAt, opts...).ToFunc()
+}
+
+// BySubInfoUpdatedAt orders the results by the sub_info_updated_at field.
+func BySubInfoUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubInfoUpdatedAt, opts...).ToFunc()
 }

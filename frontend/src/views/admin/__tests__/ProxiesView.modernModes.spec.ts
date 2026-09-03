@@ -75,13 +75,43 @@ describe('admin proxy modern mode support', () => {
     expect(source).toContain('width="wide"')
     expect(source).toContain('data-test="admin-proxy-source-table-scroll"')
     expect(source).toContain('class="overflow-x-auto rounded-md border')
-    expect(source).toContain('min-w-[760px]')
+    expect(source).toContain('min-w-[1040px]')
     expect(source).toContain('data-test="admin-proxy-source-pagination"')
     expect(source).toContain(':page-size="PROXY_SOURCE_PAGE_SIZE"')
     expect(source).toContain('adminAPI.proxies.sources.update(editingProxySourceId.value, payload)')
     expect(source).toContain('adminAPI.proxies.sources.delete(source.id)')
     expect(source).toContain('adminAPI.proxies.sources.sync(source.id)')
     expect(source).toContain("t('admin.proxies.sourceCreatedSyncFailed')")
+  })
+
+  it('mirrors the My Proxies source-management controls for administrators', () => {
+    // Sync every source at once, then report counts only: node payloads and
+    // subscription URLs must never reach the summary strip.
+    expect(source).toContain('data-test="admin-proxy-source-sync-all"')
+    expect(source).toContain('@click="syncAllProxySources"')
+    expect(source).toContain('adminAPI.proxies.sources.syncAll()')
+    expect(source).toContain('data-test="admin-proxy-source-sync-all-summary"')
+    expect(source).toContain("t('admin.proxies.sourceSyncAllSummary'")
+
+    // Per-source node counts double as an entry point into the list filter.
+    expect(source).toContain("t('admin.proxies.sourceColumnNodes')")
+    expect(source).toContain("t('admin.proxies.sourceNodeCount'")
+    expect(source).toContain('@click="filterProxiesBySource(source)"')
+    expect(source).toContain('data-test="admin-proxy-source-filter"')
+    expect(source).toContain('v-model="filters.source_id"')
+    expect(source).toContain(':options="proxySourceFilterOptions"')
+    expect(source).toContain('source_id: filters.source_id ? Number(filters.source_id) : undefined')
+
+    // Pause/resume plus the next-run and airport-quota columns.
+    expect(source).toContain(':data-test="`admin-proxy-source-toggle-${source.id}`"')
+    expect(source).toContain('@click="toggleProxySourceSync(source)"')
+    expect(source).toContain("t('admin.proxies.sourceNextSyncAt'")
+    expect(source).toContain("t('admin.proxies.sourceSyncPausedHint')")
+    expect(source).toContain("t('admin.proxies.sourceColumnQuota')")
+    expect(source).toContain('proxySourceTrafficText(source)')
+    expect(source).toContain("t('admin.proxies.sourceExpiresAt'")
+    expect(source).toContain('v-model="proxySourceForm.sync_enabled"')
+    expect(source).toContain('data-test="admin-proxy-source-sync-enabled"')
   })
 
   it('supports standard and Xray proxy modes without dropping node metadata', () => {
@@ -100,5 +130,17 @@ describe('admin proxy modern mode support', () => {
     expect(source).toContain("visiblePasswordIds.has(row.id) ? row.username : '\u2022\u2022\u2022\u2022\u2022\u2022'")
     expect(source).toContain("visiblePasswordIds.has(row.id) ? row.password : '\u2022\u2022\u2022\u2022\u2022\u2022'")
     expect(source).toContain("t('admin.proxies.showCredentials')")
+  })
+
+  it('gives the toolbar actions their own wrapped row instead of shrinking them into a column', () => {
+    // flex-1 resolves to flex-basis: 0%, so the action group is never pushed to a new
+    // flex line: it keeps shrinking into whatever space is left beside the filters and
+    // stacks the buttons into a narrow column (measured 206px wide / 6 rows once the
+    // source filter joined the row). w-full (basis: 100%) puts the group on its own
+    // row, grow + justify-end keeps it right-aligned there, lg:w-auto lets it share the
+    // filter row again when the viewport can hold both at natural width, and
+    // whitespace-nowrap stops labels from breaking mid-word if it is ever squeezed.
+    expect(source).toContain('class="flex w-full grow flex-wrap items-center justify-end gap-2 whitespace-nowrap lg:w-auto"')
+    expect(source).not.toContain('class="flex flex-1 flex-wrap items-center justify-end gap-2"')
   })
 })

@@ -174,6 +174,76 @@ func (_c *ProxySourceCreate) SetNillableLastImportedCount(v *int) *ProxySourceCr
 	return _c
 }
 
+// SetSyncEnabled sets the "sync_enabled" field.
+func (_c *ProxySourceCreate) SetSyncEnabled(v bool) *ProxySourceCreate {
+	_c.mutation.SetSyncEnabled(v)
+	return _c
+}
+
+// SetNillableSyncEnabled sets the "sync_enabled" field if the given value is not nil.
+func (_c *ProxySourceCreate) SetNillableSyncEnabled(v *bool) *ProxySourceCreate {
+	if v != nil {
+		_c.SetSyncEnabled(*v)
+	}
+	return _c
+}
+
+// SetSubTrafficUsed sets the "sub_traffic_used" field.
+func (_c *ProxySourceCreate) SetSubTrafficUsed(v int64) *ProxySourceCreate {
+	_c.mutation.SetSubTrafficUsed(v)
+	return _c
+}
+
+// SetNillableSubTrafficUsed sets the "sub_traffic_used" field if the given value is not nil.
+func (_c *ProxySourceCreate) SetNillableSubTrafficUsed(v *int64) *ProxySourceCreate {
+	if v != nil {
+		_c.SetSubTrafficUsed(*v)
+	}
+	return _c
+}
+
+// SetSubTrafficTotal sets the "sub_traffic_total" field.
+func (_c *ProxySourceCreate) SetSubTrafficTotal(v int64) *ProxySourceCreate {
+	_c.mutation.SetSubTrafficTotal(v)
+	return _c
+}
+
+// SetNillableSubTrafficTotal sets the "sub_traffic_total" field if the given value is not nil.
+func (_c *ProxySourceCreate) SetNillableSubTrafficTotal(v *int64) *ProxySourceCreate {
+	if v != nil {
+		_c.SetSubTrafficTotal(*v)
+	}
+	return _c
+}
+
+// SetSubExpiresAt sets the "sub_expires_at" field.
+func (_c *ProxySourceCreate) SetSubExpiresAt(v time.Time) *ProxySourceCreate {
+	_c.mutation.SetSubExpiresAt(v)
+	return _c
+}
+
+// SetNillableSubExpiresAt sets the "sub_expires_at" field if the given value is not nil.
+func (_c *ProxySourceCreate) SetNillableSubExpiresAt(v *time.Time) *ProxySourceCreate {
+	if v != nil {
+		_c.SetSubExpiresAt(*v)
+	}
+	return _c
+}
+
+// SetSubInfoUpdatedAt sets the "sub_info_updated_at" field.
+func (_c *ProxySourceCreate) SetSubInfoUpdatedAt(v time.Time) *ProxySourceCreate {
+	_c.mutation.SetSubInfoUpdatedAt(v)
+	return _c
+}
+
+// SetNillableSubInfoUpdatedAt sets the "sub_info_updated_at" field if the given value is not nil.
+func (_c *ProxySourceCreate) SetNillableSubInfoUpdatedAt(v *time.Time) *ProxySourceCreate {
+	if v != nil {
+		_c.SetSubInfoUpdatedAt(*v)
+	}
+	return _c
+}
+
 // Mutation returns the ProxySourceMutation object of the builder.
 func (_c *ProxySourceCreate) Mutation() *ProxySourceMutation {
 	return _c.mutation
@@ -241,6 +311,18 @@ func (_c *ProxySourceCreate) defaults() error {
 		v := proxysource.DefaultLastImportedCount
 		_c.mutation.SetLastImportedCount(v)
 	}
+	if _, ok := _c.mutation.SyncEnabled(); !ok {
+		v := proxysource.DefaultSyncEnabled
+		_c.mutation.SetSyncEnabled(v)
+	}
+	if _, ok := _c.mutation.SubTrafficUsed(); !ok {
+		v := proxysource.DefaultSubTrafficUsed
+		_c.mutation.SetSubTrafficUsed(v)
+	}
+	if _, ok := _c.mutation.SubTrafficTotal(); !ok {
+		v := proxysource.DefaultSubTrafficTotal
+		_c.mutation.SetSubTrafficTotal(v)
+	}
 	return nil
 }
 
@@ -284,6 +366,15 @@ func (_c *ProxySourceCreate) check() error {
 	}
 	if _, ok := _c.mutation.LastImportedCount(); !ok {
 		return &ValidationError{Name: "last_imported_count", err: errors.New(`ent: missing required field "ProxySource.last_imported_count"`)}
+	}
+	if _, ok := _c.mutation.SyncEnabled(); !ok {
+		return &ValidationError{Name: "sync_enabled", err: errors.New(`ent: missing required field "ProxySource.sync_enabled"`)}
+	}
+	if _, ok := _c.mutation.SubTrafficUsed(); !ok {
+		return &ValidationError{Name: "sub_traffic_used", err: errors.New(`ent: missing required field "ProxySource.sub_traffic_used"`)}
+	}
+	if _, ok := _c.mutation.SubTrafficTotal(); !ok {
+		return &ValidationError{Name: "sub_traffic_total", err: errors.New(`ent: missing required field "ProxySource.sub_traffic_total"`)}
 	}
 	return nil
 }
@@ -359,6 +450,26 @@ func (_c *ProxySourceCreate) createSpec() (*ProxySource, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.LastImportedCount(); ok {
 		_spec.SetField(proxysource.FieldLastImportedCount, field.TypeInt, value)
 		_node.LastImportedCount = value
+	}
+	if value, ok := _c.mutation.SyncEnabled(); ok {
+		_spec.SetField(proxysource.FieldSyncEnabled, field.TypeBool, value)
+		_node.SyncEnabled = value
+	}
+	if value, ok := _c.mutation.SubTrafficUsed(); ok {
+		_spec.SetField(proxysource.FieldSubTrafficUsed, field.TypeInt64, value)
+		_node.SubTrafficUsed = value
+	}
+	if value, ok := _c.mutation.SubTrafficTotal(); ok {
+		_spec.SetField(proxysource.FieldSubTrafficTotal, field.TypeInt64, value)
+		_node.SubTrafficTotal = value
+	}
+	if value, ok := _c.mutation.SubExpiresAt(); ok {
+		_spec.SetField(proxysource.FieldSubExpiresAt, field.TypeTime, value)
+		_node.SubExpiresAt = &value
+	}
+	if value, ok := _c.mutation.SubInfoUpdatedAt(); ok {
+		_spec.SetField(proxysource.FieldSubInfoUpdatedAt, field.TypeTime, value)
+		_node.SubInfoUpdatedAt = &value
 	}
 	return _node, _spec
 }
@@ -583,6 +694,90 @@ func (u *ProxySourceUpsert) UpdateLastImportedCount() *ProxySourceUpsert {
 // AddLastImportedCount adds v to the "last_imported_count" field.
 func (u *ProxySourceUpsert) AddLastImportedCount(v int) *ProxySourceUpsert {
 	u.Add(proxysource.FieldLastImportedCount, v)
+	return u
+}
+
+// SetSyncEnabled sets the "sync_enabled" field.
+func (u *ProxySourceUpsert) SetSyncEnabled(v bool) *ProxySourceUpsert {
+	u.Set(proxysource.FieldSyncEnabled, v)
+	return u
+}
+
+// UpdateSyncEnabled sets the "sync_enabled" field to the value that was provided on create.
+func (u *ProxySourceUpsert) UpdateSyncEnabled() *ProxySourceUpsert {
+	u.SetExcluded(proxysource.FieldSyncEnabled)
+	return u
+}
+
+// SetSubTrafficUsed sets the "sub_traffic_used" field.
+func (u *ProxySourceUpsert) SetSubTrafficUsed(v int64) *ProxySourceUpsert {
+	u.Set(proxysource.FieldSubTrafficUsed, v)
+	return u
+}
+
+// UpdateSubTrafficUsed sets the "sub_traffic_used" field to the value that was provided on create.
+func (u *ProxySourceUpsert) UpdateSubTrafficUsed() *ProxySourceUpsert {
+	u.SetExcluded(proxysource.FieldSubTrafficUsed)
+	return u
+}
+
+// AddSubTrafficUsed adds v to the "sub_traffic_used" field.
+func (u *ProxySourceUpsert) AddSubTrafficUsed(v int64) *ProxySourceUpsert {
+	u.Add(proxysource.FieldSubTrafficUsed, v)
+	return u
+}
+
+// SetSubTrafficTotal sets the "sub_traffic_total" field.
+func (u *ProxySourceUpsert) SetSubTrafficTotal(v int64) *ProxySourceUpsert {
+	u.Set(proxysource.FieldSubTrafficTotal, v)
+	return u
+}
+
+// UpdateSubTrafficTotal sets the "sub_traffic_total" field to the value that was provided on create.
+func (u *ProxySourceUpsert) UpdateSubTrafficTotal() *ProxySourceUpsert {
+	u.SetExcluded(proxysource.FieldSubTrafficTotal)
+	return u
+}
+
+// AddSubTrafficTotal adds v to the "sub_traffic_total" field.
+func (u *ProxySourceUpsert) AddSubTrafficTotal(v int64) *ProxySourceUpsert {
+	u.Add(proxysource.FieldSubTrafficTotal, v)
+	return u
+}
+
+// SetSubExpiresAt sets the "sub_expires_at" field.
+func (u *ProxySourceUpsert) SetSubExpiresAt(v time.Time) *ProxySourceUpsert {
+	u.Set(proxysource.FieldSubExpiresAt, v)
+	return u
+}
+
+// UpdateSubExpiresAt sets the "sub_expires_at" field to the value that was provided on create.
+func (u *ProxySourceUpsert) UpdateSubExpiresAt() *ProxySourceUpsert {
+	u.SetExcluded(proxysource.FieldSubExpiresAt)
+	return u
+}
+
+// ClearSubExpiresAt clears the value of the "sub_expires_at" field.
+func (u *ProxySourceUpsert) ClearSubExpiresAt() *ProxySourceUpsert {
+	u.SetNull(proxysource.FieldSubExpiresAt)
+	return u
+}
+
+// SetSubInfoUpdatedAt sets the "sub_info_updated_at" field.
+func (u *ProxySourceUpsert) SetSubInfoUpdatedAt(v time.Time) *ProxySourceUpsert {
+	u.Set(proxysource.FieldSubInfoUpdatedAt, v)
+	return u
+}
+
+// UpdateSubInfoUpdatedAt sets the "sub_info_updated_at" field to the value that was provided on create.
+func (u *ProxySourceUpsert) UpdateSubInfoUpdatedAt() *ProxySourceUpsert {
+	u.SetExcluded(proxysource.FieldSubInfoUpdatedAt)
+	return u
+}
+
+// ClearSubInfoUpdatedAt clears the value of the "sub_info_updated_at" field.
+func (u *ProxySourceUpsert) ClearSubInfoUpdatedAt() *ProxySourceUpsert {
+	u.SetNull(proxysource.FieldSubInfoUpdatedAt)
 	return u
 }
 
@@ -831,6 +1026,104 @@ func (u *ProxySourceUpsertOne) AddLastImportedCount(v int) *ProxySourceUpsertOne
 func (u *ProxySourceUpsertOne) UpdateLastImportedCount() *ProxySourceUpsertOne {
 	return u.Update(func(s *ProxySourceUpsert) {
 		s.UpdateLastImportedCount()
+	})
+}
+
+// SetSyncEnabled sets the "sync_enabled" field.
+func (u *ProxySourceUpsertOne) SetSyncEnabled(v bool) *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.SetSyncEnabled(v)
+	})
+}
+
+// UpdateSyncEnabled sets the "sync_enabled" field to the value that was provided on create.
+func (u *ProxySourceUpsertOne) UpdateSyncEnabled() *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.UpdateSyncEnabled()
+	})
+}
+
+// SetSubTrafficUsed sets the "sub_traffic_used" field.
+func (u *ProxySourceUpsertOne) SetSubTrafficUsed(v int64) *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.SetSubTrafficUsed(v)
+	})
+}
+
+// AddSubTrafficUsed adds v to the "sub_traffic_used" field.
+func (u *ProxySourceUpsertOne) AddSubTrafficUsed(v int64) *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.AddSubTrafficUsed(v)
+	})
+}
+
+// UpdateSubTrafficUsed sets the "sub_traffic_used" field to the value that was provided on create.
+func (u *ProxySourceUpsertOne) UpdateSubTrafficUsed() *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.UpdateSubTrafficUsed()
+	})
+}
+
+// SetSubTrafficTotal sets the "sub_traffic_total" field.
+func (u *ProxySourceUpsertOne) SetSubTrafficTotal(v int64) *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.SetSubTrafficTotal(v)
+	})
+}
+
+// AddSubTrafficTotal adds v to the "sub_traffic_total" field.
+func (u *ProxySourceUpsertOne) AddSubTrafficTotal(v int64) *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.AddSubTrafficTotal(v)
+	})
+}
+
+// UpdateSubTrafficTotal sets the "sub_traffic_total" field to the value that was provided on create.
+func (u *ProxySourceUpsertOne) UpdateSubTrafficTotal() *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.UpdateSubTrafficTotal()
+	})
+}
+
+// SetSubExpiresAt sets the "sub_expires_at" field.
+func (u *ProxySourceUpsertOne) SetSubExpiresAt(v time.Time) *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.SetSubExpiresAt(v)
+	})
+}
+
+// UpdateSubExpiresAt sets the "sub_expires_at" field to the value that was provided on create.
+func (u *ProxySourceUpsertOne) UpdateSubExpiresAt() *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.UpdateSubExpiresAt()
+	})
+}
+
+// ClearSubExpiresAt clears the value of the "sub_expires_at" field.
+func (u *ProxySourceUpsertOne) ClearSubExpiresAt() *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.ClearSubExpiresAt()
+	})
+}
+
+// SetSubInfoUpdatedAt sets the "sub_info_updated_at" field.
+func (u *ProxySourceUpsertOne) SetSubInfoUpdatedAt(v time.Time) *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.SetSubInfoUpdatedAt(v)
+	})
+}
+
+// UpdateSubInfoUpdatedAt sets the "sub_info_updated_at" field to the value that was provided on create.
+func (u *ProxySourceUpsertOne) UpdateSubInfoUpdatedAt() *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.UpdateSubInfoUpdatedAt()
+	})
+}
+
+// ClearSubInfoUpdatedAt clears the value of the "sub_info_updated_at" field.
+func (u *ProxySourceUpsertOne) ClearSubInfoUpdatedAt() *ProxySourceUpsertOne {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.ClearSubInfoUpdatedAt()
 	})
 }
 
@@ -1245,6 +1538,104 @@ func (u *ProxySourceUpsertBulk) AddLastImportedCount(v int) *ProxySourceUpsertBu
 func (u *ProxySourceUpsertBulk) UpdateLastImportedCount() *ProxySourceUpsertBulk {
 	return u.Update(func(s *ProxySourceUpsert) {
 		s.UpdateLastImportedCount()
+	})
+}
+
+// SetSyncEnabled sets the "sync_enabled" field.
+func (u *ProxySourceUpsertBulk) SetSyncEnabled(v bool) *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.SetSyncEnabled(v)
+	})
+}
+
+// UpdateSyncEnabled sets the "sync_enabled" field to the value that was provided on create.
+func (u *ProxySourceUpsertBulk) UpdateSyncEnabled() *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.UpdateSyncEnabled()
+	})
+}
+
+// SetSubTrafficUsed sets the "sub_traffic_used" field.
+func (u *ProxySourceUpsertBulk) SetSubTrafficUsed(v int64) *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.SetSubTrafficUsed(v)
+	})
+}
+
+// AddSubTrafficUsed adds v to the "sub_traffic_used" field.
+func (u *ProxySourceUpsertBulk) AddSubTrafficUsed(v int64) *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.AddSubTrafficUsed(v)
+	})
+}
+
+// UpdateSubTrafficUsed sets the "sub_traffic_used" field to the value that was provided on create.
+func (u *ProxySourceUpsertBulk) UpdateSubTrafficUsed() *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.UpdateSubTrafficUsed()
+	})
+}
+
+// SetSubTrafficTotal sets the "sub_traffic_total" field.
+func (u *ProxySourceUpsertBulk) SetSubTrafficTotal(v int64) *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.SetSubTrafficTotal(v)
+	})
+}
+
+// AddSubTrafficTotal adds v to the "sub_traffic_total" field.
+func (u *ProxySourceUpsertBulk) AddSubTrafficTotal(v int64) *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.AddSubTrafficTotal(v)
+	})
+}
+
+// UpdateSubTrafficTotal sets the "sub_traffic_total" field to the value that was provided on create.
+func (u *ProxySourceUpsertBulk) UpdateSubTrafficTotal() *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.UpdateSubTrafficTotal()
+	})
+}
+
+// SetSubExpiresAt sets the "sub_expires_at" field.
+func (u *ProxySourceUpsertBulk) SetSubExpiresAt(v time.Time) *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.SetSubExpiresAt(v)
+	})
+}
+
+// UpdateSubExpiresAt sets the "sub_expires_at" field to the value that was provided on create.
+func (u *ProxySourceUpsertBulk) UpdateSubExpiresAt() *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.UpdateSubExpiresAt()
+	})
+}
+
+// ClearSubExpiresAt clears the value of the "sub_expires_at" field.
+func (u *ProxySourceUpsertBulk) ClearSubExpiresAt() *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.ClearSubExpiresAt()
+	})
+}
+
+// SetSubInfoUpdatedAt sets the "sub_info_updated_at" field.
+func (u *ProxySourceUpsertBulk) SetSubInfoUpdatedAt(v time.Time) *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.SetSubInfoUpdatedAt(v)
+	})
+}
+
+// UpdateSubInfoUpdatedAt sets the "sub_info_updated_at" field to the value that was provided on create.
+func (u *ProxySourceUpsertBulk) UpdateSubInfoUpdatedAt() *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.UpdateSubInfoUpdatedAt()
+	})
+}
+
+// ClearSubInfoUpdatedAt clears the value of the "sub_info_updated_at" field.
+func (u *ProxySourceUpsertBulk) ClearSubInfoUpdatedAt() *ProxySourceUpsertBulk {
+	return u.Update(func(s *ProxySourceUpsert) {
+		s.ClearSubInfoUpdatedAt()
 	})
 }
 
