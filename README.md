@@ -38,7 +38,7 @@ The user resource workspace is controlled by `enable_user_resources` and is disa
 
 ## Development Version
 
-The current formal Xray release is [v0.2.0-xray5](https://github.com/smmooooonn/sub2api-xray/releases/tag/v0.2.0-xray5), synchronized with official `v0.2.0` and its latest corresponding `main` commits.
+The current formal Xray release is [v0.2.1-xray5](https://github.com/smmooooonn/sub2api-xray/releases/tag/v0.2.1-xray5), synchronized with official `v0.2.1` and its latest corresponding `main` commits.
 
 ## ⚠️ Important Notice
 
