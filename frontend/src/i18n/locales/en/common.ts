@@ -204,6 +204,8 @@ export default {
     myAccountUsage: 'Account Usage',
     myUpstreamErrors: 'Upstream Errors',
     buySubscription: 'Recharge / Subscription',
+    recharge: 'Recharge',
+    subscribe: 'Subscription',
     docs: 'Docs',
     myOrders: 'My Orders',
     orderManagement: 'Orders',
