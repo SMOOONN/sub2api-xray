@@ -108,7 +108,7 @@ func (s *UserResourceService) normalizeAndValidateGroupPayload(ctx context.Conte
 	}
 	payload["name"] = name
 	platform := strings.ToLower(strings.TrimSpace(urAsString(state["platform"])))
-	if err := validateAllowedValue("platform", platform, PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek); err != nil {
+	if err := validateAllowedValue("platform", platform, PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo); err != nil {
 		return err
 	}
 	if _, ok := payload["platform"]; ok {
@@ -340,7 +340,7 @@ func (s *UserResourceService) normalizeAndValidateAccountPayload(ctx context.Con
 	}
 	payload["name"] = name
 	platform := strings.ToLower(strings.TrimSpace(urAsString(state["platform"])))
-	if err := validateAllowedValue("platform", platform, PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek); err != nil {
+	if err := validateAllowedValue("platform", platform, PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo); err != nil {
 		return err
 	}
 	if _, ok := payload["platform"]; ok {
@@ -406,15 +406,19 @@ func (s *UserResourceService) normalizeAndValidateAccountPayload(ctx context.Con
 		}
 		payload["credentials"] = credentials
 	}
-	if IsCNProvider(platform) {
+	if IsMultiProtocolAPIKeyProvider(platform) {
 		credentials, _ := state["credentials"].(map[string]any)
 		if credentials == nil {
 			credentials = map[string]any{}
 		}
-		if err := normalizeAndValidateUserCNAccountCredentials(platform, credentials); err != nil {
+		if IsOpenCodeGo(platform) {
+			if err := normalizeAndValidateUserOpenCodeAccountCredentials(credentials); err != nil {
+				return err
+			}
+		} else if err := normalizeAndValidateUserCNAccountCredentials(platform, credentials); err != nil {
 			return err
 		}
-		// Persist normalized defaults on create and when an existing CN account is
+		// Persist normalized defaults on create and when an existing account is
 		// updated, so routing and quota probing do not depend on implicit fallbacks.
 		payload["credentials"] = credentials
 	}
@@ -509,7 +513,7 @@ func validateUserAccountCredentials(accountType string, state map[string]any) er
 }
 
 func validateUserAccountPlatformType(platform, accountType string) error {
-	if IsCNProvider(platform) {
+	if IsMultiProtocolAPIKeyProvider(platform) {
 		if accountType == AccountTypeAPIKey {
 			return nil
 		}
@@ -564,6 +568,38 @@ func normalizeAndValidateUserCNAccountCredentials(platform string, credentials m
 	return nil
 }
 
+// normalizeAndValidateUserOpenCodeAccountCredentials mirrors the CN-provider
+// normalizer for user-owned OpenCode Go accounts: the mode/protocol pair is
+// pinned to the values the gateway understands, and the admin-side protocol
+// rule normalizer runs here too so user scope stores the same shape as
+// /admin. Unlike the CN platforms OpenCode defaults to the adaptive protocol,
+// which makes credentials.api_base_urls live; those URLs are checked by
+// validateUserOwnedAccountURLs.
+func normalizeAndValidateUserOpenCodeAccountCredentials(credentials map[string]any) error {
+	mode := strings.ToLower(strings.TrimSpace(urAsString(credentials["account_mode"])))
+	if mode == "" {
+		mode = AccountModeGo
+	}
+	if err := validateAllowedValue("credentials.account_mode", mode, AccountModeGo, AccountModeZen); err != nil {
+		return err
+	}
+
+	protocol := strings.ToLower(strings.TrimSpace(urAsString(credentials["api_protocol"])))
+	if protocol == "" {
+		protocol = APIProtocolAdaptive
+	}
+	if err := validateAllowedValue("credentials.api_protocol", protocol, APIProtocolAdaptive, APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses); err != nil {
+		return err
+	}
+	if err := NormalizeOpenCodeGoProtocolRulesCredentials(credentials); err != nil {
+		return invalidUserResourceField("credentials.protocol_rules", err.Error())
+	}
+
+	credentials["account_mode"] = mode
+	credentials["api_protocol"] = protocol
+	return nil
+}
+
 func normalizeUserAccountType(value string) string {
 	normalized := strings.ToLower(strings.TrimSpace(value))
 	switch normalized {
@@ -581,6 +617,22 @@ func validateUserOwnedAccountURLs(ctx context.Context, state map[string]any) err
 	if baseURL := strings.TrimSpace(urAsString(credentials["base_url"])); baseURL != "" {
 		if err := validateExternalHTTPURL(ctx, baseURL); err != nil {
 			return invalidUserResourceField("credentials.base_url", "must resolve to a public HTTP(S) endpoint")
+		}
+	}
+	// Adaptive multi-protocol accounts route per protocol through
+	// credentials.api_base_urls instead of credentials.base_url, so every entry
+	// needs the same admission check. The map is iterated rather than probed by
+	// known keys so a future protocol cannot be added without this guard; the
+	// field name in the error stays generic because Go map order is random.
+	if baseURLs, ok := credentials["api_base_urls"].(map[string]any); ok {
+		for _, raw := range baseURLs {
+			baseURL := strings.TrimSpace(urAsString(raw))
+			if baseURL == "" {
+				continue
+			}
+			if err := validateExternalHTTPURL(ctx, baseURL); err != nil {
+				return invalidUserResourceField("credentials.api_base_urls", "must resolve to public HTTP(S) endpoints")
+			}
 		}
 	}
 	extra, _ := state["extra"].(map[string]any)

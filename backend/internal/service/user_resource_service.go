@@ -1489,7 +1489,7 @@ func (s *UserResourceService) SyncAccountUpstreamModelsPreview(ctx context.Conte
 
 	platform := strings.ToLower(strings.TrimSpace(input.Platform))
 	switch platform {
-	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek:
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo:
 	default:
 		return nil, infraerrors.BadRequest("USER_MODEL_SYNC_PLATFORM_INVALID", "platform does not support upstream model sync")
 	}
@@ -1530,6 +1530,24 @@ func (s *UserResourceService) SyncAccountUpstreamModelsPreview(ctx context.Conte
 		}
 		if apiProtocol == APIProtocolResponses && platform != PlatformDeepseek {
 			return nil, infraerrors.BadRequest("USER_MODEL_SYNC_API_PROTOCOL_INVALID", "responses protocol is only supported by DeepSeek")
+		}
+		credentials["account_mode"] = accountMode
+		credentials["api_protocol"] = apiProtocol
+	} else if IsOpenCodeGo(platform) {
+		accountMode := strings.ToLower(strings.TrimSpace(input.AccountMode))
+		if accountMode == "" {
+			accountMode = AccountModeGo
+		}
+		if err := validateAllowedValue("account_mode", accountMode, AccountModeGo, AccountModeZen); err != nil {
+			return nil, err
+		}
+
+		apiProtocol := strings.ToLower(strings.TrimSpace(input.APIProtocol))
+		if apiProtocol == "" {
+			apiProtocol = APIProtocolAdaptive
+		}
+		if err := validateAllowedValue("api_protocol", apiProtocol, APIProtocolAdaptive, APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses); err != nil {
+			return nil, err
 		}
 		credentials["account_mode"] = accountMode
 		credentials["api_protocol"] = apiProtocol

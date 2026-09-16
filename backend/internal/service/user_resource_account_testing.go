@@ -122,7 +122,10 @@ func availableUserAccountTestModels(account *Account) []UserAccountTestModel {
 		return mappedUserAccountTestModels(account.GetModelMapping(), defaults)
 	}
 
-	if account.IsCNProvider() {
+	// OpenCode Go joins the CN providers here so the /my test dialog offers the
+	// platform's own candidate models instead of falling through to the Claude
+	// defaults; this matches the admin-side group model list for the platform.
+	if account.IsMultiProtocolAPIKey() {
 		defaults := make([]UserAccountTestModel, 0)
 		for _, id := range userResourceDefaultModelsListCandidateIDs(account.Platform) {
 			defaults = append(defaults, UserAccountTestModel{ID: id, Type: "model", DisplayName: id})
