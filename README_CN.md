@@ -36,9 +36,9 @@ Sub2API Xray 是 [Sub2API](https://github.com/Wei-Shaw/sub2api) 的持续维护�
 
 用户资源工作台由 `enable_user_resources` 控制，升级后的实例默认关闭，需要管理员确认后启用。
 
-## 当前开发版本
+## 当前版本
 
-当前正式版本为 [v0.2.5-xray5](https://github.com/smmooooonn/sub2api-xray/releases/tag/v0.2.5-xray5)，已同步官方 `v0.2.5` 及其对应的最新 `main` 提交。
+本历史 Tag 仅保留源码，本仓库不为该版本构建安装包或镜像。安装和升级请使用[最新正式版](https://github.com/SMOOONN/sub2api-xray/releases/latest)。该历史版本保留的更新器可能仍指向原账户。
 
 ## ⚠️ 重要提醒
 
@@ -123,7 +123,41 @@ fast_mode = true
 
 ## 部署方式
 
-### 方式一：脚本安装（推荐）
+### 当前 历史源码 版本
+
+本历史 Tag 仅保留源码，本仓库不为该版本构建安装包或镜像。安装和升级请使用[最新正式版](https://github.com/SMOOONN/sub2api-xray/releases/latest)。该历史版本保留的更新器可能仍指向原账户。
+
+下方保留的 GitHub 安装脚本、在线更新与 GHCR `latest` 使用原发布源。本 历史源码 版本也可以按以下步骤从源码构建。
+
+新安装先准备源码和本地镜像：
+
+```bash
+git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+cd sub2api-xray
+docker build -t sub2api-xray:0.2.10-xray6 .
+cd deploy
+cp .env.example .env
+chmod 600 .env
+mkdir -p data postgres_data redis_data
+```
+
+编辑 `.env`，设置数据库密码及其他必需项。在 `deploy` 目录创建 `compose.local-build.yml`，写入以下镜像覆盖配置，再启动服务：
+
+```yaml
+services:
+  sub2api:
+    image: sub2api-xray:0.2.10-xray6
+    pull_policy: never
+```
+
+```bash
+docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d
+```
+
+升级现有服务时，先备份 PostgreSQL、Redis 和应用数据，保留原 `.env`、端口和数据挂载；仅构建并替换应用镜像。请不要用新安装步骤覆盖现有配置。
+
+
+### 方式一：旧 GitHub 发布版脚本安装
 
 一键安装脚本，自动从 GitHub Releases 下载预编译的二进制文件。
 
@@ -192,7 +226,7 @@ curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/
 
 ---
 
-### 方式二：Docker Compose（推荐）
+### 方式二：Docker Compose（使用上方构建的镜像）
 
 使用 Docker Compose 部署，包含 PostgreSQL 和 Redis 容器。
 
@@ -201,7 +235,7 @@ curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/
 - Docker 20.10+
 - Docker Compose v2+
 
-#### 快速开始（一键部署）
+#### 旧 GitHub 发布版一键部署
 
 使用自动化部署脚本快速搭建：
 
@@ -228,12 +262,14 @@ docker compose logs -f sub2api
 
 #### 手动部署
 
+手动配置也要先完成上方当前 历史源码 Tag 的镜像构建，并创建 compose.local-build.yml；以下服务命令使用该覆盖文件。
+
 如果你希望手动配置：
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/smmooooonn/sub2api-xray.git
-cd sub2api/deploy
+git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+cd sub2api-xray/deploy
 
 # 2. 复制环境配置文件
 cp .env.example .env
@@ -281,16 +317,16 @@ mkdir -p data postgres_data redis_data
 
 # 5. 启动所有服务
 # 选项 A：本地目录版（推荐 - 易于迁移）
-docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d
 
 # 选项 B：命名卷版（简单设置）
-docker compose up -d
+docker compose -f docker-compose.yml -f compose.local-build.yml up -d
 
 # 6. 查看状态
-docker compose -f docker-compose.local.yml ps
+docker compose -f docker-compose.local.yml -f compose.local-build.yml ps
 
 # 7. 查看日志
-docker compose -f docker-compose.local.yml logs -f sub2api
+docker compose -f docker-compose.local.yml -f compose.local-build.yml logs -f sub2api
 ```
 
 #### 部署版本对比
@@ -300,7 +336,7 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 | **docker-compose.local.yml** | 本地目录 | ✅ 简单（打包整个目录） | 生产环境、频繁备份 |
 | **docker-compose.yml** | 命名卷 | ⚠️ 需要 docker 命令 | 简单设置 |
 
-**推荐：** 使用 `docker-compose.local.yml`（脚本部署）以便更轻松地管理数据。
+**推荐：** 使用 `docker-compose.local.yml`（使用本地构建镜像）以便更轻松地管理数据。
 
 #### 启用“数据管理”功能（datamanagementd）
 
@@ -320,24 +356,28 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 
 如果管理员密码是自动生成的，在日志中查找：
 ```bash
-docker compose -f docker-compose.local.yml logs sub2api | grep "admin password"
+docker compose -f docker-compose.local.yml -f compose.local-build.yml logs sub2api | grep "admin password"
 ```
 
-#### 升级
+#### 当前 历史源码 版本升级
+
+升级前保留原 PostgreSQL、Redis、应用数据和 `.env` 备份。先从要升级到的 Tag 构建应用镜像，再修改 `compose.local-build.yml` 中的镜像版本，仅替换应用服务：
 
 ```bash
-# 拉取最新镜像并重建容器
-docker compose -f docker-compose.local.yml pull
-docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d --no-deps sub2api
 ```
 
+历史源码 版本不通过旧 GitHub 更新器或 GHCR `latest` 获取。
+
 #### 轻松迁移（本地目录版）
+
+目标服务器启动前，请从同一 Tag 构建本地应用镜像，或使用 docker save / docker load 导入原镜像；数据归档不包含镜像。
 
 使用 `docker-compose.local.yml` 时，可以轻松迁移到新服务器：
 
 ```bash
 # 源服务器
-docker compose -f docker-compose.local.yml down
+docker compose -f docker-compose.local.yml -f compose.local-build.yml down
 cd ..
 tar czf sub2api-complete.tar.gz sub2api-deploy/
 
@@ -347,23 +387,23 @@ scp sub2api-complete.tar.gz user@new-server:/path/
 # 新服务器
 tar xzf sub2api-complete.tar.gz
 cd sub2api-deploy/
-docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d
 ```
 
 #### 常用命令
 
 ```bash
 # 停止所有服务
-docker compose -f docker-compose.local.yml down
+docker compose -f docker-compose.local.yml -f compose.local-build.yml down
 
 # 重启
-docker compose -f docker-compose.local.yml restart
+docker compose -f docker-compose.local.yml -f compose.local-build.yml restart
 
 # 查看所有日志
-docker compose -f docker-compose.local.yml logs -f
+docker compose -f docker-compose.local.yml -f compose.local-build.yml logs -f
 
 # 删除所有数据（谨慎！）
-docker compose -f docker-compose.local.yml down
+docker compose -f docker-compose.local.yml -f compose.local-build.yml down
 rm -rf data/ postgres_data/ redis_data/
 ```
 
@@ -371,11 +411,13 @@ rm -rf data/ postgres_data/ redis_data/
 
 ### 方式三：Apple container（macOS）
 
+Apple container 的默认镜像仍来自旧 GHCR 发布源。当前 历史源码 Tag 需要先构建并发布对应镜像，再设置 APPLE_CONTAINER_SUB2API_IMAGE；下方命令不会自动生成本版本镜像。
+
 Apple 芯片 Mac 在 macOS 26 上可使用 Apple `container` 1.1.0 或更高版本运行完整的 Sub2API、PostgreSQL 和 Redis：
 
 ```bash
-git clone https://github.com/smmooooonn/sub2api-xray.git
-cd sub2api/deploy
+git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+cd sub2api-xray/deploy
 ./apple-container.sh init
 ./apple-container.sh up
 ./apple-container.sh status
@@ -391,8 +433,8 @@ cd sub2api/deploy
 
 #### 前置条件
 
-- Go 1.21+
-- Node.js 18+
+- Go 1.27.0+
+- Node.js 24+
 - PostgreSQL 15+
 - Redis 7+
 
@@ -400,15 +442,15 @@ cd sub2api/deploy
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/smmooooonn/sub2api-xray.git
-cd sub2api
+git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+cd sub2api-xray
 
 # 2. 安装 pnpm（如果还没有安装）
-npm install -g pnpm
+npm install -g pnpm@9.15.9
 
 # 3. 编译前端
 cd frontend
-pnpm install
+pnpm install --frozen-lockfile
 pnpm run build
 # 构建产物输出到 ../backend/internal/web/dist/
 
@@ -611,7 +653,10 @@ OAuth / Setup Token 图片请求使用 Responses 主控模型调用 `image_gener
 简易模式适合个人开发者或内部团队快速使用，不依赖完整 SaaS 功能。
 
 - 启用方式：设置环境变量 `RUN_MODE=simple`
+- 默认每次启动会补齐默认分组。设置 `SIMPLE_MODE_AUTO_CREATE_DEFAULT_GROUPS=false`（或 YAML `simple_mode.auto_create_default_groups: false`）可自行管理分组。默认值为 `true`；关闭后不删除已有分组，不改变运行时自动绑定或管理员并发设置。
 - 功能差异：隐藏 SaaS 相关功能，跳过计费流程
+- 可选密钥窗口：设置 `SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED=true` 后，按每个 API Key 配置的 5 小时、1 天、7 天消费窗口进行限制，默认值为 `false`；启用后仍跳过余额和订阅扣费。
+- 窗口限制以数据库为准，只记录 API Key 窗口用量。它在请求完成后记账，并发中的请求可能以各自最终费用超过窗口上限。启用前的历史用量不会自动补算。
 - 安全注意事项：生产环境需同时设置 `SIMPLE_MODE_CONFIRM=true` 才允许启动
 
 ---

@@ -36,9 +36,9 @@ This repository is independently maintained and is not the upstream project's of
 
 The user resource workspace is controlled by `enable_user_resources` and is disabled by default on upgraded installations.
 
-## Development Version
+## Current Release
 
-The current formal Xray release is [v0.2.5-xray5](https://github.com/smmooooonn/sub2api-xray/releases/tag/v0.2.5-xray5), synchronized with official `v0.2.5` and its latest corresponding `main` commits.
+This historical tag preserves source only; this repository does not build archives or images for it. Use the [latest release](https://github.com/SMOOONN/sub2api-xray/releases/latest) for installation and upgrades. Its retained updater may still refer to the previous account.
 
 ## ⚠️ Important Notice
 
@@ -100,7 +100,41 @@ Nginx drops headers containing underscores by default (e.g. `session_id`), which
 
 ## Deployment
 
-### Method 1: Script Installation (Recommended)
+### Current historical source release
+
+This historical tag preserves source only; this repository does not build archives or images for it. Use the [latest release](https://github.com/SMOOONN/sub2api-xray/releases/latest) for installation and upgrades. Its retained updater may still refer to the previous account.
+
+The GitHub install scripts, online updater, and GHCR `latest` retained below use the previous release source. You can also build this historical source release from source with the following steps.
+
+For a new installation, prepare the source and local image:
+
+```bash
+git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+cd sub2api-xray
+docker build -t sub2api-xray:0.2.10-xray6 .
+cd deploy
+cp .env.example .env
+chmod 600 .env
+mkdir -p data postgres_data redis_data
+```
+
+Edit `.env` and set the required database password and other settings. Create `compose.local-build.yml` in the `deploy` directory with this image override, then start the services:
+
+```yaml
+services:
+  sub2api:
+    image: sub2api-xray:0.2.10-xray6
+    pull_policy: never
+```
+
+```bash
+docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d
+```
+
+When upgrading an existing service, back up PostgreSQL, Redis, and application data. Keep the existing `.env`, ports, and data mounts, and replace only the application image. Do not overwrite existing configuration with the new-installation steps.
+
+
+### Method 1: Previous GitHub Release Script Installation
 
 One-click installation script that downloads pre-built binaries from GitHub Releases.
 
@@ -169,7 +203,7 @@ curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/
 
 ---
 
-### Method 2: Docker Compose (Recommended)
+### Method 2: Docker Compose (Use the Image Built Above)
 
 Deploy with Docker Compose, including PostgreSQL and Redis containers.
 
@@ -178,7 +212,7 @@ Deploy with Docker Compose, including PostgreSQL and Redis containers.
 - Docker 20.10+
 - Docker Compose v2+
 
-#### Quick Start (One-Click Deployment)
+#### Previous GitHub Release One-Click Deployment
 
 Use the automated deployment script for easy setup:
 
@@ -205,12 +239,14 @@ docker compose logs -f sub2api
 
 #### Manual Deployment
 
+For manual setup, first build the current historical source tag image and create compose.local-build.yml as described above. The service commands below use that override.
+
 If you prefer manual setup:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/smmooooonn/sub2api-xray.git
-cd sub2api/deploy
+git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+cd sub2api-xray/deploy
 
 # 2. Copy environment configuration
 cp .env.example .env
@@ -258,16 +294,16 @@ mkdir -p data postgres_data redis_data
 
 # 5. Start all services
 # Option A: Local directory version (recommended - easy migration)
-docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d
 
 # Option B: Named volumes version (simple setup)
-docker compose up -d
+docker compose -f docker-compose.yml -f compose.local-build.yml up -d
 
 # 6. Check status
-docker compose -f docker-compose.local.yml ps
+docker compose -f docker-compose.local.yml -f compose.local-build.yml ps
 
 # 7. View logs
-docker compose -f docker-compose.local.yml logs -f sub2api
+docker compose -f docker-compose.local.yml -f compose.local-build.yml logs -f sub2api
 ```
 
 #### Deployment Versions
@@ -277,7 +313,7 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 | **docker-compose.local.yml** | Local directories | ✅ Easy (tar entire directory) | Production, frequent backups |
 | **docker-compose.yml** | Named volumes | ⚠️ Requires docker commands | Simple setup |
 
-**Recommendation:** Use `docker-compose.local.yml` (deployed by script) for easier data management.
+**Recommendation:** Use `docker-compose.local.yml` (using the locally built image) for easier data management.
 
 #### Access
 
@@ -285,24 +321,28 @@ Open `http://YOUR_SERVER_IP:8080` in your browser.
 
 If admin password was auto-generated, find it in logs:
 ```bash
-docker compose -f docker-compose.local.yml logs sub2api | grep "admin password"
+docker compose -f docker-compose.local.yml -f compose.local-build.yml logs sub2api | grep "admin password"
 ```
 
-#### Upgrade
+#### Upgrade the Current historical source Release
+
+Back up the existing PostgreSQL, Redis, application data, and `.env` first. Build the application image from the target tag, update its version in `compose.local-build.yml`, and replace only the application service:
 
 ```bash
-# Pull latest image and recreate container
-docker compose -f docker-compose.local.yml pull
-docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d --no-deps sub2api
 ```
 
+The previous GitHub updater and GHCR `latest` do not supply this historical source release.
+
 #### Easy Migration (Local Directory Version)
+
+Before starting on the target server, build the local application image from the same tag or transfer it with docker save / docker load. The data archive does not include the image.
 
 When using `docker-compose.local.yml`, migrate to a new server easily:
 
 ```bash
 # On source server
-docker compose -f docker-compose.local.yml down
+docker compose -f docker-compose.local.yml -f compose.local-build.yml down
 cd ..
 tar czf sub2api-complete.tar.gz sub2api-deploy/
 
@@ -312,23 +352,23 @@ scp sub2api-complete.tar.gz user@new-server:/path/
 # On new server
 tar xzf sub2api-complete.tar.gz
 cd sub2api-deploy/
-docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d
 ```
 
 #### Useful Commands
 
 ```bash
 # Stop all services
-docker compose -f docker-compose.local.yml down
+docker compose -f docker-compose.local.yml -f compose.local-build.yml down
 
 # Restart
-docker compose -f docker-compose.local.yml restart
+docker compose -f docker-compose.local.yml -f compose.local-build.yml restart
 
 # View all logs
-docker compose -f docker-compose.local.yml logs -f
+docker compose -f docker-compose.local.yml -f compose.local-build.yml logs -f
 
 # Remove all data (caution!)
-docker compose -f docker-compose.local.yml down
+docker compose -f docker-compose.local.yml -f compose.local-build.yml down
 rm -rf data/ postgres_data/ redis_data/
 ```
 
@@ -336,11 +376,13 @@ rm -rf data/ postgres_data/ redis_data/
 
 ### Method 3: Apple container (macOS)
 
+Apple container still defaults to the previous GHCR release source. For this historical source tag, build and publish the matching image first, then set APPLE_CONTAINER_SUB2API_IMAGE. The commands below do not build an image for this version.
+
 Apple-silicon Macs running macOS 26 can run the full Sub2API, PostgreSQL, and Redis stack with Apple `container` 1.1.0 or newer:
 
 ```bash
-git clone https://github.com/smmooooonn/sub2api-xray.git
-cd sub2api/deploy
+git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+cd sub2api-xray/deploy
 ./apple-container.sh init
 ./apple-container.sh up
 ./apple-container.sh status
@@ -356,8 +398,8 @@ Build and run from source code for development or customization.
 
 #### Prerequisites
 
-- Go 1.21+
-- Node.js 18+
+- Go 1.27.0+
+- Node.js 24+
 - PostgreSQL 15+
 - Redis 7+
 
@@ -365,15 +407,15 @@ Build and run from source code for development or customization.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/smmooooonn/sub2api-xray.git
-cd sub2api
+git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+cd sub2api-xray
 
 # 2. Install pnpm (if not already installed)
-npm install -g pnpm
+npm install -g pnpm@9.15.9
 
 # 3. Build frontend
 cd frontend
-pnpm install
+pnpm install --frozen-lockfile
 pnpm run build
 # Output will be in ../backend/internal/web/dist/
 
@@ -578,7 +620,10 @@ go generate ./cmd/server
 Simple Mode is designed for individual developers or internal teams who want quick access without full SaaS features.
 
 - Enable: Set environment variable `RUN_MODE=simple`
+- Default groups are seeded on each startup. Set `SIMPLE_MODE_AUTO_CREATE_DEFAULT_GROUPS=false` (or YAML `simple_mode.auto_create_default_groups: false`) to manage groups yourself. The default is `true`; disabling it does not delete existing groups or change runtime auto-binding or admin concurrency setup.
 - Difference: Hides SaaS-related features and skips billing process
+- Optional key windows: Set `SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED=true` to enforce each API key's configured 5-hour, daily, and 7-day spending windows. The default is `false`; balance and subscription debit remain bypassed when enabled.
+- Window enforcement uses the database as its source of truth and records only API-key window usage. It is a post-request soft cap, so concurrent in-flight requests can overshoot by their final costs. Historical simple-mode usage is not backfilled.
 - Security note: In production, you must also set `SIMPLE_MODE_CONFIRM=true` to allow startup
 
 ---

@@ -36,9 +36,9 @@ Sub2API Xray は [Sub2API](https://github.com/Wei-Shaw/sub2api) の継続的に�
 
 ユーザーリソースワークスペースは `enable_user_resources` で制御され、アップグレード後の環境では既定で無効です。
 
-## 現在の開発バージョン
+## 現在のバージョン
 
-現在の正式版は [v0.2.5-xray5](https://github.com/smmooooonn/sub2api-xray/releases/tag/v0.2.5-xray5) で、公式 `v0.2.5` とそれに対応する最新の `main` コミットに同期済みです。
+この履歴タグはソースのみを保持し、本リポジトリでは配布ファイルやイメージをビルドしません。インストールと更新には[最新リリース](https://github.com/SMOOONN/sub2api-xray/releases/latest)を使用してください。履歴版の更新先は以前のアカウントのままの場合があります。
 
 ## ⚠️ 重要なお知らせ
 
@@ -99,7 +99,41 @@ Nginx はデフォルトでアンダースコアを含むヘッダー（例: `se
 
 ## デプロイ
 
-### 方法1: スクリプトによるインストール（推奨）
+### 現在の 履歴ソース 版
+
+この履歴タグはソースのみを保持し、本リポジトリでは配布ファイルやイメージをビルドしません。インストールと更新には[最新リリース](https://github.com/SMOOONN/sub2api-xray/releases/latest)を使用してください。履歴版の更新先は以前のアカウントのままの場合があります。
+
+下に残した GitHub インストールスクリプト、オンライン更新と GHCR `latest` は以前の配布元を使用します。この 履歴ソース 版をソースからビルドする場合は次の手順を使用してください。
+
+新規インストールではソースとローカルイメージを準備します：
+
+```bash
+git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+cd sub2api-xray
+docker build -t sub2api-xray:0.2.10-xray6 .
+cd deploy
+cp .env.example .env
+chmod 600 .env
+mkdir -p data postgres_data redis_data
+```
+
+`.env` を編集してデータベースのパスワードなど必須項目を設定します。`deploy` ディレクトリで `compose.local-build.yml` を作成し、以下のイメージ設定を保存してサービスを起動します：
+
+```yaml
+services:
+  sub2api:
+    image: sub2api-xray:0.2.10-xray6
+    pull_policy: never
+```
+
+```bash
+docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d
+```
+
+既存サービスの更新前に PostgreSQL、Redis とアプリデータをバックアップしてください。既存の `.env`、ポートとデータマウントを保持し、アプリイメージのみ交換します。新規インストールの手順で既存設定を上書きしないでください。
+
+
+### 方法1: 以前の GitHub 配布版スクリプト
 
 GitHub Releases からビルド済みバイナリをダウンロードするワンクリックインストールスクリプトです。
 
@@ -168,7 +202,7 @@ curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/
 
 ---
 
-### 方法2: Docker Compose（推奨）
+### 方法2: Docker Compose（上でビルドしたイメージを使用）
 
 PostgreSQL と Redis のコンテナを含む Docker Compose でデプロイします。
 
@@ -177,7 +211,7 @@ PostgreSQL と Redis のコンテナを含む Docker Compose でデプロイし�
 - Docker 20.10+
 - Docker Compose v2+
 
-#### クイックスタート（ワンクリックデプロイ）
+#### 以前の GitHub 配布版のワンクリックデプロイ
 
 自動デプロイスクリプトを使用して簡単にセットアップできます:
 
@@ -204,12 +238,14 @@ docker compose logs -f sub2api
 
 #### 手動デプロイ
 
+手動設定でも先に上の手順で現在の 履歴ソース Tag のイメージをビルドし、compose.local-build.yml を作成してください。以下のサービスコマンドではその設定を使用します。
+
 手動でセットアップする場合:
 
 ```bash
 # 1. リポジトリをクローン
-git clone https://github.com/smmooooonn/sub2api-xray.git
-cd sub2api/deploy
+git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+cd sub2api-xray/deploy
 
 # 2. 環境設定ファイルをコピー
 cp .env.example .env
@@ -257,16 +293,16 @@ mkdir -p data postgres_data redis_data
 
 # 5. すべてのサービスを起動
 # オプション A: ローカルディレクトリバージョン（推奨 - 移行が容易）
-docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d
 
 # オプション B: 名前付きボリュームバージョン（シンプルなセットアップ）
-docker compose up -d
+docker compose -f docker-compose.yml -f compose.local-build.yml up -d
 
 # 6. ステータスを確認
-docker compose -f docker-compose.local.yml ps
+docker compose -f docker-compose.local.yml -f compose.local-build.yml ps
 
 # 7. ログを表示
-docker compose -f docker-compose.local.yml logs -f sub2api
+docker compose -f docker-compose.local.yml -f compose.local-build.yml logs -f sub2api
 ```
 
 #### デプロイバージョン
@@ -276,7 +312,7 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 | **docker-compose.local.yml** | ローカルディレクトリ | ✅ 容易（ディレクトリ全体を tar） | 本番環境、頻繁なバックアップ |
 | **docker-compose.yml** | 名前付きボリューム | ⚠️ docker コマンドが必要 | シンプルなセットアップ |
 
-**推奨:** データ管理が容易な `docker-compose.local.yml`（スクリプトによるデプロイ）を使用してください。
+**推奨:** データ管理が容易な `docker-compose.local.yml`（ローカルでビルドしたイメージを使用）を使用してください。
 
 #### アクセス
 
@@ -284,24 +320,28 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 
 管理者パスワードが自動生成された場合は、ログで確認できます:
 ```bash
-docker compose -f docker-compose.local.yml logs sub2api | grep "admin password"
+docker compose -f docker-compose.local.yml -f compose.local-build.yml logs sub2api | grep "admin password"
 ```
 
-#### アップグレード
+#### 現在の 履歴ソース 版を更新
+
+先に既存の PostgreSQL、Redis、アプリデータと `.env` をバックアップしてください。更新先 Tag からアプリイメージをビルドし、`compose.local-build.yml` のバージョンを変更してアプリサービスのみ交換します：
 
 ```bash
-# 最新イメージをプルしてコンテナを再作成
-docker compose -f docker-compose.local.yml pull
-docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d --no-deps sub2api
 ```
 
+以前の GitHub 更新機能と GHCR `latest` からは、この 履歴ソース 版を取得できません。
+
 #### 簡単な移行（ローカルディレクトリバージョン）
+
+移行先で起動する前に同じ Tag からローカルアプリイメージをビルドするか、docker save / docker load で転送してください。データアーカイブにイメージは含まれません。
 
 `docker-compose.local.yml` を使用している場合、新しいサーバーへの移行が簡単です:
 
 ```bash
 # 移行元サーバーにて
-docker compose -f docker-compose.local.yml down
+docker compose -f docker-compose.local.yml -f compose.local-build.yml down
 cd ..
 tar czf sub2api-complete.tar.gz sub2api-deploy/
 
@@ -311,23 +351,23 @@ scp sub2api-complete.tar.gz user@new-server:/path/
 # 移行先サーバーにて
 tar xzf sub2api-complete.tar.gz
 cd sub2api-deploy/
-docker compose -f docker-compose.local.yml up -d
+docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d
 ```
 
 #### よく使うコマンド
 
 ```bash
 # すべてのサービスを停止
-docker compose -f docker-compose.local.yml down
+docker compose -f docker-compose.local.yml -f compose.local-build.yml down
 
 # 再起動
-docker compose -f docker-compose.local.yml restart
+docker compose -f docker-compose.local.yml -f compose.local-build.yml restart
 
 # すべてのログを表示
-docker compose -f docker-compose.local.yml logs -f
+docker compose -f docker-compose.local.yml -f compose.local-build.yml logs -f
 
 # すべてのデータを削除（注意！）
-docker compose -f docker-compose.local.yml down
+docker compose -f docker-compose.local.yml -f compose.local-build.yml down
 rm -rf data/ postgres_data/ redis_data/
 ```
 
@@ -335,11 +375,13 @@ rm -rf data/ postgres_data/ redis_data/
 
 ### 方法3: Apple container（macOS）
 
+Apple container の既定イメージは以前の GHCR 配布元です。この 履歴ソース Tag では対応イメージを先にビルドして公開し、APPLE_CONTAINER_SUB2API_IMAGE を指定してください。以下のコマンドは本版のイメージを生成しません。
+
 Apple シリコン搭載 Mac と macOS 26 では、Apple `container` 1.1.0 以降を使用して Sub2API、PostgreSQL、Redis の完全なスタックを実行できます:
 
 ```bash
-git clone https://github.com/smmooooonn/sub2api-xray.git
-cd sub2api/deploy
+git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+cd sub2api-xray/deploy
 ./apple-container.sh init
 ./apple-container.sh up
 ./apple-container.sh status
@@ -355,8 +397,8 @@ cd sub2api/deploy
 
 #### 前提条件
 
-- Go 1.21+
-- Node.js 18+
+- Go 1.27.0+
+- Node.js 24+
 - PostgreSQL 15+
 - Redis 7+
 
@@ -364,15 +406,15 @@ cd sub2api/deploy
 
 ```bash
 # 1. リポジトリをクローン
-git clone https://github.com/smmooooonn/sub2api-xray.git
-cd sub2api
+git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+cd sub2api-xray
 
 # 2. pnpm をインストール（未インストールの場合）
-npm install -g pnpm
+npm install -g pnpm@9.15.9
 
 # 3. フロントエンドをビルド
 cd frontend
-pnpm install
+pnpm install --frozen-lockfile
 pnpm run build
 # 出力先: ../backend/internal/web/dist/
 
