@@ -34,6 +34,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/proxysource"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/retryfilterpreset"
+	"github.com/Wei-Shaw/sub2api/ent/retryfilterrule"
 	"github.com/Wei-Shaw/sub2api/ent/schema"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
@@ -1193,36 +1195,40 @@ func init() {
 	groupDescCodexModelsManifestConfig := groupFields[56].Descriptor()
 	// group.DefaultCodexModelsManifestConfig holds the default value on creation for the codex_models_manifest_config field.
 	group.DefaultCodexModelsManifestConfig = groupDescCodexModelsManifestConfig.Default.(domain.GroupCodexModelsManifestConfig)
+	// groupDescRetryFilterConfig is the schema descriptor for retry_filter_config field.
+	groupDescRetryFilterConfig := groupFields[57].Descriptor()
+	// group.DefaultRetryFilterConfig holds the default value on creation for the retry_filter_config field.
+	group.DefaultRetryFilterConfig = groupDescRetryFilterConfig.Default.(domain.GroupRetryFilterConfig)
 	// groupDescRpmLimit is the schema descriptor for rpm_limit field.
-	groupDescRpmLimit := groupFields[57].Descriptor()
+	groupDescRpmLimit := groupFields[58].Descriptor()
 	// group.DefaultRpmLimit holds the default value on creation for the rpm_limit field.
 	group.DefaultRpmLimit = groupDescRpmLimit.Default.(int)
 	// groupDescMaxReasoningEffort is the schema descriptor for max_reasoning_effort field.
-	groupDescMaxReasoningEffort := groupFields[58].Descriptor()
+	groupDescMaxReasoningEffort := groupFields[59].Descriptor()
 	// group.DefaultMaxReasoningEffort holds the default value on creation for the max_reasoning_effort field.
 	group.DefaultMaxReasoningEffort = groupDescMaxReasoningEffort.Default.(string)
 	// group.MaxReasoningEffortValidator is a validator for the "max_reasoning_effort" field. It is called by the builders before save.
 	group.MaxReasoningEffortValidator = groupDescMaxReasoningEffort.Validators[0].(func(string) error)
 	// groupDescMaxReasoningEffortOverLimit is the schema descriptor for max_reasoning_effort_over_limit field.
-	groupDescMaxReasoningEffortOverLimit := groupFields[59].Descriptor()
+	groupDescMaxReasoningEffortOverLimit := groupFields[60].Descriptor()
 	// group.DefaultMaxReasoningEffortOverLimit holds the default value on creation for the max_reasoning_effort_over_limit field.
 	group.DefaultMaxReasoningEffortOverLimit = groupDescMaxReasoningEffortOverLimit.Default.(string)
 	// group.MaxReasoningEffortOverLimitValidator is a validator for the "max_reasoning_effort_over_limit" field. It is called by the builders before save.
 	group.MaxReasoningEffortOverLimitValidator = groupDescMaxReasoningEffortOverLimit.Validators[0].(func(string) error)
 	// groupDescReasoningEffortMappings is the schema descriptor for reasoning_effort_mappings field.
-	groupDescReasoningEffortMappings := groupFields[60].Descriptor()
+	groupDescReasoningEffortMappings := groupFields[61].Descriptor()
 	// group.DefaultReasoningEffortMappings holds the default value on creation for the reasoning_effort_mappings field.
 	group.DefaultReasoningEffortMappings = groupDescReasoningEffortMappings.Default.([]domain.ReasoningEffortMapping)
 	// groupDescProfitControlEnabled is the schema descriptor for profit_control_enabled field.
-	groupDescProfitControlEnabled := groupFields[61].Descriptor()
+	groupDescProfitControlEnabled := groupFields[62].Descriptor()
 	// group.DefaultProfitControlEnabled holds the default value on creation for the profit_control_enabled field.
 	group.DefaultProfitControlEnabled = groupDescProfitControlEnabled.Default.(bool)
 	// groupDescProfitMinMargin is the schema descriptor for profit_min_margin field.
-	groupDescProfitMinMargin := groupFields[62].Descriptor()
+	groupDescProfitMinMargin := groupFields[63].Descriptor()
 	// group.DefaultProfitMinMargin holds the default value on creation for the profit_min_margin field.
 	group.DefaultProfitMinMargin = groupDescProfitMinMargin.Default.(float64)
 	// groupDescProfitSafetyBuffer is the schema descriptor for profit_safety_buffer field.
-	groupDescProfitSafetyBuffer := groupFields[63].Descriptor()
+	groupDescProfitSafetyBuffer := groupFields[64].Descriptor()
 	// group.DefaultProfitSafetyBuffer holds the default value on creation for the profit_safety_buffer field.
 	group.DefaultProfitSafetyBuffer = groupDescProfitSafetyBuffer.Default.(float64)
 	idempotencyrecordMixin := schema.IdempotencyRecord{}.Mixin()
@@ -1862,6 +1868,128 @@ func init() {
 	redeemcodeusageDescUsedAt := redeemcodeusageFields[2].Descriptor()
 	// redeemcodeusage.DefaultUsedAt holds the default value on creation for the used_at field.
 	redeemcodeusage.DefaultUsedAt = redeemcodeusageDescUsedAt.Default.(func() time.Time)
+	retryfilterpresetMixin := schema.RetryFilterPreset{}.Mixin()
+	retryfilterpresetMixinFields0 := retryfilterpresetMixin[0].Fields()
+	_ = retryfilterpresetMixinFields0
+	retryfilterpresetFields := schema.RetryFilterPreset{}.Fields()
+	_ = retryfilterpresetFields
+	// retryfilterpresetDescCreatedAt is the schema descriptor for created_at field.
+	retryfilterpresetDescCreatedAt := retryfilterpresetMixinFields0[0].Descriptor()
+	// retryfilterpreset.DefaultCreatedAt holds the default value on creation for the created_at field.
+	retryfilterpreset.DefaultCreatedAt = retryfilterpresetDescCreatedAt.Default.(func() time.Time)
+	// retryfilterpresetDescUpdatedAt is the schema descriptor for updated_at field.
+	retryfilterpresetDescUpdatedAt := retryfilterpresetMixinFields0[1].Descriptor()
+	// retryfilterpreset.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	retryfilterpreset.DefaultUpdatedAt = retryfilterpresetDescUpdatedAt.Default.(func() time.Time)
+	// retryfilterpreset.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	retryfilterpreset.UpdateDefaultUpdatedAt = retryfilterpresetDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// retryfilterpresetDescName is the schema descriptor for name field.
+	retryfilterpresetDescName := retryfilterpresetFields[0].Descriptor()
+	// retryfilterpreset.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	retryfilterpreset.NameValidator = func() func(string) error {
+		validators := retryfilterpresetDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// retryfilterpresetDescEnabled is the schema descriptor for enabled field.
+	retryfilterpresetDescEnabled := retryfilterpresetFields[1].Descriptor()
+	// retryfilterpreset.DefaultEnabled holds the default value on creation for the enabled field.
+	retryfilterpreset.DefaultEnabled = retryfilterpresetDescEnabled.Default.(bool)
+	retryfilterruleMixin := schema.RetryFilterRule{}.Mixin()
+	retryfilterruleMixinFields0 := retryfilterruleMixin[0].Fields()
+	_ = retryfilterruleMixinFields0
+	retryfilterruleFields := schema.RetryFilterRule{}.Fields()
+	_ = retryfilterruleFields
+	// retryfilterruleDescCreatedAt is the schema descriptor for created_at field.
+	retryfilterruleDescCreatedAt := retryfilterruleMixinFields0[0].Descriptor()
+	// retryfilterrule.DefaultCreatedAt holds the default value on creation for the created_at field.
+	retryfilterrule.DefaultCreatedAt = retryfilterruleDescCreatedAt.Default.(func() time.Time)
+	// retryfilterruleDescUpdatedAt is the schema descriptor for updated_at field.
+	retryfilterruleDescUpdatedAt := retryfilterruleMixinFields0[1].Descriptor()
+	// retryfilterrule.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	retryfilterrule.DefaultUpdatedAt = retryfilterruleDescUpdatedAt.Default.(func() time.Time)
+	// retryfilterrule.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	retryfilterrule.UpdateDefaultUpdatedAt = retryfilterruleDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// retryfilterruleDescName is the schema descriptor for name field.
+	retryfilterruleDescName := retryfilterruleFields[1].Descriptor()
+	// retryfilterrule.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	retryfilterrule.NameValidator = func() func(string) error {
+		validators := retryfilterruleDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// retryfilterruleDescEnabled is the schema descriptor for enabled field.
+	retryfilterruleDescEnabled := retryfilterruleFields[2].Descriptor()
+	// retryfilterrule.DefaultEnabled holds the default value on creation for the enabled field.
+	retryfilterrule.DefaultEnabled = retryfilterruleDescEnabled.Default.(bool)
+	// retryfilterruleDescPriority is the schema descriptor for priority field.
+	retryfilterruleDescPriority := retryfilterruleFields[3].Descriptor()
+	// retryfilterrule.DefaultPriority holds the default value on creation for the priority field.
+	retryfilterrule.DefaultPriority = retryfilterruleDescPriority.Default.(int)
+	// retryfilterruleDescStatusCodes is the schema descriptor for status_codes field.
+	retryfilterruleDescStatusCodes := retryfilterruleFields[4].Descriptor()
+	// retryfilterrule.DefaultStatusCodes holds the default value on creation for the status_codes field.
+	retryfilterrule.DefaultStatusCodes = retryfilterruleDescStatusCodes.Default.([]int)
+	// retryfilterruleDescKeywords is the schema descriptor for keywords field.
+	retryfilterruleDescKeywords := retryfilterruleFields[5].Descriptor()
+	// retryfilterrule.DefaultKeywords holds the default value on creation for the keywords field.
+	retryfilterrule.DefaultKeywords = retryfilterruleDescKeywords.Default.([]string)
+	// retryfilterruleDescUpstreamCodes is the schema descriptor for upstream_codes field.
+	retryfilterruleDescUpstreamCodes := retryfilterruleFields[6].Descriptor()
+	// retryfilterrule.DefaultUpstreamCodes holds the default value on creation for the upstream_codes field.
+	retryfilterrule.DefaultUpstreamCodes = retryfilterruleDescUpstreamCodes.Default.([]string)
+	// retryfilterruleDescUpstreamCodePaths is the schema descriptor for upstream_code_paths field.
+	retryfilterruleDescUpstreamCodePaths := retryfilterruleFields[7].Descriptor()
+	// retryfilterrule.DefaultUpstreamCodePaths holds the default value on creation for the upstream_code_paths field.
+	retryfilterrule.DefaultUpstreamCodePaths = retryfilterruleDescUpstreamCodePaths.Default.([]string)
+	// retryfilterruleDescModels is the schema descriptor for models field.
+	retryfilterruleDescModels := retryfilterruleFields[8].Descriptor()
+	// retryfilterrule.DefaultModels holds the default value on creation for the models field.
+	retryfilterrule.DefaultModels = retryfilterruleDescModels.Default.([]string)
+	// retryfilterruleDescMatchMode is the schema descriptor for match_mode field.
+	retryfilterruleDescMatchMode := retryfilterruleFields[9].Descriptor()
+	// retryfilterrule.DefaultMatchMode holds the default value on creation for the match_mode field.
+	retryfilterrule.DefaultMatchMode = retryfilterruleDescMatchMode.Default.(string)
+	// retryfilterrule.MatchModeValidator is a validator for the "match_mode" field. It is called by the builders before save.
+	retryfilterrule.MatchModeValidator = retryfilterruleDescMatchMode.Validators[0].(func(string) error)
+	// retryfilterruleDescAction is the schema descriptor for action field.
+	retryfilterruleDescAction := retryfilterruleFields[10].Descriptor()
+	// retryfilterrule.DefaultAction holds the default value on creation for the action field.
+	retryfilterrule.DefaultAction = retryfilterruleDescAction.Default.(string)
+	// retryfilterrule.ActionValidator is a validator for the "action" field. It is called by the builders before save.
+	retryfilterrule.ActionValidator = retryfilterruleDescAction.Validators[0].(func(string) error)
+	// retryfilterruleDescEmptyRequestMode is the schema descriptor for empty_request_mode field.
+	retryfilterruleDescEmptyRequestMode := retryfilterruleFields[13].Descriptor()
+	// retryfilterrule.DefaultEmptyRequestMode holds the default value on creation for the empty_request_mode field.
+	retryfilterrule.DefaultEmptyRequestMode = retryfilterruleDescEmptyRequestMode.Default.(string)
+	// retryfilterrule.EmptyRequestModeValidator is a validator for the "empty_request_mode" field. It is called by the builders before save.
+	retryfilterrule.EmptyRequestModeValidator = retryfilterruleDescEmptyRequestMode.Validators[0].(func(string) error)
+	// retryfilterruleDescEmptyResponseMode is the schema descriptor for empty_response_mode field.
+	retryfilterruleDescEmptyResponseMode := retryfilterruleFields[14].Descriptor()
+	// retryfilterrule.DefaultEmptyResponseMode holds the default value on creation for the empty_response_mode field.
+	retryfilterrule.DefaultEmptyResponseMode = retryfilterruleDescEmptyResponseMode.Default.(string)
+	// retryfilterrule.EmptyResponseModeValidator is a validator for the "empty_response_mode" field. It is called by the builders before save.
+	retryfilterrule.EmptyResponseModeValidator = retryfilterruleDescEmptyResponseMode.Validators[0].(func(string) error)
 	securitysecretMixin := schema.SecuritySecret{}.Mixin()
 	securitysecretMixinFields0 := securitysecretMixin[0].Fields()
 	_ = securitysecretMixinFields0

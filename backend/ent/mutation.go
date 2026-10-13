@@ -42,6 +42,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/proxysource"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/retryfilterpreset"
+	"github.com/Wei-Shaw/sub2api/ent/retryfilterrule"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -95,6 +97,8 @@ const (
 	TypeProxySource                   = "ProxySource"
 	TypeRedeemCode                    = "RedeemCode"
 	TypeRedeemCodeUsage               = "RedeemCodeUsage"
+	TypeRetryFilterPreset             = "RetryFilterPreset"
+	TypeRetryFilterRule               = "RetryFilterRule"
 	TypeSecuritySecret                = "SecuritySecret"
 	TypeSetting                       = "Setting"
 	TypeSubscriptionPlan              = "SubscriptionPlan"
@@ -22279,6 +22283,7 @@ type GroupMutation struct {
 	messages_dispatch_model_config          *domain.OpenAIMessagesDispatchModelConfig
 	model_allowlist                         *domain.GroupModelAllowlist
 	codex_models_manifest_config            *domain.GroupCodexModelsManifestConfig
+	retry_filter_config                     *domain.GroupRetryFilterConfig
 	rpm_limit                               *int
 	addrpm_limit                            *int
 	max_reasoning_effort                    *string
@@ -25419,6 +25424,42 @@ func (m *GroupMutation) ResetCodexModelsManifestConfig() {
 	m.codex_models_manifest_config = nil
 }
 
+// SetRetryFilterConfig sets the "retry_filter_config" field.
+func (m *GroupMutation) SetRetryFilterConfig(drfc domain.GroupRetryFilterConfig) {
+	m.retry_filter_config = &drfc
+}
+
+// RetryFilterConfig returns the value of the "retry_filter_config" field in the mutation.
+func (m *GroupMutation) RetryFilterConfig() (r domain.GroupRetryFilterConfig, exists bool) {
+	v := m.retry_filter_config
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRetryFilterConfig returns the old "retry_filter_config" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldRetryFilterConfig(ctx context.Context) (v domain.GroupRetryFilterConfig, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRetryFilterConfig is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRetryFilterConfig requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRetryFilterConfig: %w", err)
+	}
+	return oldValue.RetryFilterConfig, nil
+}
+
+// ResetRetryFilterConfig resets all changes to the "retry_filter_config" field.
+func (m *GroupMutation) ResetRetryFilterConfig() {
+	m.retry_filter_config = nil
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (m *GroupMutation) SetRpmLimit(i int) {
 	m.rpm_limit = &i
@@ -26104,7 +26145,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 67)
+	fields := make([]string, 0, 68)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -26285,6 +26326,9 @@ func (m *GroupMutation) Fields() []string {
 	if m.codex_models_manifest_config != nil {
 		fields = append(fields, group.FieldCodexModelsManifestConfig)
 	}
+	if m.retry_filter_config != nil {
+		fields = append(fields, group.FieldRetryFilterConfig)
+	}
 	if m.rpm_limit != nil {
 		fields = append(fields, group.FieldRpmLimit)
 	}
@@ -26434,6 +26478,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.ModelAllowlist()
 	case group.FieldCodexModelsManifestConfig:
 		return m.CodexModelsManifestConfig()
+	case group.FieldRetryFilterConfig:
+		return m.RetryFilterConfig()
 	case group.FieldRpmLimit:
 		return m.RpmLimit()
 	case group.FieldMaxReasoningEffort:
@@ -26577,6 +26623,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldModelAllowlist(ctx)
 	case group.FieldCodexModelsManifestConfig:
 		return m.OldCodexModelsManifestConfig(ctx)
+	case group.FieldRetryFilterConfig:
+		return m.OldRetryFilterConfig(ctx)
 	case group.FieldRpmLimit:
 		return m.OldRpmLimit(ctx)
 	case group.FieldMaxReasoningEffort:
@@ -27019,6 +27067,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCodexModelsManifestConfig(v)
+		return nil
+	case group.FieldRetryFilterConfig:
+		v, ok := value.(domain.GroupRetryFilterConfig)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRetryFilterConfig(v)
 		return nil
 	case group.FieldRpmLimit:
 		v, ok := value.(int)
@@ -27777,6 +27832,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldCodexModelsManifestConfig:
 		m.ResetCodexModelsManifestConfig()
+		return nil
+	case group.FieldRetryFilterConfig:
+		m.ResetRetryFilterConfig()
 		return nil
 	case group.FieldRpmLimit:
 		m.ResetRpmLimit()
@@ -42790,6 +42848,2385 @@ func (m *RedeemCodeUsageMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown RedeemCodeUsage edge %s", name)
+}
+
+// RetryFilterPresetMutation represents an operation that mutates the RetryFilterPreset nodes in the graph.
+type RetryFilterPresetMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int64
+	created_at    *time.Time
+	updated_at    *time.Time
+	name          *string
+	enabled       *bool
+	description   *string
+	clearedFields map[string]struct{}
+	rules         map[int64]struct{}
+	removedrules  map[int64]struct{}
+	clearedrules  bool
+	done          bool
+	oldValue      func(context.Context) (*RetryFilterPreset, error)
+	predicates    []predicate.RetryFilterPreset
+}
+
+var _ ent.Mutation = (*RetryFilterPresetMutation)(nil)
+
+// retryfilterpresetOption allows management of the mutation configuration using functional options.
+type retryfilterpresetOption func(*RetryFilterPresetMutation)
+
+// newRetryFilterPresetMutation creates new mutation for the RetryFilterPreset entity.
+func newRetryFilterPresetMutation(c config, op Op, opts ...retryfilterpresetOption) *RetryFilterPresetMutation {
+	m := &RetryFilterPresetMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRetryFilterPreset,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRetryFilterPresetID sets the ID field of the mutation.
+func withRetryFilterPresetID(id int64) retryfilterpresetOption {
+	return func(m *RetryFilterPresetMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RetryFilterPreset
+		)
+		m.oldValue = func(ctx context.Context) (*RetryFilterPreset, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RetryFilterPreset.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRetryFilterPreset sets the old RetryFilterPreset of the mutation.
+func withRetryFilterPreset(node *RetryFilterPreset) retryfilterpresetOption {
+	return func(m *RetryFilterPresetMutation) {
+		m.oldValue = func(context.Context) (*RetryFilterPreset, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RetryFilterPresetMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RetryFilterPresetMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RetryFilterPresetMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RetryFilterPresetMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RetryFilterPreset.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *RetryFilterPresetMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *RetryFilterPresetMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the RetryFilterPreset entity.
+// If the RetryFilterPreset object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterPresetMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *RetryFilterPresetMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *RetryFilterPresetMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *RetryFilterPresetMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the RetryFilterPreset entity.
+// If the RetryFilterPreset object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterPresetMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *RetryFilterPresetMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetName sets the "name" field.
+func (m *RetryFilterPresetMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *RetryFilterPresetMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the RetryFilterPreset entity.
+// If the RetryFilterPreset object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterPresetMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *RetryFilterPresetMutation) ResetName() {
+	m.name = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *RetryFilterPresetMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *RetryFilterPresetMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the RetryFilterPreset entity.
+// If the RetryFilterPreset object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterPresetMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *RetryFilterPresetMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetDescription sets the "description" field.
+func (m *RetryFilterPresetMutation) SetDescription(s string) {
+	m.description = &s
+}
+
+// Description returns the value of the "description" field in the mutation.
+func (m *RetryFilterPresetMutation) Description() (r string, exists bool) {
+	v := m.description
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDescription returns the old "description" field's value of the RetryFilterPreset entity.
+// If the RetryFilterPreset object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterPresetMutation) OldDescription(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDescription is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDescription requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDescription: %w", err)
+	}
+	return oldValue.Description, nil
+}
+
+// ClearDescription clears the value of the "description" field.
+func (m *RetryFilterPresetMutation) ClearDescription() {
+	m.description = nil
+	m.clearedFields[retryfilterpreset.FieldDescription] = struct{}{}
+}
+
+// DescriptionCleared returns if the "description" field was cleared in this mutation.
+func (m *RetryFilterPresetMutation) DescriptionCleared() bool {
+	_, ok := m.clearedFields[retryfilterpreset.FieldDescription]
+	return ok
+}
+
+// ResetDescription resets all changes to the "description" field.
+func (m *RetryFilterPresetMutation) ResetDescription() {
+	m.description = nil
+	delete(m.clearedFields, retryfilterpreset.FieldDescription)
+}
+
+// AddRuleIDs adds the "rules" edge to the RetryFilterRule entity by ids.
+func (m *RetryFilterPresetMutation) AddRuleIDs(ids ...int64) {
+	if m.rules == nil {
+		m.rules = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.rules[ids[i]] = struct{}{}
+	}
+}
+
+// ClearRules clears the "rules" edge to the RetryFilterRule entity.
+func (m *RetryFilterPresetMutation) ClearRules() {
+	m.clearedrules = true
+}
+
+// RulesCleared reports if the "rules" edge to the RetryFilterRule entity was cleared.
+func (m *RetryFilterPresetMutation) RulesCleared() bool {
+	return m.clearedrules
+}
+
+// RemoveRuleIDs removes the "rules" edge to the RetryFilterRule entity by IDs.
+func (m *RetryFilterPresetMutation) RemoveRuleIDs(ids ...int64) {
+	if m.removedrules == nil {
+		m.removedrules = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.rules, ids[i])
+		m.removedrules[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedRules returns the removed IDs of the "rules" edge to the RetryFilterRule entity.
+func (m *RetryFilterPresetMutation) RemovedRulesIDs() (ids []int64) {
+	for id := range m.removedrules {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// RulesIDs returns the "rules" edge IDs in the mutation.
+func (m *RetryFilterPresetMutation) RulesIDs() (ids []int64) {
+	for id := range m.rules {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetRules resets all changes to the "rules" edge.
+func (m *RetryFilterPresetMutation) ResetRules() {
+	m.rules = nil
+	m.clearedrules = false
+	m.removedrules = nil
+}
+
+// Where appends a list predicates to the RetryFilterPresetMutation builder.
+func (m *RetryFilterPresetMutation) Where(ps ...predicate.RetryFilterPreset) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RetryFilterPresetMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RetryFilterPresetMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RetryFilterPreset, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RetryFilterPresetMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RetryFilterPresetMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RetryFilterPreset).
+func (m *RetryFilterPresetMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RetryFilterPresetMutation) Fields() []string {
+	fields := make([]string, 0, 5)
+	if m.created_at != nil {
+		fields = append(fields, retryfilterpreset.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, retryfilterpreset.FieldUpdatedAt)
+	}
+	if m.name != nil {
+		fields = append(fields, retryfilterpreset.FieldName)
+	}
+	if m.enabled != nil {
+		fields = append(fields, retryfilterpreset.FieldEnabled)
+	}
+	if m.description != nil {
+		fields = append(fields, retryfilterpreset.FieldDescription)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RetryFilterPresetMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case retryfilterpreset.FieldCreatedAt:
+		return m.CreatedAt()
+	case retryfilterpreset.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case retryfilterpreset.FieldName:
+		return m.Name()
+	case retryfilterpreset.FieldEnabled:
+		return m.Enabled()
+	case retryfilterpreset.FieldDescription:
+		return m.Description()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RetryFilterPresetMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case retryfilterpreset.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case retryfilterpreset.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case retryfilterpreset.FieldName:
+		return m.OldName(ctx)
+	case retryfilterpreset.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case retryfilterpreset.FieldDescription:
+		return m.OldDescription(ctx)
+	}
+	return nil, fmt.Errorf("unknown RetryFilterPreset field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RetryFilterPresetMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case retryfilterpreset.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case retryfilterpreset.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case retryfilterpreset.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case retryfilterpreset.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case retryfilterpreset.FieldDescription:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDescription(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RetryFilterPreset field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RetryFilterPresetMutation) AddedFields() []string {
+	return nil
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RetryFilterPresetMutation) AddedField(name string) (ent.Value, bool) {
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RetryFilterPresetMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown RetryFilterPreset numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RetryFilterPresetMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(retryfilterpreset.FieldDescription) {
+		fields = append(fields, retryfilterpreset.FieldDescription)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RetryFilterPresetMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RetryFilterPresetMutation) ClearField(name string) error {
+	switch name {
+	case retryfilterpreset.FieldDescription:
+		m.ClearDescription()
+		return nil
+	}
+	return fmt.Errorf("unknown RetryFilterPreset nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RetryFilterPresetMutation) ResetField(name string) error {
+	switch name {
+	case retryfilterpreset.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case retryfilterpreset.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case retryfilterpreset.FieldName:
+		m.ResetName()
+		return nil
+	case retryfilterpreset.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case retryfilterpreset.FieldDescription:
+		m.ResetDescription()
+		return nil
+	}
+	return fmt.Errorf("unknown RetryFilterPreset field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RetryFilterPresetMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.rules != nil {
+		edges = append(edges, retryfilterpreset.EdgeRules)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RetryFilterPresetMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case retryfilterpreset.EdgeRules:
+		ids := make([]ent.Value, 0, len(m.rules))
+		for id := range m.rules {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RetryFilterPresetMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.removedrules != nil {
+		edges = append(edges, retryfilterpreset.EdgeRules)
+	}
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RetryFilterPresetMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case retryfilterpreset.EdgeRules:
+		ids := make([]ent.Value, 0, len(m.removedrules))
+		for id := range m.removedrules {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RetryFilterPresetMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedrules {
+		edges = append(edges, retryfilterpreset.EdgeRules)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RetryFilterPresetMutation) EdgeCleared(name string) bool {
+	switch name {
+	case retryfilterpreset.EdgeRules:
+		return m.clearedrules
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RetryFilterPresetMutation) ClearEdge(name string) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown RetryFilterPreset unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RetryFilterPresetMutation) ResetEdge(name string) error {
+	switch name {
+	case retryfilterpreset.EdgeRules:
+		m.ResetRules()
+		return nil
+	}
+	return fmt.Errorf("unknown RetryFilterPreset edge %s", name)
+}
+
+// RetryFilterRuleMutation represents an operation that mutates the RetryFilterRule nodes in the graph.
+type RetryFilterRuleMutation struct {
+	config
+	op                        Op
+	typ                       string
+	id                        *int64
+	created_at                *time.Time
+	updated_at                *time.Time
+	name                      *string
+	enabled                   *bool
+	priority                  *int
+	addpriority               *int
+	status_codes              *[]int
+	appendstatus_codes        []int
+	keywords                  *[]string
+	appendkeywords            []string
+	upstream_codes            *[]string
+	appendupstream_codes      []string
+	upstream_code_paths       *[]string
+	appendupstream_code_paths []string
+	models                    *[]string
+	appendmodels              []string
+	match_mode                *string
+	action                    *string
+	retry_count_override      *int
+	addretry_count_override   *int
+	retry_delay_ms            *int
+	addretry_delay_ms         *int
+	empty_request_mode        *string
+	empty_response_mode       *string
+	terminate_status_code     *int
+	addterminate_status_code  *int
+	terminate_message         *string
+	description               *string
+	clearedFields             map[string]struct{}
+	preset                    *int64
+	clearedpreset             bool
+	done                      bool
+	oldValue                  func(context.Context) (*RetryFilterRule, error)
+	predicates                []predicate.RetryFilterRule
+}
+
+var _ ent.Mutation = (*RetryFilterRuleMutation)(nil)
+
+// retryfilterruleOption allows management of the mutation configuration using functional options.
+type retryfilterruleOption func(*RetryFilterRuleMutation)
+
+// newRetryFilterRuleMutation creates new mutation for the RetryFilterRule entity.
+func newRetryFilterRuleMutation(c config, op Op, opts ...retryfilterruleOption) *RetryFilterRuleMutation {
+	m := &RetryFilterRuleMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeRetryFilterRule,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withRetryFilterRuleID sets the ID field of the mutation.
+func withRetryFilterRuleID(id int64) retryfilterruleOption {
+	return func(m *RetryFilterRuleMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *RetryFilterRule
+		)
+		m.oldValue = func(ctx context.Context) (*RetryFilterRule, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().RetryFilterRule.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withRetryFilterRule sets the old RetryFilterRule of the mutation.
+func withRetryFilterRule(node *RetryFilterRule) retryfilterruleOption {
+	return func(m *RetryFilterRuleMutation) {
+		m.oldValue = func(context.Context) (*RetryFilterRule, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m RetryFilterRuleMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m RetryFilterRuleMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *RetryFilterRuleMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *RetryFilterRuleMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().RetryFilterRule.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *RetryFilterRuleMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *RetryFilterRuleMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *RetryFilterRuleMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *RetryFilterRuleMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *RetryFilterRuleMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *RetryFilterRuleMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetPresetID sets the "preset_id" field.
+func (m *RetryFilterRuleMutation) SetPresetID(i int64) {
+	m.preset = &i
+}
+
+// PresetID returns the value of the "preset_id" field in the mutation.
+func (m *RetryFilterRuleMutation) PresetID() (r int64, exists bool) {
+	v := m.preset
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPresetID returns the old "preset_id" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldPresetID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPresetID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPresetID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPresetID: %w", err)
+	}
+	return oldValue.PresetID, nil
+}
+
+// ResetPresetID resets all changes to the "preset_id" field.
+func (m *RetryFilterRuleMutation) ResetPresetID() {
+	m.preset = nil
+}
+
+// SetName sets the "name" field.
+func (m *RetryFilterRuleMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *RetryFilterRuleMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *RetryFilterRuleMutation) ResetName() {
+	m.name = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *RetryFilterRuleMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *RetryFilterRuleMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *RetryFilterRuleMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetPriority sets the "priority" field.
+func (m *RetryFilterRuleMutation) SetPriority(i int) {
+	m.priority = &i
+	m.addpriority = nil
+}
+
+// Priority returns the value of the "priority" field in the mutation.
+func (m *RetryFilterRuleMutation) Priority() (r int, exists bool) {
+	v := m.priority
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPriority returns the old "priority" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldPriority(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPriority is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPriority requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPriority: %w", err)
+	}
+	return oldValue.Priority, nil
+}
+
+// AddPriority adds i to the "priority" field.
+func (m *RetryFilterRuleMutation) AddPriority(i int) {
+	if m.addpriority != nil {
+		*m.addpriority += i
+	} else {
+		m.addpriority = &i
+	}
+}
+
+// AddedPriority returns the value that was added to the "priority" field in this mutation.
+func (m *RetryFilterRuleMutation) AddedPriority() (r int, exists bool) {
+	v := m.addpriority
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetPriority resets all changes to the "priority" field.
+func (m *RetryFilterRuleMutation) ResetPriority() {
+	m.priority = nil
+	m.addpriority = nil
+}
+
+// SetStatusCodes sets the "status_codes" field.
+func (m *RetryFilterRuleMutation) SetStatusCodes(i []int) {
+	m.status_codes = &i
+	m.appendstatus_codes = nil
+}
+
+// StatusCodes returns the value of the "status_codes" field in the mutation.
+func (m *RetryFilterRuleMutation) StatusCodes() (r []int, exists bool) {
+	v := m.status_codes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStatusCodes returns the old "status_codes" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldStatusCodes(ctx context.Context) (v []int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStatusCodes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStatusCodes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStatusCodes: %w", err)
+	}
+	return oldValue.StatusCodes, nil
+}
+
+// AppendStatusCodes adds i to the "status_codes" field.
+func (m *RetryFilterRuleMutation) AppendStatusCodes(i []int) {
+	m.appendstatus_codes = append(m.appendstatus_codes, i...)
+}
+
+// AppendedStatusCodes returns the list of values that were appended to the "status_codes" field in this mutation.
+func (m *RetryFilterRuleMutation) AppendedStatusCodes() ([]int, bool) {
+	if len(m.appendstatus_codes) == 0 {
+		return nil, false
+	}
+	return m.appendstatus_codes, true
+}
+
+// ResetStatusCodes resets all changes to the "status_codes" field.
+func (m *RetryFilterRuleMutation) ResetStatusCodes() {
+	m.status_codes = nil
+	m.appendstatus_codes = nil
+}
+
+// SetKeywords sets the "keywords" field.
+func (m *RetryFilterRuleMutation) SetKeywords(s []string) {
+	m.keywords = &s
+	m.appendkeywords = nil
+}
+
+// Keywords returns the value of the "keywords" field in the mutation.
+func (m *RetryFilterRuleMutation) Keywords() (r []string, exists bool) {
+	v := m.keywords
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldKeywords returns the old "keywords" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldKeywords(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldKeywords is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldKeywords requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldKeywords: %w", err)
+	}
+	return oldValue.Keywords, nil
+}
+
+// AppendKeywords adds s to the "keywords" field.
+func (m *RetryFilterRuleMutation) AppendKeywords(s []string) {
+	m.appendkeywords = append(m.appendkeywords, s...)
+}
+
+// AppendedKeywords returns the list of values that were appended to the "keywords" field in this mutation.
+func (m *RetryFilterRuleMutation) AppendedKeywords() ([]string, bool) {
+	if len(m.appendkeywords) == 0 {
+		return nil, false
+	}
+	return m.appendkeywords, true
+}
+
+// ResetKeywords resets all changes to the "keywords" field.
+func (m *RetryFilterRuleMutation) ResetKeywords() {
+	m.keywords = nil
+	m.appendkeywords = nil
+}
+
+// SetUpstreamCodes sets the "upstream_codes" field.
+func (m *RetryFilterRuleMutation) SetUpstreamCodes(s []string) {
+	m.upstream_codes = &s
+	m.appendupstream_codes = nil
+}
+
+// UpstreamCodes returns the value of the "upstream_codes" field in the mutation.
+func (m *RetryFilterRuleMutation) UpstreamCodes() (r []string, exists bool) {
+	v := m.upstream_codes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamCodes returns the old "upstream_codes" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldUpstreamCodes(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamCodes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamCodes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamCodes: %w", err)
+	}
+	return oldValue.UpstreamCodes, nil
+}
+
+// AppendUpstreamCodes adds s to the "upstream_codes" field.
+func (m *RetryFilterRuleMutation) AppendUpstreamCodes(s []string) {
+	m.appendupstream_codes = append(m.appendupstream_codes, s...)
+}
+
+// AppendedUpstreamCodes returns the list of values that were appended to the "upstream_codes" field in this mutation.
+func (m *RetryFilterRuleMutation) AppendedUpstreamCodes() ([]string, bool) {
+	if len(m.appendupstream_codes) == 0 {
+		return nil, false
+	}
+	return m.appendupstream_codes, true
+}
+
+// ResetUpstreamCodes resets all changes to the "upstream_codes" field.
+func (m *RetryFilterRuleMutation) ResetUpstreamCodes() {
+	m.upstream_codes = nil
+	m.appendupstream_codes = nil
+}
+
+// SetUpstreamCodePaths sets the "upstream_code_paths" field.
+func (m *RetryFilterRuleMutation) SetUpstreamCodePaths(s []string) {
+	m.upstream_code_paths = &s
+	m.appendupstream_code_paths = nil
+}
+
+// UpstreamCodePaths returns the value of the "upstream_code_paths" field in the mutation.
+func (m *RetryFilterRuleMutation) UpstreamCodePaths() (r []string, exists bool) {
+	v := m.upstream_code_paths
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpstreamCodePaths returns the old "upstream_code_paths" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldUpstreamCodePaths(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpstreamCodePaths is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpstreamCodePaths requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpstreamCodePaths: %w", err)
+	}
+	return oldValue.UpstreamCodePaths, nil
+}
+
+// AppendUpstreamCodePaths adds s to the "upstream_code_paths" field.
+func (m *RetryFilterRuleMutation) AppendUpstreamCodePaths(s []string) {
+	m.appendupstream_code_paths = append(m.appendupstream_code_paths, s...)
+}
+
+// AppendedUpstreamCodePaths returns the list of values that were appended to the "upstream_code_paths" field in this mutation.
+func (m *RetryFilterRuleMutation) AppendedUpstreamCodePaths() ([]string, bool) {
+	if len(m.appendupstream_code_paths) == 0 {
+		return nil, false
+	}
+	return m.appendupstream_code_paths, true
+}
+
+// ResetUpstreamCodePaths resets all changes to the "upstream_code_paths" field.
+func (m *RetryFilterRuleMutation) ResetUpstreamCodePaths() {
+	m.upstream_code_paths = nil
+	m.appendupstream_code_paths = nil
+}
+
+// SetModels sets the "models" field.
+func (m *RetryFilterRuleMutation) SetModels(s []string) {
+	m.models = &s
+	m.appendmodels = nil
+}
+
+// Models returns the value of the "models" field in the mutation.
+func (m *RetryFilterRuleMutation) Models() (r []string, exists bool) {
+	v := m.models
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldModels returns the old "models" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldModels(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldModels is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldModels requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldModels: %w", err)
+	}
+	return oldValue.Models, nil
+}
+
+// AppendModels adds s to the "models" field.
+func (m *RetryFilterRuleMutation) AppendModels(s []string) {
+	m.appendmodels = append(m.appendmodels, s...)
+}
+
+// AppendedModels returns the list of values that were appended to the "models" field in this mutation.
+func (m *RetryFilterRuleMutation) AppendedModels() ([]string, bool) {
+	if len(m.appendmodels) == 0 {
+		return nil, false
+	}
+	return m.appendmodels, true
+}
+
+// ResetModels resets all changes to the "models" field.
+func (m *RetryFilterRuleMutation) ResetModels() {
+	m.models = nil
+	m.appendmodels = nil
+}
+
+// SetMatchMode sets the "match_mode" field.
+func (m *RetryFilterRuleMutation) SetMatchMode(s string) {
+	m.match_mode = &s
+}
+
+// MatchMode returns the value of the "match_mode" field in the mutation.
+func (m *RetryFilterRuleMutation) MatchMode() (r string, exists bool) {
+	v := m.match_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMatchMode returns the old "match_mode" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldMatchMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMatchMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMatchMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMatchMode: %w", err)
+	}
+	return oldValue.MatchMode, nil
+}
+
+// ResetMatchMode resets all changes to the "match_mode" field.
+func (m *RetryFilterRuleMutation) ResetMatchMode() {
+	m.match_mode = nil
+}
+
+// SetAction sets the "action" field.
+func (m *RetryFilterRuleMutation) SetAction(s string) {
+	m.action = &s
+}
+
+// Action returns the value of the "action" field in the mutation.
+func (m *RetryFilterRuleMutation) Action() (r string, exists bool) {
+	v := m.action
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAction returns the old "action" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldAction(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAction is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAction requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAction: %w", err)
+	}
+	return oldValue.Action, nil
+}
+
+// ResetAction resets all changes to the "action" field.
+func (m *RetryFilterRuleMutation) ResetAction() {
+	m.action = nil
+}
+
+// SetRetryCountOverride sets the "retry_count_override" field.
+func (m *RetryFilterRuleMutation) SetRetryCountOverride(i int) {
+	m.retry_count_override = &i
+	m.addretry_count_override = nil
+}
+
+// RetryCountOverride returns the value of the "retry_count_override" field in the mutation.
+func (m *RetryFilterRuleMutation) RetryCountOverride() (r int, exists bool) {
+	v := m.retry_count_override
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRetryCountOverride returns the old "retry_count_override" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldRetryCountOverride(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRetryCountOverride is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRetryCountOverride requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRetryCountOverride: %w", err)
+	}
+	return oldValue.RetryCountOverride, nil
+}
+
+// AddRetryCountOverride adds i to the "retry_count_override" field.
+func (m *RetryFilterRuleMutation) AddRetryCountOverride(i int) {
+	if m.addretry_count_override != nil {
+		*m.addretry_count_override += i
+	} else {
+		m.addretry_count_override = &i
+	}
+}
+
+// AddedRetryCountOverride returns the value that was added to the "retry_count_override" field in this mutation.
+func (m *RetryFilterRuleMutation) AddedRetryCountOverride() (r int, exists bool) {
+	v := m.addretry_count_override
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearRetryCountOverride clears the value of the "retry_count_override" field.
+func (m *RetryFilterRuleMutation) ClearRetryCountOverride() {
+	m.retry_count_override = nil
+	m.addretry_count_override = nil
+	m.clearedFields[retryfilterrule.FieldRetryCountOverride] = struct{}{}
+}
+
+// RetryCountOverrideCleared returns if the "retry_count_override" field was cleared in this mutation.
+func (m *RetryFilterRuleMutation) RetryCountOverrideCleared() bool {
+	_, ok := m.clearedFields[retryfilterrule.FieldRetryCountOverride]
+	return ok
+}
+
+// ResetRetryCountOverride resets all changes to the "retry_count_override" field.
+func (m *RetryFilterRuleMutation) ResetRetryCountOverride() {
+	m.retry_count_override = nil
+	m.addretry_count_override = nil
+	delete(m.clearedFields, retryfilterrule.FieldRetryCountOverride)
+}
+
+// SetRetryDelayMs sets the "retry_delay_ms" field.
+func (m *RetryFilterRuleMutation) SetRetryDelayMs(i int) {
+	m.retry_delay_ms = &i
+	m.addretry_delay_ms = nil
+}
+
+// RetryDelayMs returns the value of the "retry_delay_ms" field in the mutation.
+func (m *RetryFilterRuleMutation) RetryDelayMs() (r int, exists bool) {
+	v := m.retry_delay_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRetryDelayMs returns the old "retry_delay_ms" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldRetryDelayMs(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRetryDelayMs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRetryDelayMs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRetryDelayMs: %w", err)
+	}
+	return oldValue.RetryDelayMs, nil
+}
+
+// AddRetryDelayMs adds i to the "retry_delay_ms" field.
+func (m *RetryFilterRuleMutation) AddRetryDelayMs(i int) {
+	if m.addretry_delay_ms != nil {
+		*m.addretry_delay_ms += i
+	} else {
+		m.addretry_delay_ms = &i
+	}
+}
+
+// AddedRetryDelayMs returns the value that was added to the "retry_delay_ms" field in this mutation.
+func (m *RetryFilterRuleMutation) AddedRetryDelayMs() (r int, exists bool) {
+	v := m.addretry_delay_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearRetryDelayMs clears the value of the "retry_delay_ms" field.
+func (m *RetryFilterRuleMutation) ClearRetryDelayMs() {
+	m.retry_delay_ms = nil
+	m.addretry_delay_ms = nil
+	m.clearedFields[retryfilterrule.FieldRetryDelayMs] = struct{}{}
+}
+
+// RetryDelayMsCleared returns if the "retry_delay_ms" field was cleared in this mutation.
+func (m *RetryFilterRuleMutation) RetryDelayMsCleared() bool {
+	_, ok := m.clearedFields[retryfilterrule.FieldRetryDelayMs]
+	return ok
+}
+
+// ResetRetryDelayMs resets all changes to the "retry_delay_ms" field.
+func (m *RetryFilterRuleMutation) ResetRetryDelayMs() {
+	m.retry_delay_ms = nil
+	m.addretry_delay_ms = nil
+	delete(m.clearedFields, retryfilterrule.FieldRetryDelayMs)
+}
+
+// SetEmptyRequestMode sets the "empty_request_mode" field.
+func (m *RetryFilterRuleMutation) SetEmptyRequestMode(s string) {
+	m.empty_request_mode = &s
+}
+
+// EmptyRequestMode returns the value of the "empty_request_mode" field in the mutation.
+func (m *RetryFilterRuleMutation) EmptyRequestMode() (r string, exists bool) {
+	v := m.empty_request_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEmptyRequestMode returns the old "empty_request_mode" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldEmptyRequestMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEmptyRequestMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEmptyRequestMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEmptyRequestMode: %w", err)
+	}
+	return oldValue.EmptyRequestMode, nil
+}
+
+// ResetEmptyRequestMode resets all changes to the "empty_request_mode" field.
+func (m *RetryFilterRuleMutation) ResetEmptyRequestMode() {
+	m.empty_request_mode = nil
+}
+
+// SetEmptyResponseMode sets the "empty_response_mode" field.
+func (m *RetryFilterRuleMutation) SetEmptyResponseMode(s string) {
+	m.empty_response_mode = &s
+}
+
+// EmptyResponseMode returns the value of the "empty_response_mode" field in the mutation.
+func (m *RetryFilterRuleMutation) EmptyResponseMode() (r string, exists bool) {
+	v := m.empty_response_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEmptyResponseMode returns the old "empty_response_mode" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldEmptyResponseMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEmptyResponseMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEmptyResponseMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEmptyResponseMode: %w", err)
+	}
+	return oldValue.EmptyResponseMode, nil
+}
+
+// ResetEmptyResponseMode resets all changes to the "empty_response_mode" field.
+func (m *RetryFilterRuleMutation) ResetEmptyResponseMode() {
+	m.empty_response_mode = nil
+}
+
+// SetTerminateStatusCode sets the "terminate_status_code" field.
+func (m *RetryFilterRuleMutation) SetTerminateStatusCode(i int) {
+	m.terminate_status_code = &i
+	m.addterminate_status_code = nil
+}
+
+// TerminateStatusCode returns the value of the "terminate_status_code" field in the mutation.
+func (m *RetryFilterRuleMutation) TerminateStatusCode() (r int, exists bool) {
+	v := m.terminate_status_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTerminateStatusCode returns the old "terminate_status_code" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldTerminateStatusCode(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTerminateStatusCode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTerminateStatusCode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTerminateStatusCode: %w", err)
+	}
+	return oldValue.TerminateStatusCode, nil
+}
+
+// AddTerminateStatusCode adds i to the "terminate_status_code" field.
+func (m *RetryFilterRuleMutation) AddTerminateStatusCode(i int) {
+	if m.addterminate_status_code != nil {
+		*m.addterminate_status_code += i
+	} else {
+		m.addterminate_status_code = &i
+	}
+}
+
+// AddedTerminateStatusCode returns the value that was added to the "terminate_status_code" field in this mutation.
+func (m *RetryFilterRuleMutation) AddedTerminateStatusCode() (r int, exists bool) {
+	v := m.addterminate_status_code
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearTerminateStatusCode clears the value of the "terminate_status_code" field.
+func (m *RetryFilterRuleMutation) ClearTerminateStatusCode() {
+	m.terminate_status_code = nil
+	m.addterminate_status_code = nil
+	m.clearedFields[retryfilterrule.FieldTerminateStatusCode] = struct{}{}
+}
+
+// TerminateStatusCodeCleared returns if the "terminate_status_code" field was cleared in this mutation.
+func (m *RetryFilterRuleMutation) TerminateStatusCodeCleared() bool {
+	_, ok := m.clearedFields[retryfilterrule.FieldTerminateStatusCode]
+	return ok
+}
+
+// ResetTerminateStatusCode resets all changes to the "terminate_status_code" field.
+func (m *RetryFilterRuleMutation) ResetTerminateStatusCode() {
+	m.terminate_status_code = nil
+	m.addterminate_status_code = nil
+	delete(m.clearedFields, retryfilterrule.FieldTerminateStatusCode)
+}
+
+// SetTerminateMessage sets the "terminate_message" field.
+func (m *RetryFilterRuleMutation) SetTerminateMessage(s string) {
+	m.terminate_message = &s
+}
+
+// TerminateMessage returns the value of the "terminate_message" field in the mutation.
+func (m *RetryFilterRuleMutation) TerminateMessage() (r string, exists bool) {
+	v := m.terminate_message
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTerminateMessage returns the old "terminate_message" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldTerminateMessage(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTerminateMessage is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTerminateMessage requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTerminateMessage: %w", err)
+	}
+	return oldValue.TerminateMessage, nil
+}
+
+// ClearTerminateMessage clears the value of the "terminate_message" field.
+func (m *RetryFilterRuleMutation) ClearTerminateMessage() {
+	m.terminate_message = nil
+	m.clearedFields[retryfilterrule.FieldTerminateMessage] = struct{}{}
+}
+
+// TerminateMessageCleared returns if the "terminate_message" field was cleared in this mutation.
+func (m *RetryFilterRuleMutation) TerminateMessageCleared() bool {
+	_, ok := m.clearedFields[retryfilterrule.FieldTerminateMessage]
+	return ok
+}
+
+// ResetTerminateMessage resets all changes to the "terminate_message" field.
+func (m *RetryFilterRuleMutation) ResetTerminateMessage() {
+	m.terminate_message = nil
+	delete(m.clearedFields, retryfilterrule.FieldTerminateMessage)
+}
+
+// SetDescription sets the "description" field.
+func (m *RetryFilterRuleMutation) SetDescription(s string) {
+	m.description = &s
+}
+
+// Description returns the value of the "description" field in the mutation.
+func (m *RetryFilterRuleMutation) Description() (r string, exists bool) {
+	v := m.description
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDescription returns the old "description" field's value of the RetryFilterRule entity.
+// If the RetryFilterRule object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RetryFilterRuleMutation) OldDescription(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDescription is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDescription requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDescription: %w", err)
+	}
+	return oldValue.Description, nil
+}
+
+// ClearDescription clears the value of the "description" field.
+func (m *RetryFilterRuleMutation) ClearDescription() {
+	m.description = nil
+	m.clearedFields[retryfilterrule.FieldDescription] = struct{}{}
+}
+
+// DescriptionCleared returns if the "description" field was cleared in this mutation.
+func (m *RetryFilterRuleMutation) DescriptionCleared() bool {
+	_, ok := m.clearedFields[retryfilterrule.FieldDescription]
+	return ok
+}
+
+// ResetDescription resets all changes to the "description" field.
+func (m *RetryFilterRuleMutation) ResetDescription() {
+	m.description = nil
+	delete(m.clearedFields, retryfilterrule.FieldDescription)
+}
+
+// ClearPreset clears the "preset" edge to the RetryFilterPreset entity.
+func (m *RetryFilterRuleMutation) ClearPreset() {
+	m.clearedpreset = true
+	m.clearedFields[retryfilterrule.FieldPresetID] = struct{}{}
+}
+
+// PresetCleared reports if the "preset" edge to the RetryFilterPreset entity was cleared.
+func (m *RetryFilterRuleMutation) PresetCleared() bool {
+	return m.clearedpreset
+}
+
+// PresetIDs returns the "preset" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// PresetID instead. It exists only for internal usage by the builders.
+func (m *RetryFilterRuleMutation) PresetIDs() (ids []int64) {
+	if id := m.preset; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetPreset resets all changes to the "preset" edge.
+func (m *RetryFilterRuleMutation) ResetPreset() {
+	m.preset = nil
+	m.clearedpreset = false
+}
+
+// Where appends a list predicates to the RetryFilterRuleMutation builder.
+func (m *RetryFilterRuleMutation) Where(ps ...predicate.RetryFilterRule) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the RetryFilterRuleMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *RetryFilterRuleMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.RetryFilterRule, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *RetryFilterRuleMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *RetryFilterRuleMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (RetryFilterRule).
+func (m *RetryFilterRuleMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *RetryFilterRuleMutation) Fields() []string {
+	fields := make([]string, 0, 20)
+	if m.created_at != nil {
+		fields = append(fields, retryfilterrule.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, retryfilterrule.FieldUpdatedAt)
+	}
+	if m.preset != nil {
+		fields = append(fields, retryfilterrule.FieldPresetID)
+	}
+	if m.name != nil {
+		fields = append(fields, retryfilterrule.FieldName)
+	}
+	if m.enabled != nil {
+		fields = append(fields, retryfilterrule.FieldEnabled)
+	}
+	if m.priority != nil {
+		fields = append(fields, retryfilterrule.FieldPriority)
+	}
+	if m.status_codes != nil {
+		fields = append(fields, retryfilterrule.FieldStatusCodes)
+	}
+	if m.keywords != nil {
+		fields = append(fields, retryfilterrule.FieldKeywords)
+	}
+	if m.upstream_codes != nil {
+		fields = append(fields, retryfilterrule.FieldUpstreamCodes)
+	}
+	if m.upstream_code_paths != nil {
+		fields = append(fields, retryfilterrule.FieldUpstreamCodePaths)
+	}
+	if m.models != nil {
+		fields = append(fields, retryfilterrule.FieldModels)
+	}
+	if m.match_mode != nil {
+		fields = append(fields, retryfilterrule.FieldMatchMode)
+	}
+	if m.action != nil {
+		fields = append(fields, retryfilterrule.FieldAction)
+	}
+	if m.retry_count_override != nil {
+		fields = append(fields, retryfilterrule.FieldRetryCountOverride)
+	}
+	if m.retry_delay_ms != nil {
+		fields = append(fields, retryfilterrule.FieldRetryDelayMs)
+	}
+	if m.empty_request_mode != nil {
+		fields = append(fields, retryfilterrule.FieldEmptyRequestMode)
+	}
+	if m.empty_response_mode != nil {
+		fields = append(fields, retryfilterrule.FieldEmptyResponseMode)
+	}
+	if m.terminate_status_code != nil {
+		fields = append(fields, retryfilterrule.FieldTerminateStatusCode)
+	}
+	if m.terminate_message != nil {
+		fields = append(fields, retryfilterrule.FieldTerminateMessage)
+	}
+	if m.description != nil {
+		fields = append(fields, retryfilterrule.FieldDescription)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *RetryFilterRuleMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case retryfilterrule.FieldCreatedAt:
+		return m.CreatedAt()
+	case retryfilterrule.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case retryfilterrule.FieldPresetID:
+		return m.PresetID()
+	case retryfilterrule.FieldName:
+		return m.Name()
+	case retryfilterrule.FieldEnabled:
+		return m.Enabled()
+	case retryfilterrule.FieldPriority:
+		return m.Priority()
+	case retryfilterrule.FieldStatusCodes:
+		return m.StatusCodes()
+	case retryfilterrule.FieldKeywords:
+		return m.Keywords()
+	case retryfilterrule.FieldUpstreamCodes:
+		return m.UpstreamCodes()
+	case retryfilterrule.FieldUpstreamCodePaths:
+		return m.UpstreamCodePaths()
+	case retryfilterrule.FieldModels:
+		return m.Models()
+	case retryfilterrule.FieldMatchMode:
+		return m.MatchMode()
+	case retryfilterrule.FieldAction:
+		return m.Action()
+	case retryfilterrule.FieldRetryCountOverride:
+		return m.RetryCountOverride()
+	case retryfilterrule.FieldRetryDelayMs:
+		return m.RetryDelayMs()
+	case retryfilterrule.FieldEmptyRequestMode:
+		return m.EmptyRequestMode()
+	case retryfilterrule.FieldEmptyResponseMode:
+		return m.EmptyResponseMode()
+	case retryfilterrule.FieldTerminateStatusCode:
+		return m.TerminateStatusCode()
+	case retryfilterrule.FieldTerminateMessage:
+		return m.TerminateMessage()
+	case retryfilterrule.FieldDescription:
+		return m.Description()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *RetryFilterRuleMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case retryfilterrule.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case retryfilterrule.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case retryfilterrule.FieldPresetID:
+		return m.OldPresetID(ctx)
+	case retryfilterrule.FieldName:
+		return m.OldName(ctx)
+	case retryfilterrule.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case retryfilterrule.FieldPriority:
+		return m.OldPriority(ctx)
+	case retryfilterrule.FieldStatusCodes:
+		return m.OldStatusCodes(ctx)
+	case retryfilterrule.FieldKeywords:
+		return m.OldKeywords(ctx)
+	case retryfilterrule.FieldUpstreamCodes:
+		return m.OldUpstreamCodes(ctx)
+	case retryfilterrule.FieldUpstreamCodePaths:
+		return m.OldUpstreamCodePaths(ctx)
+	case retryfilterrule.FieldModels:
+		return m.OldModels(ctx)
+	case retryfilterrule.FieldMatchMode:
+		return m.OldMatchMode(ctx)
+	case retryfilterrule.FieldAction:
+		return m.OldAction(ctx)
+	case retryfilterrule.FieldRetryCountOverride:
+		return m.OldRetryCountOverride(ctx)
+	case retryfilterrule.FieldRetryDelayMs:
+		return m.OldRetryDelayMs(ctx)
+	case retryfilterrule.FieldEmptyRequestMode:
+		return m.OldEmptyRequestMode(ctx)
+	case retryfilterrule.FieldEmptyResponseMode:
+		return m.OldEmptyResponseMode(ctx)
+	case retryfilterrule.FieldTerminateStatusCode:
+		return m.OldTerminateStatusCode(ctx)
+	case retryfilterrule.FieldTerminateMessage:
+		return m.OldTerminateMessage(ctx)
+	case retryfilterrule.FieldDescription:
+		return m.OldDescription(ctx)
+	}
+	return nil, fmt.Errorf("unknown RetryFilterRule field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RetryFilterRuleMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case retryfilterrule.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case retryfilterrule.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case retryfilterrule.FieldPresetID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPresetID(v)
+		return nil
+	case retryfilterrule.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case retryfilterrule.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case retryfilterrule.FieldPriority:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPriority(v)
+		return nil
+	case retryfilterrule.FieldStatusCodes:
+		v, ok := value.([]int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStatusCodes(v)
+		return nil
+	case retryfilterrule.FieldKeywords:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetKeywords(v)
+		return nil
+	case retryfilterrule.FieldUpstreamCodes:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamCodes(v)
+		return nil
+	case retryfilterrule.FieldUpstreamCodePaths:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpstreamCodePaths(v)
+		return nil
+	case retryfilterrule.FieldModels:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetModels(v)
+		return nil
+	case retryfilterrule.FieldMatchMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMatchMode(v)
+		return nil
+	case retryfilterrule.FieldAction:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAction(v)
+		return nil
+	case retryfilterrule.FieldRetryCountOverride:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRetryCountOverride(v)
+		return nil
+	case retryfilterrule.FieldRetryDelayMs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRetryDelayMs(v)
+		return nil
+	case retryfilterrule.FieldEmptyRequestMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEmptyRequestMode(v)
+		return nil
+	case retryfilterrule.FieldEmptyResponseMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEmptyResponseMode(v)
+		return nil
+	case retryfilterrule.FieldTerminateStatusCode:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTerminateStatusCode(v)
+		return nil
+	case retryfilterrule.FieldTerminateMessage:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTerminateMessage(v)
+		return nil
+	case retryfilterrule.FieldDescription:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDescription(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RetryFilterRule field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *RetryFilterRuleMutation) AddedFields() []string {
+	var fields []string
+	if m.addpriority != nil {
+		fields = append(fields, retryfilterrule.FieldPriority)
+	}
+	if m.addretry_count_override != nil {
+		fields = append(fields, retryfilterrule.FieldRetryCountOverride)
+	}
+	if m.addretry_delay_ms != nil {
+		fields = append(fields, retryfilterrule.FieldRetryDelayMs)
+	}
+	if m.addterminate_status_code != nil {
+		fields = append(fields, retryfilterrule.FieldTerminateStatusCode)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *RetryFilterRuleMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case retryfilterrule.FieldPriority:
+		return m.AddedPriority()
+	case retryfilterrule.FieldRetryCountOverride:
+		return m.AddedRetryCountOverride()
+	case retryfilterrule.FieldRetryDelayMs:
+		return m.AddedRetryDelayMs()
+	case retryfilterrule.FieldTerminateStatusCode:
+		return m.AddedTerminateStatusCode()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *RetryFilterRuleMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case retryfilterrule.FieldPriority:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPriority(v)
+		return nil
+	case retryfilterrule.FieldRetryCountOverride:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRetryCountOverride(v)
+		return nil
+	case retryfilterrule.FieldRetryDelayMs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRetryDelayMs(v)
+		return nil
+	case retryfilterrule.FieldTerminateStatusCode:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTerminateStatusCode(v)
+		return nil
+	}
+	return fmt.Errorf("unknown RetryFilterRule numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *RetryFilterRuleMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(retryfilterrule.FieldRetryCountOverride) {
+		fields = append(fields, retryfilterrule.FieldRetryCountOverride)
+	}
+	if m.FieldCleared(retryfilterrule.FieldRetryDelayMs) {
+		fields = append(fields, retryfilterrule.FieldRetryDelayMs)
+	}
+	if m.FieldCleared(retryfilterrule.FieldTerminateStatusCode) {
+		fields = append(fields, retryfilterrule.FieldTerminateStatusCode)
+	}
+	if m.FieldCleared(retryfilterrule.FieldTerminateMessage) {
+		fields = append(fields, retryfilterrule.FieldTerminateMessage)
+	}
+	if m.FieldCleared(retryfilterrule.FieldDescription) {
+		fields = append(fields, retryfilterrule.FieldDescription)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *RetryFilterRuleMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *RetryFilterRuleMutation) ClearField(name string) error {
+	switch name {
+	case retryfilterrule.FieldRetryCountOverride:
+		m.ClearRetryCountOverride()
+		return nil
+	case retryfilterrule.FieldRetryDelayMs:
+		m.ClearRetryDelayMs()
+		return nil
+	case retryfilterrule.FieldTerminateStatusCode:
+		m.ClearTerminateStatusCode()
+		return nil
+	case retryfilterrule.FieldTerminateMessage:
+		m.ClearTerminateMessage()
+		return nil
+	case retryfilterrule.FieldDescription:
+		m.ClearDescription()
+		return nil
+	}
+	return fmt.Errorf("unknown RetryFilterRule nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *RetryFilterRuleMutation) ResetField(name string) error {
+	switch name {
+	case retryfilterrule.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case retryfilterrule.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case retryfilterrule.FieldPresetID:
+		m.ResetPresetID()
+		return nil
+	case retryfilterrule.FieldName:
+		m.ResetName()
+		return nil
+	case retryfilterrule.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case retryfilterrule.FieldPriority:
+		m.ResetPriority()
+		return nil
+	case retryfilterrule.FieldStatusCodes:
+		m.ResetStatusCodes()
+		return nil
+	case retryfilterrule.FieldKeywords:
+		m.ResetKeywords()
+		return nil
+	case retryfilterrule.FieldUpstreamCodes:
+		m.ResetUpstreamCodes()
+		return nil
+	case retryfilterrule.FieldUpstreamCodePaths:
+		m.ResetUpstreamCodePaths()
+		return nil
+	case retryfilterrule.FieldModels:
+		m.ResetModels()
+		return nil
+	case retryfilterrule.FieldMatchMode:
+		m.ResetMatchMode()
+		return nil
+	case retryfilterrule.FieldAction:
+		m.ResetAction()
+		return nil
+	case retryfilterrule.FieldRetryCountOverride:
+		m.ResetRetryCountOverride()
+		return nil
+	case retryfilterrule.FieldRetryDelayMs:
+		m.ResetRetryDelayMs()
+		return nil
+	case retryfilterrule.FieldEmptyRequestMode:
+		m.ResetEmptyRequestMode()
+		return nil
+	case retryfilterrule.FieldEmptyResponseMode:
+		m.ResetEmptyResponseMode()
+		return nil
+	case retryfilterrule.FieldTerminateStatusCode:
+		m.ResetTerminateStatusCode()
+		return nil
+	case retryfilterrule.FieldTerminateMessage:
+		m.ResetTerminateMessage()
+		return nil
+	case retryfilterrule.FieldDescription:
+		m.ResetDescription()
+		return nil
+	}
+	return fmt.Errorf("unknown RetryFilterRule field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *RetryFilterRuleMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.preset != nil {
+		edges = append(edges, retryfilterrule.EdgePreset)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *RetryFilterRuleMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case retryfilterrule.EdgePreset:
+		if id := m.preset; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *RetryFilterRuleMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *RetryFilterRuleMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *RetryFilterRuleMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedpreset {
+		edges = append(edges, retryfilterrule.EdgePreset)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *RetryFilterRuleMutation) EdgeCleared(name string) bool {
+	switch name {
+	case retryfilterrule.EdgePreset:
+		return m.clearedpreset
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *RetryFilterRuleMutation) ClearEdge(name string) error {
+	switch name {
+	case retryfilterrule.EdgePreset:
+		m.ClearPreset()
+		return nil
+	}
+	return fmt.Errorf("unknown RetryFilterRule unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *RetryFilterRuleMutation) ResetEdge(name string) error {
+	switch name {
+	case retryfilterrule.EdgePreset:
+		m.ResetPreset()
+		return nil
+	}
+	return fmt.Errorf("unknown RetryFilterRule edge %s", name)
 }
 
 // SecuritySecretMutation represents an operation that mutates the SecuritySecret nodes in the graph.

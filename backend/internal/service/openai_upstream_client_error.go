@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -53,6 +54,11 @@ func writeOpenAIUpstreamClientError(c *gin.Context, statusCode int, body []byte,
 	}
 	errorPayload["message"] = message
 
+	if StopOpenAICompactSSEKeepaliveCommitted(c) {
+		payload, _ := json.Marshal(gin.H{"error": errorPayload})
+		writeOpenAICompactSSEFailure(c, statusCode, payload)
+		return
+	}
 	c.JSON(statusCode, gin.H{"error": errorPayload})
 }
 

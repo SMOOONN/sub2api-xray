@@ -58,7 +58,13 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
-  return { ...actual, useI18n: () => ({ t: (key: string) => key }) }
+  return {
+    ...actual,
+    useI18n: () => ({
+      t: (key: string, params?: Record<string, unknown>) =>
+        key === 'admin.accounts.userResourceOwner' ? `${key}:${params?.id}` : key
+    })
+  }
 })
 
 const DataTableStub = defineComponent({
@@ -66,6 +72,7 @@ const DataTableStub = defineComponent({
   template: `
     <div>
       <div v-for="row in data" :key="row.id" :data-account-name="row.name">
+        <span data-test="resource-owner"><slot name="cell-owner_user_id" :row="row" /></span>
         <slot name="cell-groups" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
@@ -235,6 +242,46 @@ describe('admin AccountsView lite account list', () => {
       expect.objectContaining({ etag: null })
     )
     wrapper.unmount()
+  })
+
+  it('updates resource ownership on an ETag refresh and retains it after a 304', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    localStorage.setItem('account-auto-refresh', JSON.stringify({ enabled: true, interval_seconds: 5 }))
+    const refreshedData = (owner_user_id?: number) => ({
+      items: [{ ...listRow, owner_user_id }], total: 1, page: 1, page_size: 20, pages: 1
+    })
+    listWithEtag
+      .mockResolvedValueOnce({ notModified: false, etag: 'owner-7', data: refreshedData(7) })
+      .mockResolvedValueOnce({ notModified: true, etag: 'owner-7', data: null })
+      .mockResolvedValueOnce({ notModified: false, etag: 'owner-9', data: refreshedData(9) })
+      .mockResolvedValueOnce({ notModified: false, etag: 'system-owner', data: refreshedData() })
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+      expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.systemResource')
+
+      await vi.advanceTimersByTimeAsync(6000)
+      await flushPromises()
+      expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.userResourceOwner:7')
+
+      await vi.advanceTimersByTimeAsync(6000)
+      await flushPromises()
+      expect(listWithEtag).toHaveBeenLastCalledWith(
+        1, 20, expect.objectContaining({ lite: '1' }), expect.objectContaining({ etag: 'owner-7' })
+      )
+      expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.userResourceOwner:7')
+
+      await vi.advanceTimersByTimeAsync(6000)
+      await flushPromises()
+      expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.userResourceOwner:9')
+
+      await vi.advanceTimersByTimeAsync(6000)
+      await flushPromises()
+      expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.systemResource')
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('loads the full account by id before opening edit, test, and stats actions', async () => {

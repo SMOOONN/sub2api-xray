@@ -974,6 +974,7 @@ var (
 		{Name: "messages_dispatch_model_config", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "model_allowlist", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "codex_models_manifest_config", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "retry_filter_config", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "rpm_limit", Type: field.TypeInt, Default: 0},
 		{Name: "max_reasoning_effort", Type: field.TypeString, Size: 20, Default: ""},
 		{Name: "max_reasoning_effort_over_limit", Type: field.TypeString, Size: 20, Default: "downgrade"},
@@ -1655,6 +1656,59 @@ var (
 			},
 		},
 	}
+	// RetryFilterPresetsColumns holds the columns for the "retry_filter_presets" table.
+	RetryFilterPresetsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "name", Type: field.TypeString, Size: 100},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
+	}
+	// RetryFilterPresetsTable holds the schema information for the "retry_filter_presets" table.
+	RetryFilterPresetsTable = &schema.Table{
+		Name:       "retry_filter_presets",
+		Columns:    RetryFilterPresetsColumns,
+		PrimaryKey: []*schema.Column{RetryFilterPresetsColumns[0]},
+	}
+	// RetryFilterRulesColumns holds the columns for the "retry_filter_rules" table.
+	RetryFilterRulesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "name", Type: field.TypeString, Size: 100},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "priority", Type: field.TypeInt, Default: 0},
+		{Name: "status_codes", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "keywords", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "upstream_codes", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "upstream_code_paths", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "models", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "match_mode", Type: field.TypeString, Size: 10, Default: "any"},
+		{Name: "action", Type: field.TypeString, Size: 32, Default: "same_account_retry"},
+		{Name: "retry_count_override", Type: field.TypeInt, Nullable: true},
+		{Name: "retry_delay_ms", Type: field.TypeInt, Nullable: true},
+		{Name: "empty_request_mode", Type: field.TypeString, Size: 16, Default: "none"},
+		{Name: "empty_response_mode", Type: field.TypeString, Size: 16, Default: "none"},
+		{Name: "terminate_status_code", Type: field.TypeInt, Nullable: true},
+		{Name: "terminate_message", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "preset_id", Type: field.TypeInt64},
+	}
+	// RetryFilterRulesTable holds the schema information for the "retry_filter_rules" table.
+	RetryFilterRulesTable = &schema.Table{
+		Name:       "retry_filter_rules",
+		Columns:    RetryFilterRulesColumns,
+		PrimaryKey: []*schema.Column{RetryFilterRulesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "retry_filter_rules_retry_filter_presets_rules",
+				Columns:    []*schema.Column{RetryFilterRulesColumns[20]},
+				RefColumns: []*schema.Column{RetryFilterPresetsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+	}
 	// SecuritySecretsColumns holds the columns for the "security_secrets" table.
 	SecuritySecretsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2297,6 +2351,8 @@ var (
 		ProxySourcesTable,
 		RedeemCodesTable,
 		RedeemCodeUsagesTable,
+		RetryFilterPresetsTable,
+		RetryFilterRulesTable,
 		SecuritySecretsTable,
 		SettingsTable,
 		SubscriptionPlansTable,
@@ -2424,6 +2480,13 @@ func init() {
 	RedeemCodeUsagesTable.ForeignKeys[1].RefTable = UsersTable
 	RedeemCodeUsagesTable.Annotation = &entsql.Annotation{
 		Table: "redeem_code_usages",
+	}
+	RetryFilterPresetsTable.Annotation = &entsql.Annotation{
+		Table: "retry_filter_presets",
+	}
+	RetryFilterRulesTable.ForeignKeys[0].RefTable = RetryFilterPresetsTable
+	RetryFilterRulesTable.Annotation = &entsql.Annotation{
+		Table: "retry_filter_rules",
 	}
 	SecuritySecretsTable.Annotation = &entsql.Annotation{
 		Table: "security_secrets",

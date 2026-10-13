@@ -389,6 +389,10 @@ type UpdateGroupInput struct {
 	MaxReasoningEffortOverLimit *string
 	// ReasoningEffortMappings nil 表示不修改，空数组表示清空，非空数组表示替换。
 	ReasoningEffortMappings *[]ReasoningEffortMapping
+	// RetryFilterConfig controls the optional group-level retry-filter preset.
+	// A nil pointer leaves the current binding unchanged; a non-nil pointer
+	// replaces it, including a nil PresetID to clear the binding.
+	RetryFilterConfig *GroupRetryFilterConfig
 	// 分组利润控制（nil 表示不修改；margin/buffer 为小数）
 	ProfitControlEnabled *bool
 	ProfitMinMargin      *float64

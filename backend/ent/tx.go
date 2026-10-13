@@ -72,6 +72,10 @@ type Tx struct {
 	RedeemCode *RedeemCodeClient
 	// RedeemCodeUsage is the client for interacting with the RedeemCodeUsage builders.
 	RedeemCodeUsage *RedeemCodeUsageClient
+	// RetryFilterPreset is the client for interacting with the RetryFilterPreset builders.
+	RetryFilterPreset *RetryFilterPresetClient
+	// RetryFilterRule is the client for interacting with the RetryFilterRule builders.
+	RetryFilterRule *RetryFilterRuleClient
 	// SecuritySecret is the client for interacting with the SecuritySecret builders.
 	SecuritySecret *SecuritySecretClient
 	// Setting is the client for interacting with the Setting builders.
@@ -256,6 +260,8 @@ func (tx *Tx) init() {
 	tx.ProxySource = NewProxySourceClient(tx.config)
 	tx.RedeemCode = NewRedeemCodeClient(tx.config)
 	tx.RedeemCodeUsage = NewRedeemCodeUsageClient(tx.config)
+	tx.RetryFilterPreset = NewRetryFilterPresetClient(tx.config)
+	tx.RetryFilterRule = NewRetryFilterRuleClient(tx.config)
 	tx.SecuritySecret = NewSecuritySecretClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)

@@ -1122,6 +1122,13 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		}
 		group.ReasoningEffortMappings = reasoningEffortMappings
 	}
+	if input.RetryFilterConfig != nil {
+		config := *input.RetryFilterConfig
+		if config.PresetID != nil && *config.PresetID <= 0 {
+			config.PresetID = nil
+		}
+		group.RetryFilterConfig = config
+	}
 	sanitizeGroupMessagesDispatchFields(group)
 	sanitizeGroupOpenAIFast(group)
 	if group.Platform != PlatformOpenAI && group.Platform != PlatformComposite {

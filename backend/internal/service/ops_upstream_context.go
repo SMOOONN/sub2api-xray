@@ -378,7 +378,17 @@ func setOpsUpstreamError(c *gin.Context, upstreamStatusCode int, upstreamMessage
 // OpsUpstreamErrorEvent describes one upstream error attempt during a single gateway request.
 // It is stored in ops_error_logs.upstream_errors as a JSON array.
 type OpsUpstreamErrorEvent struct {
-	AtUnixMs int64 `json:"at_unix_ms,omitempty"`
+	// In-memory attribution only; neither identity is persisted in Ops JSON.
+	retryFilterAttempt         *retryFilterAttempt
+	retryFilterFailure         *UpstreamFailoverError
+	AtUnixMs                   int64  `json:"at_unix_ms,omitempty"`
+	RetryFilterPresetID        int64  `json:"retry_filter_preset_id,omitempty"`
+	RetryFilterRuleID          int64  `json:"retry_filter_rule_id,omitempty"`
+	RetryFilterAction          string `json:"retry_filter_action,omitempty"`
+	RetryFilterBehaviorChanged bool   `json:"retry_filter_behavior_changed,omitempty"`
+	RetryFilterEventType       string `json:"retry_filter_event_type,omitempty"`
+	RetryFilterRetryCount      *int   `json:"retry_filter_retry_count,omitempty"`
+	RetryFilterRetryDelayMs    *int   `json:"retry_filter_retry_delay_ms,omitempty"`
 
 	// Passthrough 表示本次请求是否命中“原样透传（仅替换认证）”分支。
 	// 该字段用于排障与灰度评估；存入 JSON，不涉及 DB schema 变更。
@@ -441,6 +451,18 @@ func appendOpsUpstreamError(c *gin.Context, ev OpsUpstreamErrorEvent) {
 	if c == nil {
 		return
 	}
+	var pending *UpstreamFailoverError
+	if c.Request != nil {
+		if attempt := retryFilterAttemptFromContext(c.Request.Context()); attempt != nil {
+			ev.retryFilterAttempt = attempt
+			if attempt.pending != nil && attempt.accountID == ev.AccountID && attempt.pending.StatusCode == ev.UpstreamStatusCode {
+				pending = attempt.pending
+			}
+		}
+	}
+	if ev.retryFilterFailure != nil {
+		pending = ev.retryFilterFailure
+	}
 	if ev.AtUnixMs <= 0 {
 		ev.AtUnixMs = time.Now().UnixMilli()
 	}
@@ -467,6 +489,17 @@ func appendOpsUpstreamError(c *gin.Context, ev OpsUpstreamErrorEvent) {
 	}
 
 	evCopy := ev
+	if pending != nil && pending.retryFilterOpsEvent == nil {
+		pending.retryFilterOpsEvent = &evCopy
+		if !pending.retryFilterRecorded && pending.retryFilterDecision != nil {
+			d := pending.retryFilterDecision
+			evCopy.RetryFilterPresetID, evCopy.RetryFilterRuleID = d.PresetID, d.Rule.ID
+			evCopy.RetryFilterAction, evCopy.RetryFilterBehaviorChanged = d.Action, pending.retryFilterChanged
+			evCopy.RetryFilterRetryCount, evCopy.RetryFilterRetryDelayMs = d.Rule.RetryCountOverride, d.Rule.RetryDelayMs
+			evCopy.RetryFilterEventType = string(pending.RetryFilterEventType)
+			logRetryFilterDecision(c, ev.AccountID, pending)
+		}
+	}
 	existing = append(existing, &evCopy)
 	c.Set(OpsUpstreamErrorsKey, existing)
 
@@ -675,4 +708,35 @@ func safeUpstreamURL(rawURL string) string {
 		rawURL = rawURL[:idx]
 	}
 	return rawURL
+}
+
+// RecordOpsRetryFilterMatch annotates the current attempt using identifiers only.
+// It does not copy the upstream body, URL or credentials into retry telemetry.
+func RecordOpsRetryFilterMatch(c *gin.Context, accountID int64, statusCode int, presetID, ruleID int64, action string, changed bool, retryCount, retryDelayMs *int, eventTypes ...string) {
+	if c == nil {
+		return
+	}
+	eventType := ""
+	if len(eventTypes) > 0 {
+		eventType = strings.TrimSpace(eventTypes[0])
+	}
+	if value, ok := c.Get(OpsUpstreamErrorsKey); ok {
+		if events, ok := value.([]*OpsUpstreamErrorEvent); ok && len(events) > 0 {
+			last := events[len(events)-1]
+			var attempt *retryFilterAttempt
+			if c.Request != nil {
+				attempt = retryFilterAttemptFromContext(c.Request.Context())
+			}
+			if last != nil && last.retryFilterAttempt == attempt && last.AccountID == accountID && last.UpstreamStatusCode == statusCode && last.RetryFilterRuleID == 0 {
+				last.RetryFilterPresetID, last.RetryFilterRuleID = presetID, ruleID
+				last.RetryFilterAction, last.RetryFilterBehaviorChanged = action, changed
+				last.RetryFilterRetryCount, last.RetryFilterRetryDelayMs = retryCount, retryDelayMs
+				if eventType != "" {
+					last.RetryFilterEventType = eventType
+				}
+				return
+			}
+		}
+	}
+	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{AccountID: accountID, UpstreamStatusCode: statusCode, Kind: "failover", RetryFilterPresetID: presetID, RetryFilterRuleID: ruleID, RetryFilterAction: action, RetryFilterBehaviorChanged: changed, RetryFilterEventType: eventType, RetryFilterRetryCount: retryCount, RetryFilterRetryDelayMs: retryDelayMs})
 }

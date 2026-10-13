@@ -1128,6 +1128,20 @@ func (_u *GroupUpdate) SetNillableCodexModelsManifestConfig(v *domain.GroupCodex
 	return _u
 }
 
+// SetRetryFilterConfig sets the "retry_filter_config" field.
+func (_u *GroupUpdate) SetRetryFilterConfig(v domain.GroupRetryFilterConfig) *GroupUpdate {
+	_u.mutation.SetRetryFilterConfig(v)
+	return _u
+}
+
+// SetNillableRetryFilterConfig sets the "retry_filter_config" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableRetryFilterConfig(v *domain.GroupRetryFilterConfig) *GroupUpdate {
+	if v != nil {
+		_u.SetRetryFilterConfig(*v)
+	}
+	return _u
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (_u *GroupUpdate) SetRpmLimit(v int) *GroupUpdate {
 	_u.mutation.ResetRpmLimit()
@@ -1917,6 +1931,9 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.CodexModelsManifestConfig(); ok {
 		_spec.SetField(group.FieldCodexModelsManifestConfig, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.RetryFilterConfig(); ok {
+		_spec.SetField(group.FieldRetryFilterConfig, field.TypeJSON, value)
 	}
 	if value, ok := _u.mutation.RpmLimit(); ok {
 		_spec.SetField(group.FieldRpmLimit, field.TypeInt, value)
@@ -3358,6 +3375,20 @@ func (_u *GroupUpdateOne) SetNillableCodexModelsManifestConfig(v *domain.GroupCo
 	return _u
 }
 
+// SetRetryFilterConfig sets the "retry_filter_config" field.
+func (_u *GroupUpdateOne) SetRetryFilterConfig(v domain.GroupRetryFilterConfig) *GroupUpdateOne {
+	_u.mutation.SetRetryFilterConfig(v)
+	return _u
+}
+
+// SetNillableRetryFilterConfig sets the "retry_filter_config" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableRetryFilterConfig(v *domain.GroupRetryFilterConfig) *GroupUpdateOne {
+	if v != nil {
+		_u.SetRetryFilterConfig(*v)
+	}
+	return _u
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (_u *GroupUpdateOne) SetRpmLimit(v int) *GroupUpdateOne {
 	_u.mutation.ResetRpmLimit()
@@ -4177,6 +4208,9 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.CodexModelsManifestConfig(); ok {
 		_spec.SetField(group.FieldCodexModelsManifestConfig, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.RetryFilterConfig(); ok {
+		_spec.SetField(group.FieldRetryFilterConfig, field.TypeJSON, value)
 	}
 	if value, ok := _u.mutation.RpmLimit(); ok {
 		_spec.SetField(group.FieldRpmLimit, field.TypeInt, value)

@@ -99,6 +99,7 @@ func RegisterAdminRoutes(
 
 		// 错误透传规则管理
 		registerErrorPassthroughRoutes(admin, h)
+		registerRetryFilterRoutes(admin, h)
 
 		// TLS 指纹模板管理
 		registerTLSFingerprintProfileRoutes(admin, h)
@@ -364,7 +365,10 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/upstream-billing-probe/batch", h.Admin.Account.ProbeUpstreamBillingBatch)
 		accounts.GET("/ollama-cloud-usage/settings", h.Admin.Account.GetOllamaCloudUsageSettings)
 		accounts.PUT("/ollama-cloud-usage/settings", h.Admin.Account.UpdateOllamaCloudUsageSettings)
+		accounts.GET("/opencode-go-usage/settings", h.Admin.Account.GetOpenCodeGoUsageSettings)
+		accounts.PUT("/opencode-go-usage/settings", h.Admin.Account.UpdateOpenCodeGoUsageSettings)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
+		accounts.GET("/:id/claude/reset-credits", h.Admin.Account.ClaudeResetCredits)
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/:id/duplicate", h.Admin.Account.Duplicate)
 		accounts.POST("/check-mixed-channel", h.Admin.Account.CheckMixedChannel)
@@ -381,6 +385,9 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.DELETE("/:id/ollama-cloud-usage/session", h.Admin.Account.DeleteOllamaCloudUsageSession)
 		accounts.PUT("/:id/ollama-cloud-usage/auto-refresh", h.Admin.Account.SetOllamaCloudUsageAutoRefresh)
 		accounts.POST("/:id/ollama-cloud-usage/refresh", h.Admin.Account.RefreshOllamaCloudUsage)
+		accounts.GET("/:id/opencode-go-usage", h.Admin.Account.GetOpenCodeGoUsage)
+		accounts.PUT("/:id/opencode-go-usage/auto-refresh", h.Admin.Account.SetOpenCodeGoUsageAutoRefresh)
+		accounts.POST("/:id/opencode-go-usage/refresh", h.Admin.Account.RefreshOpenCodeGoUsage)
 		accounts.DELETE("/:id", h.Admin.Account.Delete)
 		accounts.POST("/:id/test", h.Admin.Account.Test)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
@@ -454,6 +461,8 @@ func registerOpenAIOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		openai.GET("/accounts/:id/quota", h.Admin.OpenAIOAuth.QueryQuota)
 		openai.POST("/accounts/:id/quota/refresh", h.Admin.OpenAIOAuth.RefreshQuota)
 		openai.POST("/accounts/:id/reset-quota", h.Admin.OpenAIOAuth.ResetQuota)
+		openai.POST("/accounts/:id/referrals/refresh", h.Admin.OpenAIOAuth.RefreshReferrals)
+		openai.POST("/accounts/:id/referrals/invite", h.Admin.OpenAIOAuth.SendReferralInvite)
 	}
 }
 
@@ -766,6 +775,7 @@ func registerPluginRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAut
 		plugins.POST("/:id/disable", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Disable)
 		plugins.DELETE("/:id", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Delete)
 		plugins.GET("/:id/config", h.Admin.Plugin.GetConfig)
+		plugins.GET("/:id/status", h.Admin.Plugin.Status)
 		plugins.PUT("/:id/config", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.SaveConfig)
 		plugins.POST("/:id/test", gin.HandlerFunc(stepUpAuth), h.Admin.Plugin.Test)
 		plugins.POST("/:id/ui-session", h.Admin.Plugin.CreateUISession)
@@ -827,6 +837,7 @@ func registerAffiliateRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 			users.GET("/lookup", h.Admin.Affiliate.LookupUsers)
 			users.POST("/batch-rate", h.Admin.Affiliate.BatchSetRate)
 			users.GET("/:user_id/overview", h.Admin.Affiliate.GetUserOverview)
+			users.POST("/:user_id/withdraw", h.Admin.Affiliate.WithdrawQuota)
 			users.PUT("/:user_id", h.Admin.Affiliate.UpdateUserSettings)
 			users.DELETE("/:user_id", h.Admin.Affiliate.ClearUserSettings)
 		}
@@ -892,4 +903,40 @@ func channelMonitorModeV2Guard(settingService *service.SettingService) gin.Handl
 		}
 		c.Next()
 	}
+}
+
+func registerRetryFilterRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	r := admin.Group("/retry-filter")
+	r.GET("/presets", h.Admin.RetryFilter.ListPresets)
+	r.POST("/presets", h.Admin.RetryFilter.SavePreset)
+	r.GET("/presets/:presetID", h.Admin.RetryFilter.GetPreset)
+	r.GET("/presets/:presetID/detail", h.Admin.RetryFilter.GetPresetDetail)
+	r.PUT("/presets/:presetID", h.Admin.RetryFilter.SavePreset)
+	r.DELETE("/presets/:presetID", h.Admin.RetryFilter.DeletePreset)
+	r.GET("/presets/:presetID/rules", h.Admin.RetryFilter.ListRules)
+	r.POST("/presets/:presetID/rules", h.Admin.RetryFilter.SaveRule)
+	r.PUT("/presets/:presetID/rules/order", h.Admin.RetryFilter.ReorderRules)
+	r.PUT("/presets/:presetID/rules/reorder", h.Admin.RetryFilter.ReorderRules)
+	r.GET("/presets/:presetID/rules/:ruleID", h.Admin.RetryFilter.GetRule)
+	r.PUT("/presets/:presetID/rules/:ruleID", h.Admin.RetryFilter.SaveRule)
+	r.DELETE("/presets/:presetID/rules/:ruleID", h.Admin.RetryFilter.DeleteRule)
+	r.PUT("/presets/:presetID/bindings", h.Admin.RetryFilter.BindPreset)
+	r.GET("/default", h.Admin.RetryFilter.GetDefault)
+	r.PUT("/default", h.Admin.RetryFilter.SetDefault)
+	r.GET("/bindings/accounts", h.Admin.RetryFilter.ListAccountBindingCandidates)
+	r.GET("/bindings/groups", h.Admin.RetryFilter.ListGroupBindingCandidates)
+	r.GET("/binding-candidates/accounts", h.Admin.RetryFilter.ListAccountBindingCandidates)
+	r.GET("/binding-candidates/groups", h.Admin.RetryFilter.ListGroupBindingCandidates)
+	r.PUT("/bindings/accounts/batch", h.Admin.RetryFilter.BindAccountsBatch)
+	r.PUT("/bindings/groups/batch", h.Admin.RetryFilter.BindGroupsBatch)
+	r.GET("/bindings/accounts/:accountID", h.Admin.RetryFilter.AccountBinding)
+	r.PUT("/bindings/accounts/:accountID", h.Admin.RetryFilter.AccountBinding)
+	r.GET("/bindings/groups/:groupID", h.Admin.RetryFilter.GroupBinding)
+	r.PUT("/bindings/groups/:groupID", h.Admin.RetryFilter.GroupBinding)
+	r.GET("/effective-source", h.Admin.RetryFilter.EffectiveSource)
+	r.GET("/monitor", h.Admin.RetryFilter.ListMonitor)
+	r.GET("/monitor/events", h.Admin.RetryFilter.ListMonitor)
+	r.GET("/monitor/events/:id", h.Admin.RetryFilter.GetMonitorEvent)
+	r.GET("/monitor/stats", h.Admin.RetryFilter.ListMonitor)
+	r.GET("/monitor/:id", h.Admin.RetryFilter.GetMonitorEvent)
 }

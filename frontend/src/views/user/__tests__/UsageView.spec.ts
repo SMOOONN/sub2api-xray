@@ -415,6 +415,39 @@ describe('user UsageView', () => {
     clickSpy.mockRestore()
   })
 
+  it('keeps formula-injection protection for dangerous exported values', async () => {
+    query.mockResolvedValue({
+      items: [{ ...usageLog, api_key: { name: '-1+1' } }],
+      total: 1,
+      pages: 1,
+    })
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    let csvContent = ''
+    const OriginalBlob = globalThis.Blob
+    vi.stubGlobal('Blob', vi.fn((parts: BlobPart[], options?: BlobPropertyBag) => {
+      csvContent = parts.map((part) => String(part)).join('')
+      return new OriginalBlob(parts, options)
+    }))
+    const originalCreateObjectURL = window.URL.createObjectURL
+    const originalRevokeObjectURL = window.URL.revokeObjectURL
+    window.URL.createObjectURL = vi.fn(() => 'blob:usage-export') as typeof window.URL.createObjectURL
+    window.URL.revokeObjectURL = vi.fn(() => {}) as typeof window.URL.revokeObjectURL
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    await (wrapper.vm as any).exportToCSV()
+
+    expect(csvContent).toContain(',"\'-1+1",gpt-5.4,"\'-",')
+    expect(showSuccess).toHaveBeenCalled()
+
+    window.URL.createObjectURL = originalCreateObjectURL
+    window.URL.revokeObjectURL = originalRevokeObjectURL
+    vi.unstubAllGlobals()
+    clickSpy.mockRestore()
+    wrapper.unmount()
+  })
+
   it('keeps the initial filters, sort, and filename while exporting multiple pages', async () => {
     const pageResponse = { items: [usageLog], total: 101, pages: 2 }
     query.mockResolvedValue(pageResponse)

@@ -93,6 +93,12 @@ type RedeemCode func(*sql.Selector)
 // RedeemCodeUsage is the predicate function for redeemcodeusage builders.
 type RedeemCodeUsage func(*sql.Selector)
 
+// RetryFilterPreset is the predicate function for retryfilterpreset builders.
+type RetryFilterPreset func(*sql.Selector)
+
+// RetryFilterRule is the predicate function for retryfilterrule builders.
+type RetryFilterRule func(*sql.Selector)
+
 // SecuritySecret is the predicate function for securitysecret builders.
 type SecuritySecret func(*sql.Selector)
 

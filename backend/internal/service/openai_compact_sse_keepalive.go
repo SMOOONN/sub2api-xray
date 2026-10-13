@@ -32,8 +32,10 @@ type openAICompactSSEKeepalive struct {
 	// bytes 是心跳已写出的注释字节数。心跳不构成语义响应，handler 的
 	// "Forward 期间是否已写响应"判定（failover 放弃换号的依据）必须扣除
 	// 这部分字节，见 OpenAICompactKeepaliveAdjustedWrittenSize。
-	bytes int
-	stop  chan struct{}
+	bytes               int
+	previousBytes       int
+	previouslyCommitted bool
+	stop                chan struct{}
 }
 
 // StartOpenAICompactSSEKeepalive 为已标记 body-signal 客户端流式的 compact
@@ -60,9 +62,24 @@ func startOpenAISSEKeepalive(c *gin.Context, interval time.Duration) func() {
 		return func() {}
 	}
 	originalWriter := c.Writer
+	previousBytes, previouslyCommitted := 0, false
+	if value, ok := c.Get(openAICompactSSEKeepaliveKey); ok {
+		if previous, ok := value.(*openAICompactSSEKeepalive); ok && previous != nil {
+			previous.mu.Lock()
+			previous.markStoppedLocked()
+			previousBytes = previous.previousBytes + previous.bytes
+			previouslyCommitted = previous.previouslyCommitted || previous.started
+			previous.mu.Unlock()
+			if wrapper, ok := originalWriter.(*openAICompactKeepaliveWriter); ok && wrapper.k == previous {
+				originalWriter = wrapper.ResponseWriter
+			}
+		}
+	}
 	k := &openAICompactSSEKeepalive{
-		writer: originalWriter,
-		stop:   make(chan struct{}),
+		writer:              originalWriter,
+		stop:                make(chan struct{}),
+		previousBytes:       previousBytes,
+		previouslyCommitted: previouslyCommitted,
 	}
 	c.Set(openAICompactSSEKeepaliveKey, k)
 	wrappedWriter := &openAICompactKeepaliveWriter{ResponseWriter: originalWriter, k: k}
@@ -149,17 +166,22 @@ func StopOpenAICompactSSEKeepaliveCommitted(c *gin.Context) bool {
 	if c == nil {
 		return false
 	}
+	streamCommitted := false
+	if value, ok := c.Get(openAIStreamKeepaliveBytesKey); ok {
+		written, _ := value.(int)
+		streamCommitted = written > 0
+	}
 	value, ok := c.Get(openAICompactSSEKeepaliveKey)
 	if !ok {
-		return false
+		return streamCommitted
 	}
 	k, ok := value.(*openAICompactSSEKeepalive)
 	if !ok || k == nil {
-		return false
+		return streamCommitted
 	}
 	k.mu.Lock()
 	k.markStoppedLocked()
-	committed := k.started
+	committed := k.started || k.previouslyCommitted || streamCommitted
 	k.mu.Unlock()
 	return committed
 }
@@ -184,7 +206,7 @@ func OpenAICompactKeepaliveAdjustedWrittenSize(c *gin.Context) int {
 		if k, valid := value.(*openAICompactSSEKeepalive); valid && k != nil {
 			k.mu.Lock()
 			size = k.writer.Size()
-			compactKeepaliveBytes = k.bytes
+			compactKeepaliveBytes = k.previousBytes + k.bytes
 			k.mu.Unlock()
 		}
 	}

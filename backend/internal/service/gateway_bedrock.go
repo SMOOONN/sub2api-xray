@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 // ApplyBedrockCCCompat 应用 Bedrock CC 兼容转换（渠道级模型映射后调用）
@@ -24,6 +25,9 @@ import (
 func (s *GatewayService) ApplyBedrockCCCompat(c *gin.Context, body []byte, model string, account *Account, groupID *int64) []byte {
 	if !s.isBedrockCCCompatEnabled(c.Request.Context(), account, groupID) {
 		return body
+	}
+	if resolved, ok := ResolveBedrockModelID(account, model); ok {
+		model = resolved
 	}
 	body = sanitizeBedrockCCFields(body)
 	body = sanitizeBedrockThinking(body, model)
@@ -390,7 +394,15 @@ func (s *GatewayService) handleBedrockNonStreamingResponse(
 
 	// 转换 Bedrock 特有的 amazon-bedrock-invocationMetrics 为标准 Anthropic usage 格式
 	// 并移除该字段避免透传给客户端
+	originalJSONValid := gjson.ValidBytes(body)
 	body = transformBedrockInvocationMetrics(body)
+
+	// Removing malformed metrics can make invalid upstream JSON parseable.
+	if originalJSONValid {
+		if candidate := prepareRetryFilterEmptyJSON(ctx, c, account, resp, body); candidate != nil {
+			return nil, candidate
+		}
+	}
 
 	usage := parseClaudeUsageFromResponseBody(body)
 

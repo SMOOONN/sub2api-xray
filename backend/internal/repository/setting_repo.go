@@ -4,23 +4,23 @@ import (
 	"context"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/ent"
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
 type settingRepository struct {
-	client *ent.Client
+	client *dbent.Client
 }
 
-func NewSettingRepository(client *ent.Client) service.SettingRepository {
+func NewSettingRepository(client *dbent.Client) service.SettingRepository {
 	return &settingRepository{client: client}
 }
 
 func (r *settingRepository) Get(ctx context.Context, key string) (*service.Setting, error) {
 	m, err := r.client.Setting.Query().Where(setting.KeyEQ(key)).Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if dbent.IsNotFound(err) {
 			return nil, service.ErrSettingNotFound
 		}
 		return nil, err
@@ -43,7 +43,7 @@ func (r *settingRepository) GetValue(ctx context.Context, key string) (string, e
 
 func (r *settingRepository) Set(ctx context.Context, key, value string) error {
 	now := time.Now()
-	return r.client.Setting.
+	return clientFromContext(ctx, r.client).Setting.
 		Create().
 		SetKey(key).
 		SetValue(value).
@@ -75,7 +75,7 @@ func (r *settingRepository) SetMultiple(ctx context.Context, settings map[string
 	}
 
 	now := time.Now()
-	builders := make([]*ent.SettingCreate, 0, len(settings))
+	builders := make([]*dbent.SettingCreate, 0, len(settings))
 	for key, value := range settings {
 		builders = append(builders, r.client.Setting.Create().SetKey(key).SetValue(value).SetUpdatedAt(now))
 	}

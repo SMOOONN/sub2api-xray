@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -87,8 +88,16 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 	respBody []byte,
 	upstreamMsg string,
 	upstreamModel string,
-) *UpstreamFailoverError {
+) (*UpstreamFailoverError, *UpstreamFailoverError) {
 	shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody)
+	if account != nil && account.Platform == PlatformGrok {
+		shouldFailover = s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody)
+	}
+	candidate := s.prepareOpenAIHTTPFailure(ctx, c, account, resp, respBody, upstreamMsg, shouldFailover)
+	if candidate.retryFilterDecision.Actionable() && !IsResponseCommitted(c) {
+		recordRetryFilterFailure(c, account, candidate)
+		return candidate, candidate
+	}
 	tempUnscheduled := false
 	if c != nil && account != nil && account.Platform != PlatformGrok && !shouldFailover && !IsResponseCommitted(c) && s.rateLimitService != nil {
 		tempUnscheduled = s.rateLimitService.CheckErrorPolicy(ctx, account, resp.StatusCode, respBody, upstreamModel) == ErrorPolicyTempUnscheduled
@@ -101,7 +110,7 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 		s.handleGrokAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
 	}
 	if !shouldFailover {
-		return nil
+		return nil, candidate
 	}
 	upstreamDetail := ""
 	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
@@ -127,7 +136,7 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 	if account.Platform != PlatformGrok && !tempUnscheduled {
 		shouldDisable = s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, upstreamModel)
 	}
-	return s.newOpenAIAccountFailoverError(
+	failoverErr := s.newOpenAIAccountFailoverError(
 		account,
 		resp.StatusCode,
 		resp.Header,
@@ -136,6 +145,18 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 		shouldDisable,
 		!shouldDisable && account.IsPoolMode() && (account.IsPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
 	)
+	copyRetryFilterEvaluation(failoverErr, candidate)
+	return failoverErr, candidate
+}
+
+func (s *OpenAIGatewayService) prepareOpenAIHTTPFailure(ctx context.Context, c *gin.Context, account *Account, resp *http.Response, body []byte, message string, legacyFailover bool) *UpstreamFailoverError {
+	candidate := s.newOpenAIAccountFailoverError(account, resp.StatusCode, resp.Header, body, message, false,
+		account != nil && account.IsPoolMode() && (account.IsPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, message, body)))
+	if !legacyFailover {
+		candidate.NextAccountAction = NextAccountStop
+	}
+	prepareRetryFilterFailure(ctx, c, account, candidate)
+	return candidate
 }
 
 // openAIChatCompletionsTargetURL 解析账号的（非 Grok）Chat Completions 上游端点。
@@ -182,6 +203,11 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	userAgent string,
 	grokCacheIdentity string,
 ) (*http.Response, error) {
+	// DeepSeek thinking mode 要求历史 assistant 回传 reasoning_content。
+	// Responses→CC 回退在加密-only / 缺 reasoning item 且缓存未命中时会漏掉该
+	// 字段，上游 400 "The `reasoning_content` in the thinking mode must be
+	// passed back to the API"。在共用出站点补空格占位，真实明文不覆盖。
+	body = ensureDeepSeekChatReasoningPlaceholders(account, body)
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 	upstreamReq, err := http.NewRequestWithContext(upstreamCtx, http.MethodPost, targetURL, bytes.NewReader(body))
 	releaseUpstreamCtx()
@@ -220,6 +246,10 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 		}
 		applyGrokCacheHeaders(upstreamReq.Header, grokCacheIdentity)
 	}
+	// 官方 OpenCode / Command Code 上游收敛为规范客户端 UA：客户端透传的编程库
+	// UA 会命中其前置 Cloudflare bot 拦截（CF 1010/403），并被计入账号 403 strike。
+	applyOpenCodeUpstreamUserAgent(account, targetURL, upstreamReq.Header)
+
 	// 账号级请求头覆写：放在所有内置默认头（含 Grok CLI 身份头）之后应用，
 	// 使配置值获得除共享传输层强制头之外的最高优先级。
 	account.ApplyHeaderOverrides(upstreamReq.Header)
@@ -244,7 +274,14 @@ type ccStreamScanState struct {
 	// FirstTokenMs 为首个实际输出 chunk（排除 usage-only chunk）的到达时延。
 	FirstTokenMs *int
 	// SawDone 表示上游发出了 [DONE] 哨兵。
-	SawDone bool
+	SawDone            bool
+	SawFinish          bool
+	SemanticOutputSeen bool
+	ErrorPayload       []byte
+	EOF                bool
+	// CallbackErr is a decision or a local staging/write failure, never an
+	// upstream empty/read event.
+	CallbackErr error
 	// Err 为 scanner 读错误（客户端 context 取消不属于此类，会原样带出）。
 	// 非 nil 时调用方必须跳过 finalize 并返回 usage-incomplete 错误，避免
 	// 把上游截断伪装成正常收尾。
@@ -261,7 +298,8 @@ func (s *OpenAIGatewayService) scanCCStream(
 	logPrefix string,
 	requestID string,
 	startTime time.Time,
-	emit func(*apicompat.ChatCompletionsChunk),
+	emit func(*apicompat.ChatCompletionsChunk) error,
+	inspect ...func([]byte) error,
 ) ccStreamScanState {
 	var st ccStreamScanState
 
@@ -279,6 +317,22 @@ func (s *OpenAIGatewayService) scanCCStream(
 		if payload == "[DONE]" {
 			st.SawDone = true
 			break
+		}
+		payloadBytes := []byte(payload)
+		// Error envelopes also unmarshal as an empty ChatCompletionsChunk.
+		// Inspect the original envelope before conversion can manufacture a
+		// message_start/stop pair and lose the upstream code.
+		if gjson.GetBytes(payloadBytes, "error").Exists() || gjson.GetBytes(payloadBytes, "type").String() == "error" {
+			st.ErrorPayload = append([]byte(nil), payloadBytes...)
+		}
+		if RetryFilterResponseHasValidOutput("", payloadBytes) {
+			st.SemanticOutputSeen = true
+		}
+		if len(inspect) > 0 && inspect[0] != nil {
+			if err := inspect[0](payloadBytes); err != nil {
+				st.CallbackErr = err
+				break
+			}
 		}
 		// 观察上游 CC chunk 回显的 model / service_tier（计费以回显为准）。
 		// CC chunk 无 type 字段，按 untyped payload 观察（上游约束：只有终止
@@ -303,7 +357,15 @@ func (s *OpenAIGatewayService) scanCCStream(
 			ms := int(time.Since(startTime).Milliseconds())
 			st.FirstTokenMs = &ms
 		}
-		emit(&chunk)
+		for _, choice := range chunk.Choices {
+			if choice.FinishReason != nil && *choice.FinishReason != "" {
+				st.SawFinish = true
+			}
+		}
+		if err := emit(&chunk); err != nil {
+			st.CallbackErr = err
+			break
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -315,6 +377,7 @@ func (s *OpenAIGatewayService) scanCCStream(
 		}
 		st.Err = err
 	}
+	st.EOF = !st.SawDone && st.Err == nil && st.CallbackErr == nil
 	return st
 }
 
@@ -361,6 +424,11 @@ func (s *OpenAIGatewayService) readCCUpstreamJSONResponse(
 // writeOpenAIResponsesFallbackError 以 /v1/responses 回退路径的既有错误格式回写
 // （裸 error 对象；不调用 MarkResponseCommitted，与原内联写法保持一致）。
 func writeOpenAIResponsesFallbackError(c *gin.Context, statusCode int, errType, message string) {
+	if StopOpenAICompactSSEKeepaliveCommitted(c) {
+		body, _ := json.Marshal(gin.H{"error": gin.H{"type": errType, "message": message}})
+		writeOpenAICompactSSEFailure(c, statusCode, body)
+		return
+	}
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{
 			"type":    errType,

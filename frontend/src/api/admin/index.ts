@@ -22,6 +22,7 @@ import cnProvidersAPI from './cnProviders'
 import userAttributesAPI from './userAttributes'
 import opsAPI from './ops'
 import errorPassthroughAPI from './errorPassthrough'
+import retryFilterAPI from './retryFilter'
 import dataManagementAPI from './dataManagement'
 import apiKeysAPI from './apiKeys'
 import scheduledTestsAPI from './scheduledTests'
@@ -60,6 +61,7 @@ export const adminAPI = {
   userAttributes: userAttributesAPI,
   ops: opsAPI,
   errorPassthrough: errorPassthroughAPI,
+  retryFilter: retryFilterAPI,
   dataManagement: dataManagementAPI,
   apiKeys: apiKeysAPI,
   scheduledTests: scheduledTestsAPI,
@@ -96,6 +98,7 @@ export {
   userAttributesAPI,
   opsAPI,
   errorPassthroughAPI,
+  retryFilterAPI,
   dataManagementAPI,
   apiKeysAPI,
   scheduledTestsAPI,
@@ -127,3 +130,20 @@ export type {
   PluginUISession,
   PluginTestResult
 } from './plugins'
+
+export type {
+  RetryFilterPreset,
+  RetryFilterRule,
+  RetryFilterAction,
+  RetryFilterBinding,
+  RetryFilterEffectiveSource,
+  RetryFilterEmptyRequestMode,
+  RetryFilterEmptyResponseMode,
+  RetryFilterBindingCandidate,
+  RetryFilterBindingCandidates,
+  RetryFilterPresetDetail,
+  RetryFilterMonitorEvent,
+  RetryFilterMonitorQuery,
+  RetryFilterMonitorResponse,
+  RetryFilterMonitorSummary,
+} from './retryFilter'

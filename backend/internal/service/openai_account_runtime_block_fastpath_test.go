@@ -488,7 +488,7 @@ func TestOpenAIPoolModeTempRule_StopsSameAccountRetryAndIsolatesBlockToModel(t *
 		Header:     http.Header{},
 	}
 
-	failoverErr := gateway.failoverOpenAIUpstreamHTTPError(
+	failoverErr, _ := gateway.failoverOpenAIUpstreamHTTPError(
 		context.Background(),
 		nil,
 		account,

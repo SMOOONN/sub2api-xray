@@ -135,7 +135,7 @@ func TestGrokContentPolicy403DoesNotMutateOrFailover(t *testing.T) {
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
 	resp := &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{}}
-	got := svc.failoverOpenAIUpstreamHTTPError(context.Background(), c, account, resp, body, "text is sensitive", "grok-4.5")
+	got, _ := svc.failoverOpenAIUpstreamHTTPError(context.Background(), c, account, resp, body, "text is sensitive", "grok-4.5")
 	require.Nil(t, got)
 	require.Zero(t, repo.tempUnschedCalls)
 }
@@ -166,7 +166,7 @@ func TestGrokNonFailoverDoesNotApplyGenericTempUnschedulablePolicy(t *testing.T)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
 	resp := &http.Response{StatusCode: http.StatusForbidden, Header: http.Header{}}
 
-	got := svc.failoverOpenAIUpstreamHTTPError(
+	got, _ := svc.failoverOpenAIUpstreamHTTPError(
 		context.Background(), c, account, resp, body, "text is sensitive", "",
 	)
 

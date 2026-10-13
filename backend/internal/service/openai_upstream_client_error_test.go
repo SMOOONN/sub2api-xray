@@ -95,7 +95,7 @@ func TestFailoverOpenAIUpstreamHTTPError_ModelNotFoundIsNextAccountEligible(t *t
 	body := []byte(`{"error":{"code":"model_not_found","message":"model not found"}}`)
 	resp := newOpenAIUpstreamErrorResponse(http.StatusBadRequest, string(body))
 
-	failoverErr := svc.failoverOpenAIUpstreamHTTPError(
+	failoverErr, _ := svc.failoverOpenAIUpstreamHTTPError(
 		context.Background(), c, account, resp, body, "model not found", "missing-model",
 	)
 

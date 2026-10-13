@@ -286,15 +286,16 @@ func newOpenAIResponsesEmptyCompletedFailoverError(c *gin.Context, account *Acco
 
 	setOpsUpstreamError(c, http.StatusBadGateway, openAIResponsesEmptyCompletedMessage, "")
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
-		ProxyID:            opsUpstreamProxyID(account),
-		ProxyName:          opsUpstreamProxyName(account),
-		Platform:           platform,
-		AccountID:          accountID,
-		AccountName:        accountName,
-		UpstreamStatusCode: http.StatusBadGateway,
-		UpstreamRequestID:  upstreamRequestID,
-		Kind:               "failover",
-		Message:            openAIResponsesEmptyCompletedMessage,
+		ProxyID:              opsUpstreamProxyID(account),
+		ProxyName:            opsUpstreamProxyName(account),
+		Platform:             platform,
+		AccountID:            accountID,
+		AccountName:          accountName,
+		UpstreamStatusCode:   http.StatusBadGateway,
+		UpstreamRequestID:    upstreamRequestID,
+		Kind:                 "failover",
+		Message:              openAIResponsesEmptyCompletedMessage,
+		RetryFilterEventType: string(RetryFilterEventEmptyCompletedResponse),
 	})
 
 	headers := http.Header{}
@@ -302,9 +303,10 @@ func newOpenAIResponsesEmptyCompletedFailoverError(c *gin.Context, account *Acco
 		headers.Set("x-request-id", strings.TrimSpace(upstreamRequestID))
 	}
 	return &UpstreamFailoverError{
-		StatusCode:      http.StatusBadGateway,
-		ResponseBody:    openAISilentRefusalErrorBody(),
-		ResponseHeaders: headers,
+		StatusCode:           http.StatusBadGateway,
+		ResponseBody:         openAISilentRefusalErrorBody(),
+		ResponseHeaders:      headers,
+		RetryFilterEventType: RetryFilterEventEmptyCompletedResponse,
 	}
 }
 

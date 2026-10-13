@@ -44,6 +44,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/proxysource"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/retryfilterpreset"
+	"github.com/Wei-Shaw/sub2api/ent/retryfilterrule"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -123,6 +125,10 @@ type Client struct {
 	RedeemCode *RedeemCodeClient
 	// RedeemCodeUsage is the client for interacting with the RedeemCodeUsage builders.
 	RedeemCodeUsage *RedeemCodeUsageClient
+	// RetryFilterPreset is the client for interacting with the RetryFilterPreset builders.
+	RetryFilterPreset *RetryFilterPresetClient
+	// RetryFilterRule is the client for interacting with the RetryFilterRule builders.
+	RetryFilterRule *RetryFilterRuleClient
 	// SecuritySecret is the client for interacting with the SecuritySecret builders.
 	SecuritySecret *SecuritySecretClient
 	// Setting is the client for interacting with the Setting builders.
@@ -187,6 +193,8 @@ func (c *Client) init() {
 	c.ProxySource = NewProxySourceClient(c.config)
 	c.RedeemCode = NewRedeemCodeClient(c.config)
 	c.RedeemCodeUsage = NewRedeemCodeUsageClient(c.config)
+	c.RetryFilterPreset = NewRetryFilterPresetClient(c.config)
+	c.RetryFilterRule = NewRetryFilterRuleClient(c.config)
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
@@ -320,6 +328,8 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ProxySource:                   NewProxySourceClient(cfg),
 		RedeemCode:                    NewRedeemCodeClient(cfg),
 		RedeemCodeUsage:               NewRedeemCodeUsageClient(cfg),
+		RetryFilterPreset:             NewRetryFilterPresetClient(cfg),
+		RetryFilterRule:               NewRetryFilterRuleClient(cfg),
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
@@ -380,6 +390,8 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ProxySource:                   NewProxySourceClient(cfg),
 		RedeemCode:                    NewRedeemCodeClient(cfg),
 		RedeemCodeUsage:               NewRedeemCodeUsageClient(cfg),
+		RetryFilterPreset:             NewRetryFilterPresetClient(cfg),
+		RetryFilterRule:               NewRetryFilterRuleClient(cfg),
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
@@ -428,10 +440,11 @@ func (c *Client) Use(hooks ...Hook) {
 		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
 		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.ProxySource, c.RedeemCode, c.RedeemCodeUsage, c.SecuritySecret,
-		c.Setting, c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask,
-		c.UsageLog, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
-		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
+		c.Proxy, c.ProxySource, c.RedeemCode, c.RedeemCodeUsage, c.RetryFilterPreset,
+		c.RetryFilterRule, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
+		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
+		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -448,10 +461,11 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
 		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.ProxySource, c.RedeemCode, c.RedeemCodeUsage, c.SecuritySecret,
-		c.Setting, c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask,
-		c.UsageLog, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
-		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
+		c.Proxy, c.ProxySource, c.RedeemCode, c.RedeemCodeUsage, c.RetryFilterPreset,
+		c.RetryFilterRule, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
+		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
+		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -518,6 +532,10 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.RedeemCode.mutate(ctx, m)
 	case *RedeemCodeUsageMutation:
 		return c.RedeemCodeUsage.mutate(ctx, m)
+	case *RetryFilterPresetMutation:
+		return c.RetryFilterPreset.mutate(ctx, m)
+	case *RetryFilterRuleMutation:
+		return c.RetryFilterRule.mutate(ctx, m)
 	case *SecuritySecretMutation:
 		return c.SecuritySecret.mutate(ctx, m)
 	case *SettingMutation:
@@ -5151,6 +5169,304 @@ func (c *RedeemCodeUsageClient) mutate(ctx context.Context, m *RedeemCodeUsageMu
 	}
 }
 
+// RetryFilterPresetClient is a client for the RetryFilterPreset schema.
+type RetryFilterPresetClient struct {
+	config
+}
+
+// NewRetryFilterPresetClient returns a client for the RetryFilterPreset from the given config.
+func NewRetryFilterPresetClient(c config) *RetryFilterPresetClient {
+	return &RetryFilterPresetClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `retryfilterpreset.Hooks(f(g(h())))`.
+func (c *RetryFilterPresetClient) Use(hooks ...Hook) {
+	c.hooks.RetryFilterPreset = append(c.hooks.RetryFilterPreset, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `retryfilterpreset.Intercept(f(g(h())))`.
+func (c *RetryFilterPresetClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RetryFilterPreset = append(c.inters.RetryFilterPreset, interceptors...)
+}
+
+// Create returns a builder for creating a RetryFilterPreset entity.
+func (c *RetryFilterPresetClient) Create() *RetryFilterPresetCreate {
+	mutation := newRetryFilterPresetMutation(c.config, OpCreate)
+	return &RetryFilterPresetCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RetryFilterPreset entities.
+func (c *RetryFilterPresetClient) CreateBulk(builders ...*RetryFilterPresetCreate) *RetryFilterPresetCreateBulk {
+	return &RetryFilterPresetCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RetryFilterPresetClient) MapCreateBulk(slice any, setFunc func(*RetryFilterPresetCreate, int)) *RetryFilterPresetCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RetryFilterPresetCreateBulk{err: fmt.Errorf("calling to RetryFilterPresetClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RetryFilterPresetCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RetryFilterPresetCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RetryFilterPreset.
+func (c *RetryFilterPresetClient) Update() *RetryFilterPresetUpdate {
+	mutation := newRetryFilterPresetMutation(c.config, OpUpdate)
+	return &RetryFilterPresetUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RetryFilterPresetClient) UpdateOne(_m *RetryFilterPreset) *RetryFilterPresetUpdateOne {
+	mutation := newRetryFilterPresetMutation(c.config, OpUpdateOne, withRetryFilterPreset(_m))
+	return &RetryFilterPresetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RetryFilterPresetClient) UpdateOneID(id int64) *RetryFilterPresetUpdateOne {
+	mutation := newRetryFilterPresetMutation(c.config, OpUpdateOne, withRetryFilterPresetID(id))
+	return &RetryFilterPresetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RetryFilterPreset.
+func (c *RetryFilterPresetClient) Delete() *RetryFilterPresetDelete {
+	mutation := newRetryFilterPresetMutation(c.config, OpDelete)
+	return &RetryFilterPresetDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RetryFilterPresetClient) DeleteOne(_m *RetryFilterPreset) *RetryFilterPresetDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RetryFilterPresetClient) DeleteOneID(id int64) *RetryFilterPresetDeleteOne {
+	builder := c.Delete().Where(retryfilterpreset.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RetryFilterPresetDeleteOne{builder}
+}
+
+// Query returns a query builder for RetryFilterPreset.
+func (c *RetryFilterPresetClient) Query() *RetryFilterPresetQuery {
+	return &RetryFilterPresetQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRetryFilterPreset},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RetryFilterPreset entity by its id.
+func (c *RetryFilterPresetClient) Get(ctx context.Context, id int64) (*RetryFilterPreset, error) {
+	return c.Query().Where(retryfilterpreset.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RetryFilterPresetClient) GetX(ctx context.Context, id int64) *RetryFilterPreset {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryRules queries the rules edge of a RetryFilterPreset.
+func (c *RetryFilterPresetClient) QueryRules(_m *RetryFilterPreset) *RetryFilterRuleQuery {
+	query := (&RetryFilterRuleClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(retryfilterpreset.Table, retryfilterpreset.FieldID, id),
+			sqlgraph.To(retryfilterrule.Table, retryfilterrule.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, retryfilterpreset.RulesTable, retryfilterpreset.RulesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RetryFilterPresetClient) Hooks() []Hook {
+	return c.hooks.RetryFilterPreset
+}
+
+// Interceptors returns the client interceptors.
+func (c *RetryFilterPresetClient) Interceptors() []Interceptor {
+	return c.inters.RetryFilterPreset
+}
+
+func (c *RetryFilterPresetClient) mutate(ctx context.Context, m *RetryFilterPresetMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RetryFilterPresetCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RetryFilterPresetUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RetryFilterPresetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RetryFilterPresetDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RetryFilterPreset mutation op: %q", m.Op())
+	}
+}
+
+// RetryFilterRuleClient is a client for the RetryFilterRule schema.
+type RetryFilterRuleClient struct {
+	config
+}
+
+// NewRetryFilterRuleClient returns a client for the RetryFilterRule from the given config.
+func NewRetryFilterRuleClient(c config) *RetryFilterRuleClient {
+	return &RetryFilterRuleClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `retryfilterrule.Hooks(f(g(h())))`.
+func (c *RetryFilterRuleClient) Use(hooks ...Hook) {
+	c.hooks.RetryFilterRule = append(c.hooks.RetryFilterRule, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `retryfilterrule.Intercept(f(g(h())))`.
+func (c *RetryFilterRuleClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RetryFilterRule = append(c.inters.RetryFilterRule, interceptors...)
+}
+
+// Create returns a builder for creating a RetryFilterRule entity.
+func (c *RetryFilterRuleClient) Create() *RetryFilterRuleCreate {
+	mutation := newRetryFilterRuleMutation(c.config, OpCreate)
+	return &RetryFilterRuleCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RetryFilterRule entities.
+func (c *RetryFilterRuleClient) CreateBulk(builders ...*RetryFilterRuleCreate) *RetryFilterRuleCreateBulk {
+	return &RetryFilterRuleCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RetryFilterRuleClient) MapCreateBulk(slice any, setFunc func(*RetryFilterRuleCreate, int)) *RetryFilterRuleCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RetryFilterRuleCreateBulk{err: fmt.Errorf("calling to RetryFilterRuleClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RetryFilterRuleCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RetryFilterRuleCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RetryFilterRule.
+func (c *RetryFilterRuleClient) Update() *RetryFilterRuleUpdate {
+	mutation := newRetryFilterRuleMutation(c.config, OpUpdate)
+	return &RetryFilterRuleUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RetryFilterRuleClient) UpdateOne(_m *RetryFilterRule) *RetryFilterRuleUpdateOne {
+	mutation := newRetryFilterRuleMutation(c.config, OpUpdateOne, withRetryFilterRule(_m))
+	return &RetryFilterRuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RetryFilterRuleClient) UpdateOneID(id int64) *RetryFilterRuleUpdateOne {
+	mutation := newRetryFilterRuleMutation(c.config, OpUpdateOne, withRetryFilterRuleID(id))
+	return &RetryFilterRuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RetryFilterRule.
+func (c *RetryFilterRuleClient) Delete() *RetryFilterRuleDelete {
+	mutation := newRetryFilterRuleMutation(c.config, OpDelete)
+	return &RetryFilterRuleDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RetryFilterRuleClient) DeleteOne(_m *RetryFilterRule) *RetryFilterRuleDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RetryFilterRuleClient) DeleteOneID(id int64) *RetryFilterRuleDeleteOne {
+	builder := c.Delete().Where(retryfilterrule.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RetryFilterRuleDeleteOne{builder}
+}
+
+// Query returns a query builder for RetryFilterRule.
+func (c *RetryFilterRuleClient) Query() *RetryFilterRuleQuery {
+	return &RetryFilterRuleQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRetryFilterRule},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RetryFilterRule entity by its id.
+func (c *RetryFilterRuleClient) Get(ctx context.Context, id int64) (*RetryFilterRule, error) {
+	return c.Query().Where(retryfilterrule.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RetryFilterRuleClient) GetX(ctx context.Context, id int64) *RetryFilterRule {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryPreset queries the preset edge of a RetryFilterRule.
+func (c *RetryFilterRuleClient) QueryPreset(_m *RetryFilterRule) *RetryFilterPresetQuery {
+	query := (&RetryFilterPresetClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(retryfilterrule.Table, retryfilterrule.FieldID, id),
+			sqlgraph.To(retryfilterpreset.Table, retryfilterpreset.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, retryfilterrule.PresetTable, retryfilterrule.PresetColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RetryFilterRuleClient) Hooks() []Hook {
+	return c.hooks.RetryFilterRule
+}
+
+// Interceptors returns the client interceptors.
+func (c *RetryFilterRuleClient) Interceptors() []Interceptor {
+	return c.inters.RetryFilterRule
+}
+
+func (c *RetryFilterRuleClient) mutate(ctx context.Context, m *RetryFilterRuleMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RetryFilterRuleCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RetryFilterRuleUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RetryFilterRuleUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RetryFilterRuleDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RetryFilterRule mutation op: %q", m.Op())
+	}
+}
+
 // SecuritySecretClient is a client for the SecuritySecret schema.
 type SecuritySecretClient struct {
 	config
@@ -7228,9 +7544,10 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, ProxySource, RedeemCode, RedeemCodeUsage,
-		SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
-		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Hook
+		RetryFilterPreset, RetryFilterRule, SecuritySecret, Setting, SubscriptionPlan,
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
+		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
+		UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
@@ -7240,9 +7557,10 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, ProxySource, RedeemCode, RedeemCodeUsage,
-		SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
-		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Interceptor
+		RetryFilterPreset, RetryFilterRule, SecuritySecret, Setting, SubscriptionPlan,
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
+		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
+		UserSubscription []ent.Interceptor
 	}
 )
 

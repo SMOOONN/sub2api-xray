@@ -655,6 +655,23 @@ const ShieldIcon = {
     )
 }
 
+// A small outlined bug mark keeps retry filtering distinct from security audit
+// while matching the hand-authored SVG icon set used by this sidebar.
+const BugIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
+        h('path', {
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M9 7.5V6a3 3 0 016 0v1.5m-8.25 3h10.5M6 15h12m-9 4.5h6A3 3 0 0018 16.5v-5.25a6 6 0 00-12 0v5.25a3 3 0 003 3zM4.5 10.5H3m18 0h-1.5M5.25 6.75L3.75 5.25m15 1.5l1.5-1.5M5.25 17.25l-1.5 1.5m15-1.5l1.5 1.5'
+        })
+      ]
+    )
+}
+
 const PriceTagIcon = {
   render: () =>
     h(
@@ -710,6 +727,7 @@ const purchaseNavLabel = computed(() => {
   }
 })
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
+const flagRetryFilter = makeSidebarFlag(FeatureFlags.retryFilter)
 const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
 const flagUserResources = makeSidebarFlag(FeatureFlags.userResources)
 const flagPluginManagement = makeSidebarFlag(FeatureFlags.pluginManagement)
@@ -804,6 +822,17 @@ const adminNavItems = computed((): NavItem[] => {
     },
     // 「仅充值」站点连管理端的「订阅管理」入口也一并收起（路由本身不拦截）。
     { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon, hideInSimpleMode: true, featureFlag: flagSubscription },
+    {
+      path: '/admin/retry-filter',
+      label: t('admin.retryFilter.title'),
+      icon: BugIcon,
+      expandOnly: true,
+      featureFlag: flagRetryFilter,
+      children: [
+        { path: '/admin/retry-filter', label: t('admin.retryFilter.manageTitle'), icon: BugIcon },
+        { path: '/admin/retry-filter/monitor', label: t('admin.retryFilter.monitorTitle'), icon: ChartIcon },
+      ],
+    },
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },

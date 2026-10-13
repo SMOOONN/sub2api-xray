@@ -93,6 +93,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	}
 
 	var resp *http.Response
+	var retryFilterCandidate *UpstreamFailoverError
 	retryStart := time.Now()
 	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
 		upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, input.RequestStream)
@@ -118,6 +119,13 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 				UpstreamURL: safeUpstreamURL(upstreamReq.URL.String()),
 				Passthrough: true,
 			})
+		}
+
+		retryFilterCandidate = s.prepareGatewayHTTPFailure(ctx, c, account, resp)
+		if retryFilterCandidate != nil && retryFilterCandidate.retryFilterDecision.Actionable() {
+			recordRetryFilterFailure(c, account, retryFilterCandidate)
+			_ = resp.Body.Close()
+			return nil, retryFilterCandidate
 		}
 
 		// 透传分支禁止 400 请求体降级重试（该重试会改写请求体）
@@ -203,11 +211,14 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 					return ""
 				}(),
 			})
-			return nil, &UpstreamFailoverError{
+			failoverErr := &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
 				ResponseBody:           respBody,
+				ResponseHeaders:        resp.Header.Clone(),
 				RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 			}
+			copyRetryFilterEvaluation(failoverErr, retryFilterCandidate)
+			return nil, failoverErr
 		}
 		return s.handleRetryExhaustedError(ctx, resp, c, account)
 	}
@@ -239,15 +250,18 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 				return ""
 			}(),
 		})
-		return nil, &UpstreamFailoverError{
+		failoverErr := &UpstreamFailoverError{
 			StatusCode:             resp.StatusCode,
 			ResponseBody:           respBody,
+			ResponseHeaders:        resp.Header.Clone(),
 			RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 		}
+		copyRetryFilterEvaluation(failoverErr, retryFilterCandidate)
+		return nil, failoverErr
 	}
 
 	if resp.StatusCode >= 400 {
-		return s.handleErrorResponse(ctx, resp, c, account, input.RequestModel)
+		return s.handleErrorResponseWithDecision(ctx, resp, c, account, retryFilterCandidate, input.RequestModel)
 	}
 
 	var usage *ClaudeUsage
@@ -365,6 +379,7 @@ func (s *GatewayService) buildUpstreamRequestAnthropicAPIKeyPassthrough(
 
 	// 账号级请求头覆写（最终生效，覆盖上面所有来源的同名头）
 	account.ApplyHeaderOverrides(req.Header)
+	filterSonnet55ToolsetBetaHeader(req.Header, body, gjson.GetBytes(body, "model").String())
 
 	return req, body, nil
 }
@@ -402,6 +417,34 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	if v := resp.Header.Get("x-request-id"); v != "" {
 		c.Header("x-request-id", v)
 	}
+	var stage *openAIFirstOutputStage
+	stopKeepalive := func() {}
+	if retryFilterShouldStage(ctx, account) {
+		stage = newDefaultOpenAIFirstOutputStage()
+		defer func() {
+			if err := stage.Close(); err != nil {
+				logger.LegacyPrintf("service.gateway", "Close retry-filter stage: %v", err)
+			}
+		}()
+		interval := 0
+		if s.cfg != nil {
+			interval = s.cfg.Gateway.StreamKeepaliveInterval
+		}
+		stopKeepalive = startOpenAISSEKeepalive(c, retryFilterKeepaliveInterval(interval))
+	}
+	defer func() { stopKeepalive() }()
+	staging := stage != nil
+	commitStage := func() error {
+		stopKeepalive()
+		if !staging {
+			return nil
+		}
+		staging = false
+		if stage.Buffered() == 0 {
+			return stage.Close()
+		}
+		return stage.CommitTo(c.Writer)
+	}
 
 	w := c.Writer
 	flusher, ok := w.(http.Flusher)
@@ -413,6 +456,23 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	var firstTokenMs *int
 	clientDisconnected := false
 	sawTerminalEvent := false
+	semanticOutputSeen := false
+	sawStreamError := false
+	pendingEventType := ""
+	finishWithoutOutput := func(event RetryFilterEventType) *UpstreamFailoverError {
+		if semanticOutputSeen || sawStreamError || clientDisconnected || ctx.Err() != nil {
+			return nil
+		}
+		candidate := newRetryFilterStreamCandidate(resp.Header, nil, event, "upstream stream ended before valid output")
+		decision := prepareRetryFilterFailure(ctx, c, account, candidate)
+		if decision != nil {
+			recordRetryFilterFailure(c, account, candidate)
+		}
+		if decision.Actionable() {
+			return candidate
+		}
+		return nil
+	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -468,7 +528,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	}
 
 	keepaliveInterval := time.Duration(0)
-	if s.cfg != nil && s.cfg.Gateway.StreamKeepaliveInterval > 0 {
+	if stage == nil && s.cfg != nil && s.cfg.Gateway.StreamKeepaliveInterval > 0 {
 		keepaliveInterval = time.Duration(s.cfg.Gateway.StreamKeepaliveInterval) * time.Second
 	}
 	var keepaliveTimer *time.Timer
@@ -499,6 +559,16 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				event := RetryFilterEventEmptyInterruptedStream
+				if sawTerminalEvent {
+					event = RetryFilterEventEmptyCompletedResponse
+				}
+				if candidate := finishWithoutOutput(event); candidate != nil {
+					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, candidate
+				}
+				if err := commitStage(); err != nil {
+					return nil, err
+				}
 				if !clientDisconnected {
 					// 兜底补刷，确保最后一个未以空行结尾的事件也能及时送达客户端。
 					flusher.Flush()
@@ -516,6 +586,12 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			}
 			if ev.err != nil {
 				if sawTerminalEvent {
+					if candidate := finishWithoutOutput(RetryFilterEventEmptyCompletedResponse); candidate != nil {
+						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, candidate
+					}
+					if err := commitStage(); err != nil {
+						return nil, err
+					}
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
 				}
 				if clientDisconnected {
@@ -528,12 +604,38 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] SSE line too long: account=%d max_size=%d error=%v", account.ID, maxLineSize, ev.err)
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, ev.err
 				}
+				if candidate := finishWithoutOutput(RetryFilterEventEmptyInterruptedStream); candidate != nil {
+					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, candidate
+				}
+				if err := commitStage(); err != nil {
+					return nil, err
+				}
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", ev.err)
 			}
 
 			line := ev.line
 			if data, ok := extractAnthropicSSEDataLine(line); ok {
 				trimmed := strings.TrimSpace(data)
+				if pendingEventType == "error" || gjson.Get(trimmed, "type").String() == "error" || gjson.Get(trimmed, "error").Exists() {
+					sawStreamError = true
+					if !semanticOutputSeen && !clientDisconnected && ctx.Err() == nil {
+						candidate := newRetryFilterStreamCandidate(resp.Header, []byte(trimmed), "", "upstream stream error")
+						candidate.StatusCode = openAIStreamFailureStatus([]byte(trimmed), extractUpstreamErrorMessage([]byte(trimmed)))
+						decision := prepareRetryFilterFailure(ctx, c, account, candidate)
+						if decision != nil {
+							recordRetryFilterFailure(c, account, candidate)
+						}
+						if decision.Actionable() {
+							return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, candidate
+						}
+					}
+				}
+				if RetryFilterResponseHasValidOutput(pendingEventType, []byte(trimmed)) {
+					semanticOutputSeen = true
+					if err := commitStage(); err != nil {
+						return nil, err
+					}
+				}
 				observer.ObserveAnthropic([]byte(trimmed))
 				if anthropicStreamEventIsTerminal("", trimmed) {
 					sawTerminalEvent = true
@@ -545,6 +647,11 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 				parseSSEUsagePassthrough(data, usage)
 			} else {
 				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "event:") {
+					pendingEventType = strings.TrimSpace(strings.TrimPrefix(trimmed, "event:"))
+				} else if trimmed == "" {
+					pendingEventType = ""
+				}
 				if strings.HasPrefix(trimmed, "event:") && anthropicStreamEventIsTerminal(strings.TrimSpace(strings.TrimPrefix(trimmed, "event:")), "") {
 					sawTerminalEvent = true
 				}
@@ -552,6 +659,12 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 
 			if !clientDisconnected {
 				restored := string(reverseToolNamesIfPresent(c, []byte(line)))
+				if staging {
+					if _, err := stage.WriteString(restored + "\n"); err != nil {
+						return nil, err
+					}
+					continue
+				}
 				if _, err := io.WriteString(w, restored); err != nil {
 					clientDisconnected = true
 					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
@@ -576,6 +689,12 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			}
 			if clientDisconnected {
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after timeout")
+			}
+			if candidate := finishWithoutOutput(RetryFilterEventEmptyInterruptedStream); candidate != nil {
+				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, candidate
+			}
+			if err := commitStage(); err != nil {
+				return nil, err
 			}
 			logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Stream data interval timeout: account=%d model=%s interval=%s", account.ID, model, streamInterval)
 			if s.rateLimitService != nil {
@@ -869,6 +988,10 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 		if err := json.Unmarshal(body, &raw); err != nil {
 			return nil, invalidNonStreamingJSONFailoverError(ctx, s.rateLimitService, resp, account, body, err)
 		}
+	}
+
+	if candidate := prepareRetryFilterEmptyJSON(ctx, c, account, resp, body); candidate != nil {
+		return nil, candidate
 	}
 
 	usage := parseClaudeUsageFromResponseBody(body)

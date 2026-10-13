@@ -165,7 +165,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			sessionHash,
 			routingModel,
 			failedAccountIDs,
-			parsed.RequiredCapability,
+			parsed.RequiredCapabilityForModel(channelMapping.MappedModel),
 		)
 		if err != nil {
 			if failoverClientGone(c) {
@@ -234,6 +234,14 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		if slotResult != openAISlotAcquireOK {
 			return
 		}
+		requestCtx = bindRetryFilterAttempt(c, requestCtx, h.retryFilterRuntime, apiKey.Group, derefGroupID(apiKey.GroupID), routingModel)
+		if emptyErr := evaluateRetryFilterRequestEmpty(c, h.retryFilterRuntime, account, apiKey.Group, derefGroupID(apiKey.GroupID), requestModel, body); emptyErr != nil {
+			h.handleFailoverExhausted(c, emptyErr, streamStarted)
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			return
+		}
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		if !parsed.Stream && !jsonKeepaliveStarted {
@@ -291,6 +299,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				}
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {
+					retryDecision := applyRetryFilter(c, h.retryFilterRuntime, FailoverDecisionInput{Account: account, Group: apiKey.Group, GroupID: derefGroupID(apiKey.GroupID), Model: routingModel, Platform: account.Platform, RetryLimit: account.GetPoolModeRetryCount(), FailoverErr: failoverErr})
 					h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, requestModel, false, result), false, nil, err)
 					if service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
 						reqLog.Warn("openai.images.upstream_failover_skipped_after_flush",
@@ -307,11 +316,15 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						)
 						return
 					}
+					if !failoverErr.ShouldRetryNextAccount() {
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					if failoverErr.RetryableOnSameAccount {
-						retryLimit := effectiveSameAccountRetryLimit(failoverErr, account)
-						if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
+						retryLimit := effectiveSameAccountRetryLimit(failoverErr, account, retryDecision)
+						if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit, retryDecision) {
 							sameAccountRetryCount[account.ID]++
-							retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
+							retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID], retryDecision)
 							reqLog.Warn("openai.images.pool_mode_same_account_retry",
 								zap.Int64("account_id", account.ID),
 								zap.Int("upstream_status", failoverErr.StatusCode),

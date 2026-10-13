@@ -38,6 +38,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/proxysource"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/retryfilterpreset"
+	"github.com/Wei-Shaw/sub2api/ent/retryfilterrule"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -891,6 +893,60 @@ func (f TraverseRedeemCodeUsage) Traverse(ctx context.Context, q ent.Query) erro
 	return fmt.Errorf("unexpected query type %T. expect *ent.RedeemCodeUsageQuery", q)
 }
 
+// The RetryFilterPresetFunc type is an adapter to allow the use of ordinary function as a Querier.
+type RetryFilterPresetFunc func(context.Context, *ent.RetryFilterPresetQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f RetryFilterPresetFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.RetryFilterPresetQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.RetryFilterPresetQuery", q)
+}
+
+// The TraverseRetryFilterPreset type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseRetryFilterPreset func(context.Context, *ent.RetryFilterPresetQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseRetryFilterPreset) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseRetryFilterPreset) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.RetryFilterPresetQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.RetryFilterPresetQuery", q)
+}
+
+// The RetryFilterRuleFunc type is an adapter to allow the use of ordinary function as a Querier.
+type RetryFilterRuleFunc func(context.Context, *ent.RetryFilterRuleQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f RetryFilterRuleFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.RetryFilterRuleQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.RetryFilterRuleQuery", q)
+}
+
+// The TraverseRetryFilterRule type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseRetryFilterRule func(context.Context, *ent.RetryFilterRuleQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseRetryFilterRule) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseRetryFilterRule) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.RetryFilterRuleQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.RetryFilterRuleQuery", q)
+}
+
 // The SecuritySecretFunc type is an adapter to allow the use of ordinary function as a Querier.
 type SecuritySecretFunc func(context.Context, *ent.SecuritySecretQuery) (ent.Value, error)
 
@@ -1276,6 +1332,10 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.RedeemCodeQuery, predicate.RedeemCode, redeemcode.OrderOption]{typ: ent.TypeRedeemCode, tq: q}, nil
 	case *ent.RedeemCodeUsageQuery:
 		return &query[*ent.RedeemCodeUsageQuery, predicate.RedeemCodeUsage, redeemcodeusage.OrderOption]{typ: ent.TypeRedeemCodeUsage, tq: q}, nil
+	case *ent.RetryFilterPresetQuery:
+		return &query[*ent.RetryFilterPresetQuery, predicate.RetryFilterPreset, retryfilterpreset.OrderOption]{typ: ent.TypeRetryFilterPreset, tq: q}, nil
+	case *ent.RetryFilterRuleQuery:
+		return &query[*ent.RetryFilterRuleQuery, predicate.RetryFilterRule, retryfilterrule.OrderOption]{typ: ent.TypeRetryFilterRule, tq: q}, nil
 	case *ent.SecuritySecretQuery:
 		return &query[*ent.SecuritySecretQuery, predicate.SecuritySecret, securitysecret.OrderOption]{typ: ent.TypeSecuritySecret, tq: q}, nil
 	case *ent.SettingQuery:

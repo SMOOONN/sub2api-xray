@@ -30,12 +30,6 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 	startTime time.Time,
 	model string,
 ) (*streamingResult, error) {
-	w := c.Writer
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		return nil, errors.New("streaming not supported")
-	}
-
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -44,9 +38,83 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 		c.Header("x-request-id", v)
 	}
 
+	var stage *openAIFirstOutputStage
+	stopKeepalive := func() {}
+	if retryFilterShouldStage(ctx, account) {
+		stage = newDefaultOpenAIFirstOutputStage()
+		defer func() { _ = stage.Close() }()
+		interval := 0
+		if s.cfg != nil {
+			interval = s.cfg.Gateway.StreamKeepaliveInterval
+		}
+		stopKeepalive = startOpenAISSEKeepalive(c, retryFilterKeepaliveInterval(interval))
+	}
+	defer func() { stopKeepalive() }()
+	w := c.Writer
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return nil, errors.New("streaming not supported")
+	}
+
 	usage := &ClaudeUsage{}
 	var firstTokenMs *int
 	clientDisconnected := false
+	staging := stage != nil
+	semanticOutputSeen, sawTerminalEvent, invalidEventSeen, sawStreamError := false, false, false, false
+	commitStage := func() error {
+		stopKeepalive()
+		if !staging {
+			return nil
+		}
+		staging = false
+		if stage.Buffered() == 0 {
+			return stage.Close()
+		}
+		if writeFailed, err := commitRetryFilterStage(stage, c.Writer); err != nil {
+			if writeFailed {
+				// Only downstream failures use the native disconnect/drain path.
+				clientDisconnected = true
+				return nil
+			}
+			return err
+		}
+		c.Writer.Flush()
+		return nil
+	}
+	finishWithoutOutput := func() error {
+		if semanticOutputSeen || invalidEventSeen || sawStreamError || clientDisconnected || ctx.Err() != nil {
+			return nil
+		}
+		event := RetryFilterEventEmptyInterruptedStream
+		if sawTerminalEvent {
+			event = RetryFilterEventEmptyCompletedResponse
+		}
+		candidate := newRetryFilterStreamCandidate(resp.Header, nil, event, "upstream stream ended before valid output")
+		decision := prepareRetryFilterFailure(ctx, c, account, candidate)
+		if decision != nil {
+			recordRetryFilterFailure(c, account, candidate)
+		}
+		if !decision.Actionable() {
+			return nil
+		}
+		stopKeepalive()
+		if c.Writer.Written() {
+			// D-072: a committed heartbeat cannot expose a replayable failure.
+			message, status := candidate.ClientMessage, candidate.ClientStatusCode
+			if message == "" {
+				message = "upstream stream ended before valid output"
+			}
+			if status == 0 {
+				status = http.StatusBadGateway
+			}
+			MarkOpsStreamError(c, "upstream_error", message, status)
+			c.SSEvent("error", gin.H{"type": "error", "error": gin.H{"type": "upstream_error", "message": message}})
+			c.Writer.Flush()
+			MarkResponseCommitted(c)
+			return errors.New("bedrock stream ended before valid output after response commit")
+		}
+		return candidate
+	}
 
 	// Bedrock EventStream 使用 application/vnd.amazon.eventstream 二进制格式。
 	// 每个帧结构：total_length(4) + headers_length(4) + prelude_crc(4) + headers + payload + message_crc(4)
@@ -108,6 +176,12 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				if err := finishWithoutOutput(); err != nil {
+					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, err
+				}
+				if err := commitStage(); err != nil {
+					return nil, err
+				}
 				if !clientDisconnected {
 					flusher.Flush()
 				}
@@ -120,12 +194,23 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 				if errors.Is(ev.err, context.Canceled) || errors.Is(ev.err, context.DeadlineExceeded) {
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
 				}
+				if errors.Is(ev.err, io.ErrUnexpectedEOF) {
+					if err := finishWithoutOutput(); err != nil {
+						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, err
+					}
+				}
+				// CRC/codec exceptions keep their native error, never an empty verdict.
+				if err := commitStage(); err != nil {
+					return nil, err
+				}
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("bedrock stream read error: %w", ev.err)
 			}
 
 			// payload 是 JSON，提取 chunk.bytes（base64 编码的 Claude SSE 事件数据）
+			invalidEventSeen = invalidEventSeen || !gjson.ValidBytes(ev.payload)
 			sseData := extractBedrockChunkData(ev.payload)
 			if sseData == nil {
+				invalidEventSeen = true
 				continue
 			}
 
@@ -136,6 +221,7 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 
 			// 转换 Bedrock 特有的 amazon-bedrock-invocationMetrics 为标准 Anthropic usage 格式
 			// 同时移除该字段避免透传给客户端
+			originalJSONValid := gjson.ValidBytes(sseData)
 			sseData = transformBedrockInvocationMetrics(sseData)
 
 			// 解析 SSE 事件数据提取 usage
@@ -143,19 +229,37 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 
 			// 确定 SSE event type
 			eventType := gjson.GetBytes(sseData, "type").String()
+			validJSON := originalJSONValid && gjson.ValidBytes(sseData)
+			terminal := validJSON && anthropicStreamEventIsTerminal(eventType, string(sseData))
+			sawTerminalEvent = sawTerminalEvent || terminal
+			invalidEventSeen = invalidEventSeen || !validJSON || eventType == ""
+			sawStreamError = sawStreamError || eventType == "error" || gjson.GetBytes(sseData, "error").Exists()
+			semanticOutputSeen = semanticOutputSeen || RetryFilterResponseHasValidOutput(eventType, sseData)
+			if semanticOutputSeen || invalidEventSeen || sawStreamError {
+				if err := commitStage(); err != nil {
+					return nil, err
+				}
+			}
 
 			// 写入标准 SSE 格式
 			if !clientDisconnected {
+				var target io.Writer = w
+				if staging {
+					target = stage
+				}
 				var writeErr error
 				if eventType != "" {
-					_, writeErr = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, sseData)
+					_, writeErr = fmt.Fprintf(target, "event: %s\ndata: %s\n\n", eventType, sseData)
 				} else {
-					_, writeErr = fmt.Fprintf(w, "data: %s\n\n", sseData)
+					_, writeErr = fmt.Fprintf(target, "data: %s\n\n", sseData)
 				}
 				if writeErr != nil {
+					if staging {
+						return nil, writeErr
+					}
 					clientDisconnected = true
 					logger.LegacyPrintf("service.gateway", "[Bedrock] Client disconnected during streaming, continue draining for usage: account=%d", account.ID)
-				} else {
+				} else if !staging {
 					flusher.Flush()
 				}
 			}
@@ -167,6 +271,12 @@ func (s *GatewayService) handleBedrockStreamingResponse(
 			}
 			if clientDisconnected {
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
+			}
+			if err := finishWithoutOutput(); err != nil {
+				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, err
+			}
+			if err := commitStage(); err != nil {
+				return nil, err
 			}
 			logger.LegacyPrintf("service.gateway", "[Bedrock] Stream data interval timeout: account=%d model=%s interval=%s", account.ID, model, streamInterval)
 			if s.rateLimitService != nil {

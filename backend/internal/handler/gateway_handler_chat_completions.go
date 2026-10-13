@@ -168,11 +168,15 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 	}
 
 	for {
-		if c.Request.Context().Err() != nil {
+		if failoverClientGone(c) {
 			return
 		}
 		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, selectionSessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
 		if err != nil {
+			if failoverClientGone(c) {
+				reqLog.Info("gateway.cc.account_select_aborted_client_disconnected", zap.Error(err))
+				return
+			}
 			if len(fs.FailedAccountIDs) == 0 {
 				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, groupPlatform)
 				cls = classifySelectionFailureError(err, cls)
@@ -260,7 +264,15 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 
 		// 5. Forward request
-		writerSizeBeforeForward := c.Writer.Size()
+		bindRetryFilterAttempt(c, c.Request.Context(), h.retryFilterRuntime, apiKey.Group, derefGroupID(apiKey.GroupID), reqModel)
+		if emptyErr := evaluateRetryFilterRequestEmpty(c, h.retryFilterRuntime, account, apiKey.Group, derefGroupID(apiKey.GroupID), reqModel, body); emptyErr != nil {
+			h.handleCCFailoverExhausted(c, emptyErr, streamStarted)
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			return
+		}
+		writerSizeBeforeForward := service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
 		forwardBody := body
 		if channelMapping.Mapped {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
@@ -297,11 +309,12 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
-				if c.Writer.Size() != writerSizeBeforeForward {
+				if !openAIForwardMayFailover(c, writerSizeBeforeForward, failoverErr) {
 					h.handleCCFailoverExhausted(c, failoverErr, true)
 					return
 				}
-				action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
+				streamStarted = streamStarted || c.Writer.Written()
+				action := fs.HandleFailoverDecision(c, h.gatewayService, h.retryFilterRuntime, FailoverDecisionInput{Account: account, Group: apiKey.Group, GroupID: derefGroupID(apiKey.GroupID), Model: reqModel, Platform: account.Platform, RetryLimit: account.GetPoolModeRetryCount(), FailoverErr: failoverErr})
 				switch action {
 				case FailoverContinue:
 					continue
@@ -377,6 +390,20 @@ func (h *GatewayHandler) chatCompletionsErrorResponse(c *gin.Context, status int
 
 // handleCCFailoverExhausted writes a failover-exhausted error in CC format.
 func (h *GatewayHandler) handleCCFailoverExhausted(c *gin.Context, lastErr *service.UpstreamFailoverError, streamStarted bool) {
+	if status, message, ok := retryFilterClientResponse(lastErr); ok {
+		if streamStarted {
+			service.MarkOpsStreamError(c, "server_error", message, status)
+			// Xray preflight may terminate after a slot-wait heartbeat. Preserve
+			// any existing semantic output or terminal error without appending one.
+			if c.Writer.Size() <= 0 || gatewayStreamHasOnlyHeartbeats(c) {
+				c.SSEvent("error", gin.H{"error": gin.H{"type": "server_error", "message": message}})
+				c.Writer.Flush()
+			}
+		} else {
+			h.chatCompletionsErrorResponse(c, status, "server_error", message)
+		}
+		return
+	}
 	if streamStarted {
 		return
 	}

@@ -580,6 +580,8 @@ type AccountSelectionResult struct {
 	Acquired    bool
 	ReleaseFunc func()
 	WaitPlan    *AccountWaitPlan // nil means no wait allowed
+	// stickySessionHit 标记账号来自会话粘性绑定命中，供非高级调度路径回填决策标签。
+	stickySessionHit bool
 	// profitGate 携带本次选号真实生效的利润门（无门为 nil）。门安装在调度栈的
 	// 局部 ctx 上，handler 必须经 ContextWithSelectionProfitGate 重放后才能在
 	// 调度栈之外做抢槽后终检与准入后粘性绑定。
@@ -680,6 +682,20 @@ const (
 
 type GatewayFailureReason string
 
+// RetryFilterEventType identifies the semantic event that caused an
+// UpstreamFailoverError.  It is deliberately carried on the in-memory
+// failover error rather than encoded as a synthetic HTTP status, so rules can
+// distinguish a real upstream HTTP error from an empty request or an empty
+// stream while preserving the existing status-code fallback behaviour.
+type RetryFilterEventType string
+
+const (
+	RetryFilterEventRequestEmptyBody       RetryFilterEventType = "request_empty_body"
+	RetryFilterEventRequestEmptyStructured RetryFilterEventType = "request_empty_structured"
+	RetryFilterEventEmptyCompletedResponse RetryFilterEventType = "empty_completed_response"
+	RetryFilterEventEmptyInterruptedStream RetryFilterEventType = "empty_interrupted_stream"
+)
+
 // UpstreamFailoverError indicates an upstream or credential error that may
 // trigger account failover. Additive metadata keeps existing composite literals
 // source-compatible and preserves their legacy retry-next-account behavior.
@@ -692,6 +708,7 @@ type UpstreamFailoverError struct {
 	SameAccountRetryDelay    time.Duration // 同账号重试的最小间隔；零值使用 handler 默认值
 	SameAccountRetryDeadline time.Time     // 同账号重试截止时间；零值表示仅受 retryLimit 限制
 	SameAccountRetryMax      int           // 可选的错误级同账号重试上限，低于 handler 默认预算时优先采用
+	SuppressAccountPenalty   bool          // 重试过滤器换号动作不计入账号健康惩罚
 	RequestScopedTransient   bool          // 故障因素与账号无关（如上游按客户端身份/模型容量降载）：可同账号重试，但不得据此对账号做临时封禁
 	SafeToFailoverAfterWrite bool          // 仅写出 SSE 注释等非语义字节时，仍可在同一客户端流中切换账号
 	Stage                    GatewayFailureStage
@@ -700,6 +717,17 @@ type UpstreamFailoverError struct {
 	NextAccountAction        NextAccountAction
 	ClientStatusCode         int
 	ClientMessage            string
+	// RetryFilterEventType carries a non-HTTP semantic classification used by
+	// retry-filter event conditions. Empty means ordinary status/body matching.
+	RetryFilterEventType RetryFilterEventType
+	// Request-local evaluation is carried with the failure so service preflight
+	// and the handler share one verdict, including a negative match.
+	retryFilterEvaluated         bool
+	retryFilterDecision          *RetryFilterDecision
+	retryFilterChanged           bool
+	retryFilterRecorded          bool
+	retryFilterPreparedInService bool
+	retryFilterOpsEvent          *OpsUpstreamErrorEvent
 }
 
 func (e *UpstreamFailoverError) Error() string {
@@ -721,7 +749,7 @@ func (e *UpstreamFailoverError) IsCredentialFailure() bool {
 // credential failures from being misattributed to the selected account. Legacy
 // and inference failures retain their existing scheduler-health behavior.
 func (e *UpstreamFailoverError) ShouldReportAccountScheduleFailure() bool {
-	if e == nil {
+	if e == nil || e.SuppressAccountPenalty {
 		return false
 	}
 	return !e.IsCredentialFailure() || e.Scope == GatewayFailureScopeAccount
@@ -733,7 +761,8 @@ func (e *UpstreamFailoverError) ShouldReportAccountScheduleFailure() bool {
 // Error() 保持原字符串以兼容现有日志/检索；调用方应通过 errors.As
 // 提取 RawData 并构造 UpstreamFailoverError.ResponseBody。
 type sseStreamErrorEventError struct {
-	RawData string
+	RawData              string
+	retryFilterCandidate *UpstreamFailoverError
 }
 
 func (e *sseStreamErrorEventError) Error() string { return "have error in stream" }
@@ -746,7 +775,7 @@ func (s *GatewayService) TempUnscheduleRetryableError(ctx context.Context, accou
 	}
 	// 请求级瞬时故障与账号健康无关：封禁只会把与故障无关的账号一并摘掉，
 	// 而故障因素（客户端身份、模型容量）在下一个账号上完全相同。
-	if failoverErr.RequestScopedTransient {
+	if failoverErr.RequestScopedTransient || failoverErr.SuppressAccountPenalty {
 		return
 	}
 	// 根据状态码选择封禁策略
@@ -1375,6 +1404,19 @@ func (s *GatewayService) DoGrokNativeResponsesJSON(ctx context.Context, account 
 	return respBytes, nil
 }
 
+// mixedListingAccountAllowed mirrors the mixed-scheduling rule in
+// GeminiMessagesCompatService.listSchedulableAccountsOnce: a gemini group may be
+// served by antigravity accounts, so model listing must consider them too.
+func mixedListingAccountAllowed(groupPlatform string, account *Account) bool {
+	return groupPlatform == PlatformGemini && account.IsMixedSchedulingEnabled()
+}
+
+// mixedListingModelAllowed limits what a mixed-scheduling account may advertise
+// on the group's platform: only gemini-* wire IDs are meaningful on a gemini group.
+func mixedListingModelAllowed(groupPlatform, model string) bool {
+	return groupPlatform == PlatformGemini && isAntigravityGeminiModel(model)
+}
+
 func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string {
 	cacheKey := modelsListCacheKey(groupID, platform)
 	if s.modelsListCache != nil {
@@ -1400,11 +1442,13 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 		return nil
 	}
 
-	// Filter by platform if specified
+	// Filter by platform if specified. Mixed scheduling (a gemini group routing
+	// to antigravity accounts) is honoured here as well, so the advertised list
+	// stays in sync with what the request path can actually serve.
 	if platform != "" {
 		filtered := make([]Account, 0)
 		for _, acc := range accounts {
-			if acc.Platform == platform {
+			if acc.Platform == platform || mixedListingAccountAllowed(platform, &acc) {
 				filtered = append(filtered, acc)
 			}
 		}
@@ -1416,23 +1460,25 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 	hasAnyMapping := false
 
 	for _, acc := range accounts {
-		// Passthrough routing accepts models independently of model_mapping. A stale
-		// mapping on any eligible passthrough account therefore cannot define the
-		// public whitelist; return nil so the handler uses its default model set.
+		// Passthrough routing accepts models independently of model_mapping, so a
+		// stale mapping on a passthrough account must not narrow the public list.
+		// Treat it like an unmapped account: skip its mapping here and let
+		// supplementUnmappedOpenAIModels contribute the default set. Mappings on
+		// the ordinary accounts in the same group still count.
 		if platform == PlatformOpenAI && acc.IsOpenAIPassthroughEnabled() {
-			if s.modelsListCache != nil {
-				s.modelsListCache.Set(cacheKey, []string(nil), s.modelsListCacheTTL)
-				modelsListCacheStoreTotal.Add(1)
-			}
-			return nil
+			continue
 		}
 
 		mapping := acc.GetModelMapping()
-		if len(mapping) > 0 {
-			hasAnyMapping = true
-			for model := range mapping {
-				modelSet[model] = struct{}{}
+		for model := range mapping {
+			// Accounts pulled in through mixed scheduling only contribute the
+			// models that belong to the listing platform (e.g. an antigravity
+			// account's claude-* mappings must not surface on a gemini group).
+			if platform != "" && acc.Platform != platform && !mixedListingModelAllowed(platform, model) {
+				continue
 			}
+			modelSet[model] = struct{}{}
+			hasAnyMapping = true
 		}
 	}
 

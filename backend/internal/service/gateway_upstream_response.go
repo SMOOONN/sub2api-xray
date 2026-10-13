@@ -362,14 +362,26 @@ func (s *GatewayService) readUpstreamErrorBody(resp *http.Response) ([]byte, err
 }
 
 func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, requestedModel ...string) (*ForwardResult, error) {
-	// Upstream returned a non-success HTTP status; count Ollama Cloud activity.
+	return s.handleErrorResponseWithDecision(ctx, resp, c, account, nil, requestedModel...)
+}
+
+func (s *GatewayService) handleErrorResponseWithDecision(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, candidate *UpstreamFailoverError, requestedModel ...string) (*ForwardResult, error) {
+	// Upstream returned a non-success HTTP status; count Ollama Cloud / OpenCode Go activity.
 	scheduleOllamaCloudUsageActivity(s.deferredService, account)
+	scheduleOpenCodeGoUsageActivity(s.deferredService, account)
 	body, readErr := s.readUpstreamErrorBody(resp)
 	if readErr != nil {
 		// 读取失败时 body 可能被截断，错误分类会基于不完整数据；记录日志以便排查，
 		// 避免静默吞掉导致误判。
 		logger.LegacyPrintf("service.gateway", "[Forward] Failed to fully read upstream error body: Account=%d(%s) Status=%d err=%v",
 			account.ID, account.Name, resp.StatusCode, readErr)
+	}
+	if candidate == nil {
+		candidate = &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: body, ResponseHeaders: resp.Header.Clone(), NextAccountAction: NextAccountStop}
+	}
+	if decision := prepareRetryFilterFailure(ctx, c, account, candidate); decision.Actionable() {
+		recordRetryFilterFailure(c, account, candidate)
+		return nil, candidate
 	}
 
 	// 调试日志：打印上游错误响应
@@ -425,7 +437,9 @@ func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Res
 		}
 	}
 	if shouldDisable {
-		return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: body}
+		failoverErr := &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: body, ResponseHeaders: resp.Header.Clone()}
+		copyRetryFilterEvaluation(failoverErr, candidate)
+		return nil, failoverErr
 	}
 
 	MarkResponseCommitted(c)
@@ -452,13 +466,7 @@ func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Res
 		"upstream_error",
 		"Upstream request failed",
 	); matched {
-		c.JSON(status, gin.H{
-			"type": "error",
-			"error": gin.H{
-				"type":    errType,
-				"message": errMsg,
-			},
-		})
+		writeAnthropicError(c, status, errType, errMsg)
 
 		summary := upstreamMsg
 		if summary == "" {
@@ -476,7 +484,11 @@ func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Res
 
 	switch resp.StatusCode {
 	case 400:
-		c.Data(http.StatusBadRequest, "application/json", body)
+		if StopOpenAICompactSSEKeepaliveCommitted(c) {
+			writeAnthropicError(c, http.StatusBadRequest, "invalid_request_error", upstreamMsg)
+		} else {
+			c.Data(http.StatusBadRequest, "application/json", body)
+		}
 		summary := upstreamMsg
 		if summary == "" {
 			summary = truncateForLog(body, 512)
@@ -512,13 +524,7 @@ func (s *GatewayService) handleErrorResponse(ctx context.Context, resp *http.Res
 	}
 
 	// 返回自定义错误响应
-	c.JSON(statusCode, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    errType,
-			"message": errMsg,
-		},
-	})
+	writeAnthropicError(c, statusCode, errType, errMsg)
 
 	if upstreamMsg == "" {
 		return nil, fmt.Errorf("upstream error: %d", resp.StatusCode)
@@ -721,6 +727,38 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	if v := resp.Header.Get("x-request-id"); v != "" {
 		c.Header("x-request-id", v)
 	}
+	var stage *openAIFirstOutputStage
+	stopKeepalive := func() {}
+	if retryFilterShouldStage(ctx, account) {
+		stage = newDefaultOpenAIFirstOutputStage()
+		defer func() {
+			if err := stage.Close(); err != nil {
+				logger.LegacyPrintf("service.gateway", "Close retry-filter stage: %v", err)
+			}
+		}()
+		interval := 0
+		if s.cfg != nil {
+			interval = s.cfg.Gateway.StreamKeepaliveInterval
+		}
+		stopKeepalive = startOpenAISSEKeepalive(c, retryFilterKeepaliveInterval(interval))
+	}
+	defer func() { stopKeepalive() }()
+	staging := stage != nil
+	commitStage := func() error {
+		stopKeepalive()
+		if !staging {
+			return nil
+		}
+		staging = false
+		if stage.Buffered() == 0 {
+			return stage.Close()
+		}
+		if err := stage.CommitTo(c.Writer); err != nil {
+			return err
+		}
+		c.Writer.Flush()
+		return nil
+	}
 
 	w := c.Writer
 	flusher, ok := w.(http.Flusher)
@@ -788,7 +826,7 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 
 	// 下游 keepalive：防止代理/Cloudflare Tunnel 因连接空闲而断开
 	keepaliveInterval := time.Duration(0)
-	if s.cfg != nil && s.cfg.Gateway.StreamKeepaliveInterval > 0 {
+	if stage == nil && s.cfg != nil && s.cfg.Gateway.StreamKeepaliveInterval > 0 {
 		keepaliveInterval = time.Duration(s.cfg.Gateway.StreamKeepaliveInterval) * time.Second
 	}
 	var keepaliveTimer *time.Timer
@@ -845,6 +883,8 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 	needModelReplace := originalModel != mappedModel
 	clientDisconnected := false // 客户端断开标志，断开后继续读取上游以获取完整usage
 	sawTerminalEvent := false
+	semanticOutputSeen := false
+	sawStreamError := false
 	useNoopDeltaKeepalive := c != nil && c.Request != nil && shouldUseClaudeCodeNoopDeltaKeepalive(c.GetHeader("User-Agent"))
 	noopDeltaKeepaliveBlockIndex := -1
 	noopDeltaKeepaliveDeltaType := ""
@@ -899,6 +939,23 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 		}
 
 		eventType, _ := event["type"].(string)
+		if eventType == "error" {
+			sawStreamError = true
+		}
+		if eventType == "error" && !semanticOutputSeen && ctx.Err() == nil {
+			candidate := newRetryFilterStreamCandidate(resp.Header, []byte(dataLine), "", "upstream stream error")
+			candidate.StatusCode = openAIStreamFailureStatus([]byte(dataLine), extractUpstreamErrorMessage([]byte(dataLine)))
+			decision := prepareRetryFilterFailure(ctx, c, account, candidate)
+			if decision != nil {
+				recordRetryFilterFailure(c, account, candidate)
+			}
+			if decision.Actionable() {
+				return nil, dataLine, nil, candidate
+			}
+		}
+		if RetryFilterResponseHasValidOutput(eventType, []byte(dataLine)) {
+			semanticOutputSeen = true
+		}
 		observer.ObserveAnthropic([]byte(dataLine))
 		if eventName == "" {
 			eventName = eventType
@@ -1016,14 +1073,44 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 		select {
 		case ev, ok := <-events:
 			if !ok {
-				// 上游完成，返回结果
-				if !sawTerminalEvent {
-					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, fmt.Errorf("stream usage incomplete: missing terminal event")
+				if !semanticOutputSeen && !sawStreamError && !clientDisconnected && ctx.Err() == nil {
+					eventType := RetryFilterEventEmptyInterruptedStream
+					if sawTerminalEvent {
+						eventType = RetryFilterEventEmptyCompletedResponse
+					}
+					candidate := newRetryFilterStreamCandidate(resp.Header, nil, eventType, "upstream stream ended before valid output")
+					decision := prepareRetryFilterFailure(ctx, c, account, candidate)
+					if decision != nil {
+						recordRetryFilterFailure(c, account, candidate)
+					}
+					if decision.Actionable() {
+						return nil, candidate
+					}
 				}
-				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
+				if err := commitStage(); err != nil {
+					return nil, err
+				}
+				result := &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}
+				if !sawTerminalEvent {
+					return result, fmt.Errorf("stream usage incomplete: missing terminal event")
+				}
+				return result, nil
 			}
 			if ev.err != nil {
 				if sawTerminalEvent {
+					if !semanticOutputSeen && !sawStreamError && !clientDisconnected && ctx.Err() == nil {
+						candidate := newRetryFilterStreamCandidate(resp.Header, nil, RetryFilterEventEmptyCompletedResponse, "upstream returned an empty completed response")
+						decision := prepareRetryFilterFailure(ctx, c, account, candidate)
+						if decision != nil {
+							recordRetryFilterFailure(c, account, candidate)
+						}
+						if decision.Actionable() {
+							return nil, candidate
+						}
+					}
+					if err := commitStage(); err != nil {
+						return nil, err
+					}
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
 				}
 				// 检测 context 取消（客户端断开会导致 context 取消，进而影响上游读取）
@@ -1046,8 +1133,19 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				// 注意:面向客户端的 disconnectMsg 必须用 sanitizeStreamError 剥离地址,
 				// 默认 *net.OpError 的 Error() 会泄露内部 IP/端口和上游地址。完整 ev.err
 				// 仅在下方 LegacyPrintf 内部日志中保留供运维诊断。
+				var readCandidate *UpstreamFailoverError
+				if !semanticOutputSeen && ctx.Err() == nil {
+					readCandidate = newRetryFilterStreamCandidate(resp.Header, nil, RetryFilterEventEmptyInterruptedStream, "upstream stream disconnected before valid output")
+					if decision := prepareRetryFilterFailure(ctx, c, account, readCandidate); decision.Actionable() {
+						recordRetryFilterFailure(c, account, readCandidate)
+						return nil, readCandidate
+					}
+				}
+				if err := commitStage(); err != nil {
+					return nil, err
+				}
 				disconnectMsg := "upstream stream disconnected: " + sanitizeStreamError(ev.err)
-				if !c.Writer.Written() {
+				if OpenAICompactKeepaliveAdjustedWrittenSize(c) < 0 {
 					logger.LegacyPrintf("service.gateway", "Upstream stream read error before any client output (account=%d), failing over: %v", account.ID, ev.err)
 					body, _ := json.Marshal(map[string]any{
 						"type": "error",
@@ -1056,12 +1154,17 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 							"message": disconnectMsg,
 						},
 					})
-					return nil, &UpstreamFailoverError{
+					legacyErr := withRetryFilterEvent(&UpstreamFailoverError{
 						StatusCode:             http.StatusBadGateway,
 						ResponseBody:           body,
+						ResponseHeaders:        resp.Header.Clone(),
 						RetryableOnSameAccount: true,
-					}
+					}, RetryFilterEventEmptyInterruptedStream)
+					copyRetryFilterEvaluation(legacyErr, readCandidate)
+					recordRetryFilterDecision(c, account, legacyErr)
+					return nil, legacyErr
 				}
+				recordRetryFilterDecision(c, account, readCandidate)
 				sendErrorEvent("stream_read_error", disconnectMsg)
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs}, fmt.Errorf("stream read error: %w", ev.err)
 			}
@@ -1079,11 +1182,43 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 					if clientDisconnected {
 						return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, nil
 					}
+					var preparedFailure *UpstreamFailoverError
+					if errors.As(err, &preparedFailure) {
+						return nil, preparedFailure
+					}
+					var streamErr *sseStreamErrorEventError
+					if errors.As(err, &streamErr) && !semanticOutputSeen && ctx.Err() == nil {
+						candidate := newRetryFilterStreamCandidate(resp.Header, []byte(streamErr.RawData), "", "upstream stream error")
+						candidate.StatusCode = http.StatusForbidden
+						if gjson.GetBytes(candidate.ResponseBody, "error.type").String() == "overloaded_error" {
+							candidate.StatusCode = 529
+						}
+						if decision := prepareRetryFilterFailure(ctx, c, account, candidate); decision.Actionable() {
+							recordRetryFilterFailure(c, account, candidate)
+							return nil, candidate
+						}
+						streamErr.retryFilterCandidate = candidate
+					}
+					if stageErr := commitStage(); stageErr != nil {
+						return nil, stageErr
+					}
 					return nil, err
 				}
 
 				for _, block := range outputBlocks {
 					if !clientDisconnected {
+						if staging && !semanticOutputSeen {
+							if _, err := stage.WriteString(block); err != nil {
+								return nil, err
+							}
+							if usagePatch != nil {
+								mergeSSEUsagePatch(usage, usagePatch)
+							}
+							continue
+						}
+						if err := commitStage(); err != nil {
+							return nil, err
+						}
 						restored := reverseToolNamesIfPresent(c, []byte(block))
 						if _, werr := fmt.Fprint(w, string(restored)); werr != nil {
 							clientDisconnected = true
@@ -1119,6 +1254,17 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			}
 			if clientDisconnected {
 				return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after timeout")
+			}
+			if !semanticOutputSeen && ctx.Err() == nil {
+				candidate := newRetryFilterStreamCandidate(resp.Header, nil, RetryFilterEventEmptyInterruptedStream, "upstream stream timed out before valid output")
+				if decision := prepareRetryFilterFailure(ctx, c, account, candidate); decision.Actionable() {
+					recordRetryFilterFailure(c, account, candidate)
+					return nil, candidate
+				}
+				recordRetryFilterDecision(c, account, candidate)
+			}
+			if err := commitStage(); err != nil {
+				return nil, err
 			}
 			logger.LegacyPrintf("service.gateway", "Stream data interval timeout: account=%d model=%s interval=%s", account.ID, originalModel, streamInterval)
 			// 处理流超时，可能标记账户为临时不可调度或错误状态
@@ -1410,6 +1556,10 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 			return nil, invalidNonStreamingJSONFailoverError(ctx, s.rateLimitService, resp, account, body, err, mappedModel)
 		}
 		return nil, fmt.Errorf("parse response: %w", err)
+	}
+
+	if candidate := prepareRetryFilterEmptyJSON(ctx, c, account, resp, body); candidate != nil {
+		return nil, candidate
 	}
 
 	// 解析嵌套的 cache_creation 对象中的 5m/1h 明细

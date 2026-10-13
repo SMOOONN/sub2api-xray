@@ -3636,7 +3636,7 @@ func TestFailoverOpenAIUpstreamHTTPErrorUsesOnlyGrokRateLimitPolicy(t *testing.T
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
 
-	failoverErr := svc.failoverOpenAIUpstreamHTTPError(
+	failoverErr, _ := svc.failoverOpenAIUpstreamHTTPError(
 		context.Background(), c, account, resp,
 		[]byte(`{"error":{"message":"rate limited"}}`), "rate limited", "grok-4.3",
 	)

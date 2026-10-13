@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 
-const { updateAccountMock, checkMixedChannelRiskMock, authIsSimpleMode, userApiPutMock } = vi.hoisted(() => ({
+const { updateAccountMock, checkMixedChannelRiskMock, authIsSimpleMode, userApiPutMock, getOpenCodeGoUsageMock, refreshOpenCodeGoUsageMock, saveOpenCodeGoUsageMock } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
   authIsSimpleMode: { value: true },
-  userApiPutMock: vi.fn()
+  userApiPutMock: vi.fn(),
+  getOpenCodeGoUsageMock: vi.fn(),
+  refreshOpenCodeGoUsageMock: vi.fn(),
+  saveOpenCodeGoUsageMock: vi.fn()
 }))
 
 vi.mock('@/api/client', () => ({
@@ -35,7 +38,10 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       update: updateAccountMock,
-      checkMixedChannelRisk: checkMixedChannelRiskMock
+      checkMixedChannelRisk: checkMixedChannelRiskMock,
+      getOpenCodeGoUsage: getOpenCodeGoUsageMock,
+      refreshOpenCodeGoUsage: refreshOpenCodeGoUsageMock,
+      setOpenCodeGoUsageAutoRefresh: saveOpenCodeGoUsageMock
     },
     settings: {
       getWebSearchEmulationConfig: vi.fn().mockResolvedValue({ enabled: false, providers: [] }),
@@ -77,6 +83,7 @@ const BaseDialogStub = defineComponent({
 const ModelWhitelistSelectorStub = defineComponent({
   name: 'ModelWhitelistSelector',
   props: {
+    modelMappings: { type: Array, default: () => [] },
     modelValue: {
       type: Array,
       default: () => []
@@ -337,6 +344,9 @@ describe('EditAccountModal', () => {
   beforeEach(() => {
     authIsSimpleMode.value = true
     userApiPutMock.mockReset().mockResolvedValue({ data: buildAccount() })
+    getOpenCodeGoUsageMock.mockReset()
+    refreshOpenCodeGoUsageMock.mockReset()
+    saveOpenCodeGoUsageMock.mockReset()
   })
 
   it('passes the normalized system owner scope to GroupSelector for an admin account', () => {
@@ -362,7 +372,116 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).not.toHaveBeenCalled()
   })
 
+  it('does not load the admin OpenCode Go panel in user scope', async () => {
+    const account = {
+      ...buildAccount(),
+      opencode_go_usage: { account_id: 1, eligible: true, auto_refresh_enabled: false }
+    }
+    const wrapper = mountModal(account, false, 'user')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="opencode-go-usage-settings"]').exists()).toBe(false)
+    expect(getOpenCodeGoUsageMock).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ account: { ...account, id: 2 } })
+    await flushPromises()
+    expect(getOpenCodeGoUsageMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('loads the OpenCode Go usage panel for admin accounts', async () => {
+    const state = { account_id: 1, eligible: true, auto_refresh_enabled: false }
+    getOpenCodeGoUsageMock.mockResolvedValue(state)
+    const wrapper = mountModal({ ...buildAccount(), opencode_go_usage: state })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="opencode-go-usage-settings"]').exists()).toBe(true)
+    expect(getOpenCodeGoUsageMock).toHaveBeenCalledWith(1)
+    wrapper.unmount()
+  })
+
+  it.each(['load', 'refresh', 'save'] as const)('ignores a late OpenCode Go %s response and keeps the new account request busy', async (operation) => {
+    const pending = () => {
+      let resolve!: (value: any) => void
+      const promise = new Promise<any>(done => { resolve = done })
+      return { promise, resolve }
+    }
+    const oldRequest = pending()
+    const newRequest = pending()
+    const mock = operation === 'load' ? getOpenCodeGoUsageMock
+      : operation === 'refresh' ? refreshOpenCodeGoUsageMock : saveOpenCodeGoUsageMock
+    mock.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(newRequest.promise)
+    const state = (id: number) => ({
+      account_id: id, eligible: true, auto_refresh_enabled: false,
+      ...(operation === 'load' ? {} : { snapshot: { status: 'ok' } })
+    })
+    const selector = operation === 'save'
+      ? '[data-testid="opencode-go-auto-refresh"]' : '[data-testid="opencode-go-refresh"]'
+    const wrapper = mountModal({ ...buildAccount(), opencode_go_usage: state(1) })
+    if (operation !== 'load') await wrapper.get(selector).trigger('click')
+    await wrapper.setProps({ account: { ...buildAccount(), id: 2, opencode_go_usage: state(2) } })
+    if (operation !== 'load') await wrapper.get(selector).trigger('click')
+    expect(mock.mock.calls.map(call => call[0])).toEqual([1, 2])
+
+    oldRequest.resolve({ ...state(1), auto_refresh_enabled: true })
+    await flushPromises()
+    expect(wrapper.emitted('updated')).toBeUndefined()
+    if (operation === 'load') expect(wrapper.find(selector).exists()).toBe(false)
+    else expect(wrapper.get<HTMLButtonElement>(selector).element.disabled).toBe(true)
+
+    const currentState = { ...state(2), auto_refresh_enabled: true }
+    newRequest.resolve(currentState)
+    await flushPromises()
+    expect(wrapper.emitted('updated')).toEqual([[expect.objectContaining({ id: 2, opencode_go_usage: currentState })]])
+    expect(wrapper.get<HTMLButtonElement>(selector).element.disabled).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each(['scope', 'reopen'] as const)('invalidates an OpenCode Go request when the same account returns after %s changes', async (transition) => {
+    let resolveOld!: (value: any) => void
+    let resolveNew!: (value: any) => void
+    getOpenCodeGoUsageMock
+      .mockReturnValueOnce(new Promise(done => { resolveOld = done }))
+      .mockReturnValueOnce(new Promise(done => { resolveNew = done }))
+    const state = { account_id: 1, eligible: true, auto_refresh_enabled: false }
+    const wrapper = mountModal({ ...buildAccount(), opencode_go_usage: state })
+    if (transition === 'scope') {
+      await wrapper.setProps({ scope: 'user' })
+      await wrapper.setProps({ scope: 'admin' })
+    } else {
+      await wrapper.setProps({ show: false })
+      await wrapper.setProps({ show: true })
+    }
+    expect(getOpenCodeGoUsageMock).toHaveBeenCalledTimes(2)
+    resolveOld({ ...state, auto_refresh_enabled: true })
+    await flushPromises()
+    expect(wrapper.emitted('updated')).toBeUndefined()
+    expect(wrapper.find('[data-testid="opencode-go-refresh"]').exists()).toBe(false)
+    resolveNew(state)
+    await flushPromises()
+    expect(wrapper.emitted('updated')).toEqual([[expect.objectContaining({ opencode_go_usage: state })]])
+    wrapper.unmount()
+  })
+
   afterEach(() => vi.useRealTimers())
+
+  it('passes existing non-identity mappings to the whitelist selector and preserves them on save', async () => {
+    const account = buildAccount()
+    account.credentials.model_mapping = { 'gpt-5.2': 'gpt-5.2', 'gpt-latest': 'deepseek-chat' }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    expect(wrapper.getComponent(ModelWhitelistSelectorStub).props('modelMappings')).toEqual([
+      { from: 'gpt-latest', to: 'deepseek-chat' }
+    ])
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.model_mapping).toEqual(account.credentials.model_mapping)
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true, account: { ...account } })
+    expect(wrapper.getComponent(ModelWhitelistSelectorStub).props('modelMappings')).toEqual([
+      { from: 'gpt-latest', to: 'deepseek-chat' }
+    ])
+  })
 
   it('sets expiry presets from now instead of extending the saved expiry', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
@@ -1344,6 +1463,19 @@ describe('EditAccountModal', () => {
 	  expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.auto_pause_5h_disabled).toBe(true)
 	  expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.auto_pause_7d_disabled).toBeUndefined()
 	})
+
+  it('preserves Seedance when exactly two endpoint capabilities are selected', async () => {
+    const account = buildAccount()
+    account.credentials.openai_capabilities = ['chat_completions', 'seedance']
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    expect(wrapper.get<HTMLInputElement>('[data-testid="openai-endpoint-capability-seedance"]').element.checked).toBe(true)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.openai_capabilities).toEqual(['chat_completions', 'seedance'])
+  })
 
   it('keeps at least one OpenAI APIKey endpoint capability selected', async () => {
     const account = buildAccount()

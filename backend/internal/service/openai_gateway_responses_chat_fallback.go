@@ -1,12 +1,15 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +17,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 )
 
@@ -116,14 +121,15 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 
 	if resp.StatusCode >= 400 {
 		respBody, upstreamMsg := s.readOpenAIUpstreamError(resp)
-		if foErr := s.failoverOpenAIUpstreamHTTPError(ctx, c, account, resp, respBody, upstreamMsg, upstreamModel); foErr != nil {
+		foErr, candidate := s.failoverOpenAIUpstreamHTTPError(ctx, c, account, resp, respBody, upstreamMsg, upstreamModel)
+		if foErr != nil {
 			return nil, foErr
 		}
-		return s.handleErrorResponse(ctx, resp, c, account, chatBody, billingModel)
+		return s.handleErrorResponseWithDecision(ctx, resp, c, account, chatBody, candidate, billingModel)
 	}
 
 	if clientStream {
-		return s.streamChatCompletionsAsResponses(c, resp, originalModel, customTools, functionTools, toolSearch, namespaceTools, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
+		return s.streamChatCompletionsAsResponses(c, account, resp, originalModel, customTools, functionTools, toolSearch, namespaceTools, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 	}
 	return s.bufferChatCompletionsAsResponses(c, resp, originalModel, customTools, functionTools, toolSearch, namespaceTools, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 }
@@ -172,6 +178,7 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsResponses(
 
 func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 	c *gin.Context,
+	account *Account,
 	resp *http.Response,
 	originalModel string,
 	customTools map[string]bool,
@@ -186,6 +193,37 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 ) (*OpenAIForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
 	writeStreamHeaders := s.newStreamHeaderWriter(c, resp.Header)
+	ctx := c.Request.Context()
+	var stage *openAIFirstOutputStage
+	stopKeepalive := func() {}
+	if retryFilterShouldStage(ctx, account) {
+		stage = newDefaultOpenAIFirstOutputStage()
+		defer func() {
+			if err := stage.Close(); err != nil {
+				logger.L().Warn("openai responses: close retry-filter stage", zap.Error(err))
+			}
+		}()
+		interval := 0
+		if s.cfg != nil {
+			interval = s.cfg.Gateway.StreamKeepaliveInterval
+		}
+		stopKeepalive = startOpenAISSEKeepalive(c, retryFilterKeepaliveInterval(interval))
+	}
+	defer func() { stopKeepalive() }()
+	staging := stage != nil
+	semanticOutputSeen := false
+	commitStage := func() error {
+		stopKeepalive()
+		if !staging {
+			return nil
+		}
+		staging = false
+		if stage.Buffered() == 0 {
+			return stage.Close()
+		}
+		writeStreamHeaders()
+		return stage.CommitTo(c.Writer)
+	}
 
 	state := apicompat.NewChatCompletionsToResponsesStreamState(originalModel)
 	state.CustomTools = customTools
@@ -194,11 +232,13 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 	state.NamespaceTools = namespaceTools
 	clientDisconnected := false
 
-	writeEvents := func(events []apicompat.ResponsesStreamEvent) {
+	writeEvents := func(events []apicompat.ResponsesStreamEvent) error {
 		if clientDisconnected || len(events) == 0 {
-			return
+			return nil
 		}
-		writeStreamHeaders()
+		if !staging {
+			writeStreamHeaders()
+		}
 		for _, event := range events {
 			sse, err := apicompat.ResponsesEventToSSE(event)
 			if err != nil {
@@ -208,23 +248,75 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 				)
 				continue
 			}
+			if staging {
+				if _, err := stage.WriteString(sse); err != nil {
+					return err
+				}
+				continue
+			}
 			if _, err := fmt.Fprint(c.Writer, sse); err != nil {
 				clientDisconnected = true
 				logger.L().Debug("openai responses chat fallback: client disconnected, continuing to drain upstream for billing",
 					zap.Error(err),
 					zap.String("request_id", requestID),
 				)
-				return
+				return nil
 			}
 		}
-		c.Writer.Flush()
+		if !staging {
+			c.Writer.Flush()
+		}
+		return nil
+	}
+	inspect := func(payload []byte) error {
+		if !semanticOutputSeen && (gjson.GetBytes(payload, "error").Exists() || gjson.GetBytes(payload, "type").String() == "error") {
+			candidate := s.openAIStreamFailureCandidate(account, payload, extractOpenAISSEErrorMessage(payload), resp.Header)
+			candidate.NextAccountAction = NextAccountStop
+			decision := prepareRetryFilterFailure(ctx, c, account, candidate)
+			if decision != nil {
+				recordRetryFilterFailure(c, account, candidate)
+			}
+			if decision.Actionable() {
+				return candidate
+			}
+		}
+		if RetryFilterResponseHasValidOutput("", payload) {
+			semanticOutputSeen = true
+			return commitStage()
+		}
+		return nil
 	}
 
-	scan := s.scanCCStream(c, resp, "openai responses chat fallback", requestID, startTime, func(chunk *apicompat.ChatCompletionsChunk) {
+	scan := s.scanCCStream(c, resp, "openai responses chat fallback", requestID, startTime, func(chunk *apicompat.ChatCompletionsChunk) error {
 		events := apicompat.ChatCompletionsChunkToResponsesEvents(chunk, state)
 		s.cacheReasoningItemsFromEvents(events)
-		writeEvents(events)
-	})
+		return writeEvents(events)
+	}, inspect)
+	if scan.CallbackErr != nil {
+		scan.Err = scan.CallbackErr
+	}
+	if !scan.SemanticOutputSeen && len(scan.ErrorPayload) == 0 && scan.CallbackErr == nil && ctx.Err() == nil &&
+		!errors.Is(scan.Err, context.Canceled) && !errors.Is(scan.Err, context.DeadlineExceeded) &&
+		!errors.Is(scan.Err, bufio.ErrTooLong) && !errors.Is(scan.Err, errOpenAIFirstOutputScannerLimit) {
+		event := RetryFilterEventEmptyInterruptedStream
+		if scan.Err == nil && (scan.SawDone || scan.SawFinish) {
+			event = RetryFilterEventEmptyCompletedResponse
+		}
+		candidate := newRetryFilterStreamCandidate(resp.Header, nil, event, "upstream stream ended before valid output")
+		decision := prepareRetryFilterFailure(ctx, c, account, candidate)
+		if decision != nil {
+			recordRetryFilterFailure(c, account, candidate)
+		}
+		if decision.Actionable() {
+			scan.Err = candidate
+		}
+	}
+	var intercepted *UpstreamFailoverError
+	if !errors.As(scan.Err, &intercepted) && scan.CallbackErr == nil {
+		if err := commitStage(); err != nil {
+			scan.Err = err
+		}
+	}
 
 	if scan.Err != nil {
 		return &OpenAIForwardResult{
@@ -261,7 +353,9 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsResponses(
 
 	finalEvents := apicompat.FinalizeChatCompletionsResponsesStream(state)
 	s.cacheReasoningItemsFromEvents(finalEvents)
-	writeEvents(finalEvents)
+	if err := writeEvents(finalEvents); err != nil {
+		return nil, err
+	}
 	if !clientDisconnected {
 		writeStreamHeaders()
 		if _, err := fmt.Fprint(c.Writer, "data: [DONE]\n\n"); err != nil {
@@ -398,4 +492,106 @@ func (s *OpenAIGatewayService) setReasoningContent(itemID, content string) {
 			zap.String("item_id", itemID),
 		)
 	}
+}
+
+// deepSeekChatReasoningPlaceholderText 是 Chat Completions 侧 thinking-mode
+// 占位明文。必须是单个空格：DeepSeek 拒绝空串，非空即可通过；LiteLLM 同样注入
+// 单个空格。
+const deepSeekChatReasoningPlaceholderText = " "
+
+// targetsDeepSeekAPIHost 报告该账号实际上游是否是 DeepSeek 官方 API。
+// platform=deepseek 直接命中；platform=openai 但 base_url 指向
+// api.deepseek.com 的映射账号同样命中（Codex 把 GPT 模型名映射到 DeepSeek
+// 时的典型接入方式）。
+func targetsDeepSeekAPIHost(account *Account) bool {
+	if account == nil {
+		return false
+	}
+	if account.Platform == PlatformDeepseek {
+		return true
+	}
+	u, err := url.Parse(strings.TrimSpace(account.GetOpenAIBaseURL()))
+	if err != nil {
+		return false
+	}
+	ds, err := url.Parse(DefaultDeepseekBaseURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Hostname(), ds.Hostname())
+}
+
+// targetsOpenCodeZenUpstream 报告该账号上游是否是官方 OpenCode Zen / Go 网关。
+// platform=opencode_go 直接命中；其他平台按 base_url 主机判定，覆盖用 API Key
+// 直接把 openai 平台账号指向 opencode.ai 的接入方式。
+func targetsOpenCodeZenUpstream(account *Account) bool {
+	if account == nil {
+		return false
+	}
+	if account.IsOpenCodeGo() {
+		return true
+	}
+	return isOfficialOpenCodeHost(account.GetOpenAIBaseURL())
+}
+
+// isDeepSeekCatalogModel 判定（剥掉 opencode 前缀后的）模型 ID 是否属于
+// DeepSeek 系列，例如 deepseek-v4-flash / deepseek-v4.1-flash / deepseek-chat。
+func isDeepSeekCatalogModel(model string) bool {
+	return strings.HasPrefix(normalizeOpenCodeGoModelID(model), "deepseek")
+}
+
+// requiresDeepSeekChatReasoning 报告该 Chat Completions 请求的上游是否按
+// DeepSeek thinking mode 语义校验 reasoning_content。
+//
+// DeepSeek 官方 API 直接命中。OpenCode Zen / Go 是转发型订阅网关：deepseek-*
+// 模型由 DeepSeek 实际承载，同一条 400 原文会被一字不差地回吐，所以按
+// 「官方 OpenCode 上游 + deepseek-* 模型」补一条判定。
+//
+// 不放宽成「任意上游的 deepseek-* 模型名」：占位符是写进请求体的额外字段，
+// 对没有这条约束的上游属于无谓改写，且可能触发未知字段校验。
+func requiresDeepSeekChatReasoning(account *Account, body []byte) bool {
+	if targetsDeepSeekAPIHost(account) {
+		return true
+	}
+	if !targetsOpenCodeZenUpstream(account) {
+		return false
+	}
+	return isDeepSeekCatalogModel(gjson.GetBytes(body, "model").String())
+}
+
+// ensureDeepSeekChatReasoningPlaceholders 给缺 reasoning_content 的 assistant
+// 消息补单个空格占位。DeepSeek thinking mode 要求历史里每条产生过思维的
+// assistant 消息都回传该字段，否则 400
+// "The `reasoning_content` in the thinking mode must be passed back to the API"。
+//
+// 桥接会从 summary / 缓存回注真实明文；这里只填仍为空的缺口，不覆盖已有内容。
+// 判定见 requiresDeepSeekChatReasoning，不命中的上游原样返回（字节不变）。
+func ensureDeepSeekChatReasoningPlaceholders(account *Account, body []byte) []byte {
+	if !requiresDeepSeekChatReasoning(account, body) {
+		return body
+	}
+	messages := gjson.GetBytes(body, "messages")
+	if !messages.IsArray() {
+		return body
+	}
+	updated := body
+	changed := false
+	for i, msg := range messages.Array() {
+		if strings.TrimSpace(msg.Get("role").String()) != "assistant" {
+			continue
+		}
+		if msg.Get("reasoning_content").String() != "" {
+			continue
+		}
+		next, err := sjson.SetBytes(updated, "messages."+strconv.Itoa(i)+".reasoning_content", deepSeekChatReasoningPlaceholderText)
+		if err != nil {
+			return body
+		}
+		updated = next
+		changed = true
+	}
+	if !changed {
+		return body
+	}
+	return updated
 }

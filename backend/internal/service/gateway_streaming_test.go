@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -166,6 +167,40 @@ func TestHandleStreamingResponse_CacheTokens(t *testing.T) {
 }
 
 func TestHandleStreamingResponse_EmptyStream(t *testing.T) {
+	for _, mode := range []string{"off", "unmatched", "observe", "retry"} {
+		t.Run(mode, func(t *testing.T) {
+			rule := &model.RetryFilterRule{EmptyResponseMode: model.RetryFilterEmptyResponseBoth, Action: model.RetryFilterActionSameAccountRetry}
+			if mode == "unmatched" {
+				rule.EmptyResponseMode = model.RetryFilterEmptyResponseNone
+			}
+			if mode == "observe" {
+				rule.Action = model.RetryFilterActionObserve
+			}
+			runtime := retryFilterAttemptRuntimeForTest(rule)
+			if mode == "off" {
+				runtime.enabled = func(context.Context) bool { return false }
+			}
+			c, rec, account := retryFilterAttemptContextForTest(runtime)
+			resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: http.NoBody}
+			result, err := newMinimalGatewayService().handleStreamingResponse(c.Request.Context(), resp, c, account, time.Now(), "model", "model", false)
+			var failure *UpstreamFailoverError
+			if mode == "retry" {
+				require.ErrorAs(t, err, &failure)
+				require.Equal(t, http.StatusBadGateway, failure.StatusCode)
+				require.Equal(t, RetryFilterEventEmptyInterruptedStream, failure.RetryFilterEventType)
+				require.Nil(t, result)
+				require.False(t, c.Writer.Written())
+			} else {
+				require.EqualError(t, err, "stream usage incomplete: missing terminal event")
+				require.False(t, errors.As(err, &failure))
+				require.NotNil(t, result)
+			}
+			require.Empty(t, rec.Body.String())
+		})
+	}
+}
+
+func TestHandleStreamingResponse_EmptyStreamWithoutRuntime(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := newMinimalGatewayService()
 
@@ -183,8 +218,9 @@ func TestHandleStreamingResponse_EmptyStream(t *testing.T) {
 
 	result, err := svc.handleStreamingResponse(context.Background(), resp, c, &Account{ID: 1}, time.Now(), "model", "model", false)
 	_ = pr.Close()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "missing terminal event")
+	var failoverErr *UpstreamFailoverError
+	require.EqualError(t, err, "stream usage incomplete: missing terminal event")
+	require.False(t, errors.As(err, &failoverErr))
 	require.NotNil(t, result)
 }
 

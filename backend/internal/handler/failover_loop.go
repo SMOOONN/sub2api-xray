@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"go.uber.org/zap"
@@ -55,7 +56,10 @@ const (
 // 语义上等同于「无可用账号」：候选账号都不满足分组的利润约束。
 const profitVetoExhaustedMessage = "No available accounts: all candidates rejected by group profit control"
 
-func sameAccountRetryDelayFor(failoverErr *service.UpstreamFailoverError, retryCount int) time.Duration {
+func sameAccountRetryDelayFor(failoverErr *service.UpstreamFailoverError, retryCount int, decisions ...*service.RetryFilterDecision) time.Duration {
+	if delay := retryFilterDelayOverride(decisions); delay != nil {
+		return time.Duration(*delay) * time.Millisecond
+	}
 	if failoverErr == nil {
 		return sameAccountRetryDelay
 	}
@@ -76,12 +80,20 @@ func sameAccountRetryDelayFor(failoverErr *service.UpstreamFailoverError, retryC
 	return delay
 }
 
-func sameAccountRetryAllowed(failoverErr *service.UpstreamFailoverError, retryCount, retryLimit int) bool {
+func sameAccountRetryAllowed(failoverErr *service.UpstreamFailoverError, retryCount, retryLimit int, decisions ...*service.RetryFilterDecision) bool {
 	if failoverErr == nil || !failoverErr.RetryableOnSameAccount {
 		return false
 	}
 	if !sameAccountRetryDeadlineAllows(failoverErr) {
 		return false
+	}
+	// An explicit rule budget also bounds deadline-based retries, including zero.
+	if override := retryFilterRetryOverride(decisions); override != nil {
+		retryLimit = *override
+		if failoverErr.SameAccountRetryMax > 0 && failoverErr.SameAccountRetryMax < retryLimit {
+			retryLimit = failoverErr.SameAccountRetryMax
+		}
+		return retryLimit > 0 && retryCount < retryLimit
 	}
 	// Error-specific caps (Grok capacity/stream-idle) remain hard limits even
 	// when the error also carries a freshly reconstructed deadline.
@@ -110,15 +122,100 @@ func sameAccountRetryDeadlineAllows(failoverErr *service.UpstreamFailoverError) 
 
 // effectiveSameAccountRetryLimit applies an error-specific cap without
 // overriding an explicit account setting of zero (which disables retries).
-func effectiveSameAccountRetryLimit(failoverErr *service.UpstreamFailoverError, account *service.Account) int {
+func effectiveSameAccountRetryLimit(failoverErr *service.UpstreamFailoverError, account *service.Account, decisions ...*service.RetryFilterDecision) int {
 	if account == nil {
 		return 0
 	}
 	limit := account.GetPoolModeRetryCount()
+	if override := retryFilterRetryOverride(decisions); override != nil {
+		limit = *override
+	}
 	if limit > 0 && failoverErr != nil && failoverErr.SameAccountRetryMax > 0 && failoverErr.SameAccountRetryMax < limit {
 		return failoverErr.SameAccountRetryMax
 	}
 	return limit
+}
+
+// FailoverDecisionInput carries the selected request group, never an arbitrary
+// account membership, alongside the retry budget and upstream failure.
+type FailoverDecisionInput struct {
+	Account     *service.Account
+	Group       *service.Group
+	GroupID     int64
+	Model       string
+	Platform    string
+	RetryLimit  int
+	FailoverErr *service.UpstreamFailoverError
+}
+
+const retryFilterTerminateReason = service.RetryFilterTerminateReason
+
+func retryFilterRetryOverride(decisions []*service.RetryFilterDecision) *int {
+	if len(decisions) == 0 || decisions[0] == nil || decisions[0].Rule == nil || decisions[0].Action != model.RetryFilterActionSameAccountRetry {
+		return nil
+	}
+	return decisions[0].Rule.RetryCountOverride
+}
+
+func retryFilterDelayOverride(decisions []*service.RetryFilterDecision) *int {
+	if len(decisions) == 0 || decisions[0] == nil || decisions[0].Rule == nil || decisions[0].Action != model.RetryFilterActionSameAccountRetry {
+		return nil
+	}
+	return decisions[0].Rule.RetryDelayMs
+}
+
+func applyRetryFilter(c *gin.Context, runtime *service.RetryFilterRuntime, input FailoverDecisionInput) *service.RetryFilterDecision {
+	if c == nil || c.Request == nil {
+		return nil
+	}
+	return runtime.Apply(c.Request.Context(), c, service.RetryFilterInput{
+		Account: input.Account, Group: input.Group, GroupID: input.GroupID,
+		Model: input.Model, RetryLimit: input.RetryLimit, FailoverErr: input.FailoverErr,
+	})
+}
+
+// bindRetryFilterAttempt refreshes both contexts consumed by service code.
+// Derived forwarding contexts retain the selected route rather than the
+// authentication group from a previous attempt.
+func bindRetryFilterAttempt(c *gin.Context, ctx context.Context, runtime *service.RetryFilterRuntime, group *service.Group, groupID int64, modelName string) context.Context {
+	ctx = service.WithRetryFilterAttempt(ctx, runtime, group, groupID, modelName)
+	c.Request = c.Request.WithContext(ctx)
+	return ctx
+}
+
+// evaluateRetryFilterRequestEmpty runs the request-empty condition after an
+// account has been selected but before an upstream request is dispatched. An
+// empty request is a client-side validation event: terminate is actionable;
+// observe records the match, while retry/switch actions leave the existing
+// request path untouched instead of fabricating an upstream retry.
+func evaluateRetryFilterRequestEmpty(c *gin.Context, runtime *service.RetryFilterRuntime, account *service.Account, group *service.Group, groupID int64, modelName string, body []byte) *service.UpstreamFailoverError {
+	if c == nil || c.Request == nil || runtime == nil || account == nil {
+		return nil
+	}
+	eventType := service.RetryFilterRequestEmptyEvent(body)
+	if eventType == "" {
+		return nil
+	}
+	synthetic := &service.UpstreamFailoverError{
+		StatusCode:           http.StatusBadRequest,
+		ResponseBody:         service.RetryFilterEmptyRequestErrorBody(eventType),
+		NextAccountAction:    service.NextAccountStop,
+		RetryFilterEventType: eventType,
+	}
+	decision := applyRetryFilter(c, runtime, FailoverDecisionInput{
+		Account: account, Group: group, GroupID: groupID, Model: modelName,
+		RetryLimit: account.GetPoolModeRetryCount(), FailoverErr: synthetic,
+	})
+	if decision != nil && decision.Action == model.RetryFilterActionTerminate {
+		return synthetic
+	}
+	return nil
+}
+func retryFilterClientResponse(err *service.UpstreamFailoverError) (int, string, bool) {
+	if err == nil || err.Reason != retryFilterTerminateReason || err.NextAccountAction != service.NextAccountStop {
+		return 0, "", false
+	}
+	return err.ClientStatusCode, err.ClientMessage, true
 }
 
 // FailoverState 跨循环迭代共享的 failover 状态
@@ -198,6 +295,29 @@ func (s *FailoverState) HandleFailoverError(
 	retryLimit int,
 	failoverErr *service.UpstreamFailoverError,
 ) FailoverAction {
+	return s.handleFailoverError(ctx, gatewayService, accountID, platform, retryLimit, failoverErr, nil)
+}
+
+// HandleFailoverDecision is the request-aware production entry point. The legacy
+// method remains available to callers without a runtime or request context.
+func (s *FailoverState) HandleFailoverDecision(c *gin.Context, gatewayService TempUnscheduler, runtime *service.RetryFilterRuntime, input FailoverDecisionInput) FailoverAction {
+	if c == nil || c.Request == nil {
+		return FailoverCanceled
+	}
+	if input.Account == nil || input.FailoverErr == nil {
+		return FailoverExhausted
+	}
+	if c.Request.Context().Err() != nil {
+		return FailoverCanceled
+	}
+	decision := applyRetryFilter(c, runtime, input)
+	return s.handleFailoverError(c.Request.Context(), gatewayService, input.Account.ID, input.Platform, input.RetryLimit, input.FailoverErr, decision)
+}
+
+func (s *FailoverState) handleFailoverError(ctx context.Context, gatewayService TempUnscheduler, accountID int64, platform string, retryLimit int, failoverErr *service.UpstreamFailoverError, decision *service.RetryFilterDecision) FailoverAction {
+	if override := retryFilterRetryOverride([]*service.RetryFilterDecision{decision}); override != nil {
+		retryLimit = *override
+	}
 	// 客户端已断开：failover 只会用已取消的 context 重新选号并必然失败，
 	// 不应再被当成账号耗尽处理（误报 502）。
 	if ctx != nil && ctx.Err() != nil {
@@ -210,7 +330,7 @@ func (s *FailoverState) HandleFailoverError(
 
 	// 同账号重试不算切换账号，粘性会话仅在实际切换时强制缓存计费。
 	retryCount := s.SameAccountRetryCount[accountID]
-	sameAccountRetry := sameAccountRetryAllowed(failoverErr, retryCount, retryLimit)
+	sameAccountRetry := sameAccountRetryAllowed(failoverErr, retryCount, retryLimit, decision)
 	if needForceCacheBilling(s.hasBoundSession, failoverErr, sameAccountRetry) {
 		s.ForceCacheBilling = true
 	}
@@ -219,7 +339,7 @@ func (s *FailoverState) HandleFailoverError(
 	// 重试次数上限 retryLimit 由调用方传入（账号级 pool_mode_retry_count 配置）。
 	if sameAccountRetry {
 		s.SameAccountRetryCount[accountID]++
-		retryDelay := sameAccountRetryDelayFor(failoverErr, s.SameAccountRetryCount[accountID])
+		retryDelay := sameAccountRetryDelayFor(failoverErr, s.SameAccountRetryCount[accountID], decision)
 		logger.FromContext(ctx).Warn("gateway.failover_same_account_retry",
 			zap.Int64("account_id", accountID),
 			zap.Int("upstream_status", failoverErr.StatusCode),
@@ -357,4 +477,11 @@ func sleepWithContext(ctx context.Context, d time.Duration) bool {
 	case <-time.After(d):
 		return true
 	}
+}
+
+func firstRetryFilterRuntime(runtimes []*service.RetryFilterRuntime) *service.RetryFilterRuntime {
+	if len(runtimes) == 0 {
+		return nil
+	}
+	return runtimes[0]
 }

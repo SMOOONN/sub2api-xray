@@ -94,6 +94,23 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	if parsed == nil {
 		return nil, fmt.Errorf("parse request: empty request")
 	}
+	// API-key mappings and OAuth native IDs are resolved before mimicry.
+	validationModel := parsed.Model
+	if account != nil {
+		if account.IsBedrock() {
+			if resolved, ok := ResolveBedrockModelID(account, validationModel); ok {
+				validationModel = resolved
+			}
+		} else if account.Type == AccountTypeAPIKey {
+			validationModel = account.GetMappedModel(validationModel)
+		}
+	}
+	if account != nil && account.Platform == PlatformAnthropic {
+		if err := validateClaude55Request(parsed.Body.Bytes(), validationModel); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"type": "error", "error": gin.H{"type": "invalid_request_error", "message": err.Error()}})
+			return nil, err
+		}
+	}
 	// Anthropic Fast is requested with speed=fast rather than OpenAI's
 	// service_tier. Attach it at this shared boundary so passthrough, OAuth and
 	// partial-stream results all use the same billing and usage-log path.
@@ -369,6 +386,8 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 
 	// 重试循环
 	var resp *http.Response
+	var retryFilterCandidate *UpstreamFailoverError
+	var evaluatedHTTPResponse *http.Response
 	lastWireBody := body
 	retryStart := time.Now()
 	for attempt := 1; attempt <= maxRetryAttempts; attempt++ {
@@ -394,6 +413,14 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		}
 
 		// 优先检测thinking block签名错误（400）并重试一次
+		retryFilterCandidate = s.prepareGatewayHTTPFailure(ctx, c, account, resp)
+		evaluatedHTTPResponse = resp
+		if retryFilterCandidate != nil && retryFilterCandidate.retryFilterDecision.Actionable() {
+			recordRetryFilterFailure(c, account, retryFilterCandidate)
+			_ = resp.Body.Close()
+			return nil, retryFilterCandidate
+		}
+
 		if resp.StatusCode == 400 {
 			respBody, readErr := s.readUpstreamErrorBody(resp)
 			if readErr == nil {
@@ -661,6 +688,13 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		return nil, errors.New("upstream request failed: empty response")
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if evaluatedHTTPResponse != resp {
+		retryFilterCandidate = s.prepareGatewayHTTPFailure(ctx, c, account, resp)
+		if retryFilterCandidate != nil && retryFilterCandidate.retryFilterDecision.Actionable() {
+			recordRetryFilterFailure(c, account, retryFilterCandidate)
+			return nil, retryFilterCandidate
+		}
+	}
 
 	// 处理重试耗尽的情况
 	if resp.StatusCode >= 400 && s.shouldRetryUpstreamError(account, resp.StatusCode) {
@@ -691,11 +725,14 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 					return ""
 				}(),
 			})
-			return nil, &UpstreamFailoverError{
+			failoverErr := &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
 				ResponseBody:           respBody,
+				ResponseHeaders:        resp.Header.Clone(),
 				RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 			}
+			copyRetryFilterEvaluation(failoverErr, retryFilterCandidate)
+			return nil, failoverErr
 		}
 		return s.handleRetryExhaustedError(ctx, resp, c, account)
 	}
@@ -727,11 +764,14 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 				return ""
 			}(),
 		})
-		return nil, &UpstreamFailoverError{
+		failoverErr := &UpstreamFailoverError{
 			StatusCode:             resp.StatusCode,
 			ResponseBody:           respBody,
+			ResponseHeaders:        resp.Header.Clone(),
 			RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 		}
+		copyRetryFilterEvaluation(failoverErr, retryFilterCandidate)
+		return nil, failoverErr
 	}
 	if resp.StatusCode >= 400 {
 		// 可选：对部分 400 触发 failover（默认关闭以保持语义）
@@ -739,7 +779,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			respBody, readErr := s.readUpstreamErrorBody(resp)
 			if readErr != nil {
 				// ReadAll failed, fall back to normal error handling without consuming the stream
-				return s.handleErrorResponse(ctx, resp, c, account, reqModel)
+				return s.handleErrorResponseWithDecision(ctx, resp, c, account, retryFilterCandidate, reqModel)
 			}
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
@@ -778,10 +818,12 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 					logger.LegacyPrintf("service.gateway", "Account %d: 400 error, attempting failover", account.ID)
 				}
 				s.handleFailoverSideEffects(ctx, resp, account, reqModel)
-				return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody}
+				failoverErr := &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody, ResponseHeaders: resp.Header.Clone()}
+				copyRetryFilterEvaluation(failoverErr, retryFilterCandidate)
+				return nil, failoverErr
 			}
 		}
-		return s.handleErrorResponse(ctx, resp, c, account, reqModel)
+		return s.handleErrorResponseWithDecision(ctx, resp, c, account, retryFilterCandidate, reqModel)
 	}
 
 	// 处理正常响应
@@ -802,7 +844,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	var firstTokenMs *int
 	var clientDisconnect bool
 	if reqStream {
-		writerSizeBeforeStream := c.Writer.Size()
+		writerSizeBeforeStream := OpenAICompactKeepaliveAdjustedWrittenSize(c)
 		streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, reqModel, shouldMimicClaudeCode)
 		if err != nil {
 			var sseErr *sseStreamErrorEventError
@@ -810,7 +852,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 				// 上游 HTTP 200 + SSE 流体内出现 event:error 帧。
 				body := []byte(sseErr.RawData)
 				semanticStatus := http.StatusForbidden
-				if c.Writer.Size() == writerSizeBeforeStream && gjson.GetBytes(body, "error.type").String() == "overloaded_error" {
+				if OpenAICompactKeepaliveAdjustedWrittenSize(c) == writerSizeBeforeStream && gjson.GetBytes(body, "error.type").String() == "overloaded_error" {
 					semanticStatus = 529
 					syntheticResp := &http.Response{
 						StatusCode: semanticStatus,
@@ -852,10 +894,13 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 					truncateString(sseErr.RawData, 1000),
 				)
 
-				return nil, &UpstreamFailoverError{
-					StatusCode:   semanticStatus,
-					ResponseBody: body,
+				failoverErr := &UpstreamFailoverError{
+					StatusCode:      semanticStatus,
+					ResponseBody:    body,
+					ResponseHeaders: resp.Header.Clone(),
 				}
+				copyRetryFilterEvaluation(failoverErr, sseErr.retryFilterCandidate)
+				return nil, failoverErr
 			}
 			// 流中断（缺失 terminal 事件、读错误、数据间隔超时等）时保留已观测到的
 			// usage 与错误一起返回，handler 在错误处理完成后照常提交 usage 记录。

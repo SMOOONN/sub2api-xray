@@ -174,6 +174,15 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		if slotResult != openAISlotAcquireOK {
 			return
 		}
+		bindRetryFilterAttempt(c, c.Request.Context(), h.retryFilterRuntime, apiKey.Group, derefGroupID(apiKey.GroupID), requestedModel)
+		if emptyErr := evaluateRetryFilterRequestEmpty(c, h.retryFilterRuntime, account, apiKey.Group, derefGroupID(apiKey.GroupID), requestedModel, body); emptyErr != nil {
+			h.handleFailoverExhausted(c, emptyErr, streamStarted)
+			if accountRelease != nil {
+				accountRelease()
+			}
+			return
+		}
+
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		writerSizeBeforeForward := c.Writer.Size()
 		forwardStart := time.Now()
@@ -197,6 +206,10 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 		var failoverErr *service.UpstreamFailoverError
 		if !errors.As(err, &failoverErr) {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, requestedModel, false, result), false, nil, err)
+			if failoverClientGone(c) {
+				reqLog.Info("openai_alpha_search.forward_aborted_client_disconnected", zap.Int64("account_id", account.ID), zap.Error(err))
+				return
+			}
 			if c.Writer.Size() == writerSizeBeforeForward {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 			}
@@ -204,6 +217,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			return
 		}
 
+		retryDecision := applyRetryFilter(c, h.retryFilterRuntime, FailoverDecisionInput{Account: account, Group: apiKey.Group, GroupID: derefGroupID(apiKey.GroupID), Model: requestedModel, Platform: account.Platform, RetryLimit: account.GetPoolModeRetryCount(), FailoverErr: failoverErr})
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, requestedModel, false, result), false, nil, err)
 		if c.Writer.Size() != writerSizeBeforeForward {
 			h.handleFailoverExhausted(c, failoverErr, true)
@@ -216,11 +230,15 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			)
 			return
 		}
+		if !failoverErr.ShouldRetryNextAccount() {
+			h.handleFailoverExhausted(c, failoverErr, false)
+			return
+		}
 		if failoverErr.RetryableOnSameAccount {
-			retryLimit := account.GetPoolModeRetryCount()
-			if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit) {
+			retryLimit := effectiveSameAccountRetryLimit(failoverErr, account, retryDecision)
+			if sameAccountRetryAllowed(failoverErr, sameAccountRetryCount[account.ID], retryLimit, retryDecision) {
 				sameAccountRetryCount[account.ID]++
-				retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID])
+				retryDelay := sameAccountRetryDelayFor(failoverErr, sameAccountRetryCount[account.ID], retryDecision)
 				reqLog.Warn("openai_alpha_search.same_account_retry",
 					zap.Int64("account_id", account.ID),
 					zap.Int("upstream_status", failoverErr.StatusCode),

@@ -124,6 +124,7 @@ export const FeatureFlags = {
     mode: 'opt-out',
     label: 'Payment',
   }),
+  retryFilter: defineFlag({ key: 'retry_filter_enabled', mode: 'opt-in', label: 'Retry Filter' }),
   riskControl: defineFlag({
     key: 'risk_control_enabled',
     mode: 'opt-in',

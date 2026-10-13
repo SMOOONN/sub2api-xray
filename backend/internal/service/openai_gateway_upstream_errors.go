@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -286,6 +287,10 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(account *Acc
 }
 
 func isOpenAICompatibleModelNotFound400(respBody []byte) bool {
+	return isOpenAICompatibleModelNotFoundBody(respBody)
+}
+
+func isOpenAICompatibleModelNotFoundBody(respBody []byte) bool {
 	code := strings.TrimSpace(extractUpstreamErrorCode(respBody))
 	if code != "" {
 		return strings.EqualFold(code, "model_not_found")
@@ -296,6 +301,7 @@ func isOpenAICompatibleModelNotFound400(respBody []byte) bool {
 		msg = strings.ToLower(strings.TrimSpace(string(respBody)))
 	}
 	return strings.Contains(msg, "unknown provider for model") ||
+		strings.Contains(msg, "unknown model") ||
 		strings.Contains(msg, "model not found") ||
 		strings.Contains(msg, "model is not supported")
 }
@@ -518,7 +524,25 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	requestBody []byte,
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
+	return s.handleErrorResponseWithDecision(ctx, resp, c, account, requestBody, nil, requestedModel...)
+}
+
+func (s *OpenAIGatewayService) handleErrorResponseWithDecision(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, requestBody []byte, candidate *UpstreamFailoverError, requestedModel ...string) (result *OpenAIForwardResult, returnErr error) {
 	body := s.readUpstreamErrorBody(resp)
+	if candidate == nil {
+		candidate = s.prepareOpenAIHTTPFailure(ctx, c, account, resp, body, extractUpstreamErrorMessage(body), false)
+	}
+	defer func() {
+		recordRetryFilterDecision(c, account, candidate)
+		var failover *UpstreamFailoverError
+		if errors.As(returnErr, &failover) {
+			copyRetryFilterEvaluation(failover, candidate)
+		}
+	}()
+	if candidate.retryFilterDecision.Actionable() {
+		recordRetryFilterFailure(c, account, candidate)
+		return nil, candidate
+	}
 	body = s.redactAgentIdentitySensitiveBody(ctx, account, body)
 
 	// cyber_policy 硬阻断：透传上游原始错误体给客户端（不重包成通用 502），不冷却账号。
@@ -537,7 +561,11 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		if contentType == "" {
 			contentType = "application/json"
 		}
-		c.Data(resp.StatusCode, contentType, body)
+		if StopOpenAICompactSSEKeepaliveCommitted(c) {
+			writeOpenAICompactSSEFailure(c, resp.StatusCode, body)
+		} else {
+			c.Data(resp.StatusCode, contentType, body)
+		}
 		if cyberMsg == "" {
 			return nil, fmt.Errorf("openai cyber_policy: %d", resp.StatusCode)
 		}
@@ -595,13 +623,15 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 			Detail:             upstreamDetail,
 		})
 		s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, requestedModel...)
-		return nil, newOpenAIUpstreamFailoverError(
+		failoverErr := newOpenAIUpstreamFailoverError(
 			resp.StatusCode,
 			resp.Header,
 			body,
 			upstreamMsg,
 			false,
 		)
+		copyRetryFilterEvaluation(failoverErr, candidate)
+		return nil, failoverErr
 	}
 
 	if status, errType, errMsg, matched := applyErrorPassthroughRule(
@@ -614,12 +644,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		"Upstream request failed",
 	); matched {
 		MarkResponseCommitted(c)
-		c.JSON(status, gin.H{
-			"error": gin.H{
-				"type":    errType,
-				"message": errMsg,
-			},
-		})
+		writeOpenAIResponsesFallbackError(c, status, errType, errMsg)
 		if upstreamMsg == "" {
 			upstreamMsg = errMsg
 		}
@@ -644,12 +669,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 			Detail:             upstreamDetail,
 		})
 		MarkResponseCommitted(c)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{
-				"type":    "upstream_error",
-				"message": "Upstream gateway error",
-			},
-		})
+		writeOpenAIResponsesFallbackError(c, http.StatusInternalServerError, "upstream_error", "Upstream gateway error")
 		if upstreamMsg == "" {
 			return nil, fmt.Errorf("upstream error: %d (not in custom error codes)", resp.StatusCode)
 		}
@@ -683,11 +703,14 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		Detail:             upstreamDetail,
 	})
 	if shouldDisable {
-		return nil, &UpstreamFailoverError{
+		failoverErr := &UpstreamFailoverError{
 			StatusCode:             resp.StatusCode,
 			ResponseBody:           body,
+			ResponseHeaders:        resp.Header.Clone(),
 			RetryableOnSameAccount: false,
 		}
+		copyRetryFilterEvaluation(failoverErr, candidate)
+		return nil, failoverErr
 	}
 
 	MarkResponseCommitted(c)
@@ -740,12 +763,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		errMsg = upstreamMsg
 	}
 
-	c.JSON(statusCode, gin.H{
-		"error": gin.H{
-			"type":    errType,
-			"message": errMsg,
-		},
-	})
+	writeOpenAIResponsesFallbackError(c, statusCode, errType, errMsg)
 
 	if upstreamMsg == "" {
 		return nil, fmt.Errorf("upstream error: %d", resp.StatusCode)
@@ -769,7 +787,28 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	writeError compatErrorWriter,
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
+	return s.handleCompatErrorResponseWithDecision(resp, c, account, writeError, nil, requestedModel...)
+}
+
+func (s *OpenAIGatewayService) handleCompatErrorResponseWithDecision(resp *http.Response, c *gin.Context, account *Account, writeError compatErrorWriter, candidate *UpstreamFailoverError, requestedModel ...string) (result *OpenAIForwardResult, returnErr error) {
 	body := s.readUpstreamErrorBody(resp)
+	if candidate == nil {
+		ctx := context.Background()
+		if c != nil && c.Request != nil {
+			ctx = c.Request.Context()
+		}
+		candidate = s.prepareOpenAIHTTPFailure(ctx, c, account, resp, body, extractUpstreamErrorMessage(body), false)
+	}
+	defer func() {
+		recordRetryFilterDecision(c, account, candidate)
+		var failover *UpstreamFailoverError
+		if errors.As(returnErr, &failover) {
+			copyRetryFilterEvaluation(failover, candidate)
+		}
+	}()
+	if candidate.retryFilterDecision.Actionable() {
+		return nil, candidate
+	}
 	body = s.redactAgentIdentitySensitiveBody(context.Background(), account, body)
 
 	// cyber_policy：兼容路径（Chat Completions / Anthropic）以各自格式回写错误，

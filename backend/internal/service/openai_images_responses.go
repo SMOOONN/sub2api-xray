@@ -1378,6 +1378,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 			StatusCode:             http.StatusBadGateway,
 			ResponseBody:           body,
 			RetryableOnSameAccount: true,
+			RetryFilterEventType:   RetryFilterEventEmptyCompletedResponse,
 		}
 	}
 	if strings.TrimSpace(firstMeta.Model) == "" {

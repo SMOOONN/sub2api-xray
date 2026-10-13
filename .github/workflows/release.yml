@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to release (e.g., v1.0.0)'
+        description: 'Tag to release (or a branch/ref for dry run)'
         required: true
         type: string
       simple_release:
@@ -15,197 +15,286 @@ on:
         required: false
         type: boolean
         default: false
+      dry_run:
+        description: 'Build and verify all selected artifacts without publishing'
+        required: false
+        type: boolean
+        default: false
 
-# 环境变量：合并 workflow_dispatch 输入和 repository variable
-# tag push 触发时读取 vars.SIMPLE_RELEASE，workflow_dispatch 时使用输入参数
-env:
-  SIMPLE_RELEASE: ${{ github.event.inputs.simple_release == 'true' || vars.SIMPLE_RELEASE == 'true' }}
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
+
+env:
+  SIMPLE_RELEASE: ${{ inputs.simple_release == true || vars.SIMPLE_RELEASE == 'true' }}
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
 
 jobs:
-  # Reject a release before building any artifacts when the tag and source version differ.
-  verify-version:
+  prepare:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    outputs:
+      sha: ${{ steps.plan.outputs.sha }}
+      owner_lower: ${{ steps.plan.outputs.owner_lower }}
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      date: ${{ steps.plan.outputs.date }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      simple: ${{ steps.plan.outputs.simple }}
+      dry_run: ${{ steps.plan.outputs.dry_run }}
     steps:
-      - name: Checkout released tag
+      - name: Checkout workflow tooling
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ github.sha }}
+      - name: Preserve tooling for releases of older tags
+        run: cp -R .github/release-tools "$RUNNER_TEMP/release-tools"
+      - name: Checkout selected application source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
-          fetch-tags: true
-
-      - name: Verify VERSION file matches released tag
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r "$RUNNER_TEMP/release-tools/requirements-release.txt"
+      - name: Resolve one source commit and target matrix
+        id: plan
         env:
-          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          REQUESTED_REF: ${{ inputs.tag || github.ref_name }}
         run: |
-          case "$RELEASE_TAG" in
-            v*) EXPECTED_VERSION=${RELEASE_TAG#v} ;;
-            *)
-              echo "::error::Release tag '$RELEASE_TAG' must start with v"
-              exit 1
-              ;;
-          esac
-          if ! git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
-            echo "::error::Release ref '$RELEASE_TAG' is not a Git tag"
-            exit 1
-          fi
-          TAG_COMMIT=$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")
-          HEAD_COMMIT=$(git rev-parse HEAD)
-          if [ "$TAG_COMMIT" != "$HEAD_COMMIT" ]; then
-            echo "::error::Release tag '$RELEASE_TAG' does not point to checked-out HEAD"
-            exit 1
-          fi
-          CURRENT_VERSION=$(tr -d '\r\n' < backend/cmd/server/VERSION || true)
-          if [ "$CURRENT_VERSION" != "$EXPECTED_VERSION" ]; then
-            echo "::error file=backend/cmd/server/VERSION::VERSION file contains '$CURRENT_VERSION', expected '$EXPECTED_VERSION'"
-            exit 1
-          fi
-          echo "VERSION file matches $EXPECTED_VERSION"
+          args=(--ref "$REQUESTED_REF")
+          if [[ "$SIMPLE_RELEASE" == true ]]; then args+=(--simple); fi
+          if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
+          python "$RUNNER_TEMP/release-tools/release_matrix.py" plan "${args[@]}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-tooling
+          path: ${{ runner.temp }}/release-tools/
+          retention-days: 1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: version-file
+          path: backend/cmd/server/VERSION
+          retention-days: 1
 
   build-frontend:
-    needs: [verify-version]
+    needs: prepare
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: pnpm/action-setup@v6
         with:
-          version: 9
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+          version: 9.15.9
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
-          cache: 'pnpm'
+          cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
         working-directory: frontend
-
-      - name: Build frontend
-        run: pnpm run build
+      - run: pnpm run build
         working-directory: frontend
-
-      - name: Upload frontend artifact
-        uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7
         with:
           name: frontend-dist
           path: backend/internal/web/dist/
           retention-days: 1
 
-  release:
-    needs: [verify-version, build-frontend]
+  build-binaries:
+    needs: [prepare, build-frontend]
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_DATE: ${{ needs.prepare.outputs.date }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
+          ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
-          ref: ${{ github.event.inputs.tag || github.ref }}
-
-      - name: Download frontend artifact
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-tooling
+          path: ${{ runner.temp }}/release-tools/
+      - uses: actions/download-artifact@v8
+        with:
+          name: version-file
+          path: backend/cmd/server/
+      - uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: backend/internal/web/dist/
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
           check-latest: false
-          cache-dependency-path: backend/go.sum
-
+          cache: false
       - name: Verify Go version
-        run: |
-          go version | grep -q 'go1.27.0'
+        run: go version | grep -q 'go1.27.0'
+      - name: Restore target-specific Go cache
+        id: go-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: release-go-${{ runner.os }}-${{ runner.arch }}-${{ matrix.goos }}-${{ matrix.goarch }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}-${{ needs.prepare.outputs.sha }}
+          restore-keys: |
+            release-go-${{ runner.os }}-${{ runner.arch }}-${{ matrix.goos }}-${{ matrix.goarch }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}-
+            release-go-${{ runner.os }}-${{ runner.arch }}-${{ matrix.goos }}-${{ matrix.goarch }}-
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r "$RUNNER_TEMP/release-tools/requirements-release.txt"
+      - name: Select one GoReleaser target
+        env:
+          TARGET_OS: ${{ matrix.goos }}
+          TARGET_ARCH: ${{ matrix.goarch }}
+        run: python "$RUNNER_TEMP/release-tools/release_matrix.py" config build --goos "$TARGET_OS" --goarch "$TARGET_ARCH" --output "$RUNNER_TEMP/goreleaser.matrix.yaml"
+      - name: Build and archive without publishing
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: '~> v2'
+          args: release --snapshot --clean --skip=validate,publish,docker,announce --config=${{ runner.temp }}/goreleaser.matrix.yaml
+        env:
+          GITHUB_REPO_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO_OWNER_LOWER: ${{ needs.prepare.outputs.owner_lower }}
+          GITHUB_REPO_NAME: ${{ github.event.repository.name }}
+          DOCKERHUB_USERNAME: skip
+          TAG_MESSAGE: ''
+      - name: Verify and collect the target archive
+        env:
+          TARGET_OS: ${{ matrix.goos }}
+          TARGET_ARCH: ${{ matrix.goarch }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: python "$RUNNER_TEMP/release-tools/release_matrix.py" collect --version "$RELEASE_VERSION" --sha "$RELEASE_SHA" --goos "$TARGET_OS" --goarch "$TARGET_ARCH" --output matrix-output
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-binary-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: matrix-output/
+          if-no-files-found: error
+          retention-days: 1
+      - name: Save updated target cache
+        if: ${{ steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
-      # Docker setup for GoReleaser
+  release:
+    needs: [prepare, build-binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    env:
+      SIMPLE_RELEASE: ${{ needs.prepare.outputs.simple }}
+      DRY_RUN: ${{ needs.prepare.outputs.dry_run }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-tooling
+          path: ${{ runner.temp }}/release-tools/
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-binary-*
+          path: release-input
+          merge-multiple: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r "$RUNNER_TEMP/release-tools/requirements-release.txt"
+      - name: Verify complete matrix and prepare Docker contexts
+        run: |
+          args=(--version "$RELEASE_VERSION" --sha "$RELEASE_SHA" --input release-input --output .release-context)
+          if [[ "$SIMPLE_RELEASE" == true ]]; then args+=(--simple); fi
+          python "$RUNNER_TEMP/release-tools/release_matrix.py" contexts "${args[@]}"
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache: false
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
       - name: Login to DockerHub
-        if: ${{ env.DOCKERHUB_USERNAME != '' }}
+        if: ${{ env.DRY_RUN != 'true' && env.SIMPLE_RELEASE != 'true' && env.DOCKERHUB_USERNAME != '' }}
         uses: docker/login-action@v3
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Login to GitHub Container Registry
+        if: ${{ env.DRY_RUN != 'true' }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Fetch tags with annotations
-        run: |
-          # 确保获取完整的 annotated tag 信息
-          git fetch --tags --force
-
-      - name: Get tag message
+      - name: Build images and publish manifests
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || 'skip' }}
+        run: bash "$RUNNER_TEMP/release-tools/release-images.sh"
+      - name: Get annotated tag notes
         id: tag_message
-        env:
-          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          TAG_NAME="$RELEASE_TAG"
-          echo "Processing tag: $TAG_NAME"
-
-          # 获取完整的 tag message（跳过第一行标题）
-          TAG_MESSAGE=$(git tag -l --format='%(contents:body)' "$TAG_NAME")
-
-          # 调试输出
-          echo "Tag message length: ${#TAG_MESSAGE}"
-          echo "Tag message preview:"
-          echo "$TAG_MESSAGE" | head -10
-
-          # 使用不可预测的分隔符安全输出多行内容
-          DELIMITER="TAG_MESSAGE_$(date +%s%N)_${RANDOM}"
-          echo "message<<$DELIMITER" >> "$GITHUB_OUTPUT"
-          echo "$TAG_MESSAGE" >> "$GITHUB_OUTPUT"
-          echo "$DELIMITER" >> "$GITHUB_OUTPUT"
-
-      - name: Set lowercase owner for GHCR
-        id: lowercase
-        env:
-          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TAG_MESSAGE=$(git tag -l --format='%(contents:body)' "$RELEASE_TAG")
+          DELIMITER="TAG_MESSAGE_$(openssl rand -hex 16)"
+          {
+            echo "message<<$DELIMITER"
+            echo "$TAG_MESSAGE"
+            echo "$DELIMITER"
+          } >> "$GITHUB_OUTPUT"
+      - name: Prepare publication-only GoReleaser config
         run: |
-          OWNER_LOWER=$(printf '%s' "$REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
-          printf 'owner=%s\n' "$OWNER_LOWER" >> "$GITHUB_OUTPUT"
-
-      - name: Run GoReleaser
+          args=(publish --output "$RUNNER_TEMP/goreleaser.publisher.yaml")
+          if [[ "$SIMPLE_RELEASE" == true ]]; then args+=(--simple); fi
+          python "$RUNNER_TEMP/release-tools/release_matrix.py" config "${args[@]}"
+      - name: Publish existing archives and release notes
         uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
-          args: release --clean --skip=validate ${{ env.SIMPLE_RELEASE == 'true' && '--config=.goreleaser.simple.yaml' || '' }}
+          args: release --clean --skip=validate,before,docker ${{ env.DRY_RUN == 'true' && '--snapshot --skip=publish,announce' || '' }} --config=${{ runner.temp }}/goreleaser.publisher.yaml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ needs.prepare.outputs.tag }}
           TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
-          GITHUB_REPO_OWNER_LOWER: ${{ steps.lowercase.outputs.owner }}
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
+          GITHUB_REPO_OWNER_LOWER: ${{ needs.prepare.outputs.owner_lower }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || 'skip' }}
+      - name: Upload dry-run checksums and metadata
+        if: ${{ env.DRY_RUN == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dry-run-report
+          path: |
+            dist/checksums.txt
+            dist/artifacts.json
+            dist/metadata.json
+          if-no-files-found: error
+          retention-days: 3
 
       # Update DockerHub description
       - name: Update DockerHub description
-        if: ${{ env.SIMPLE_RELEASE != 'true' && env.DOCKERHUB_USERNAME != '' }}
+        if: ${{ env.DRY_RUN != 'true' && env.SIMPLE_RELEASE != 'true' && env.DOCKERHUB_USERNAME != '' }}
         uses: peter-evans/dockerhub-description@v5
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -218,13 +307,12 @@ jobs:
 
       # Send Telegram notification
       - name: Send Telegram Notification
-        if: ${{ env.SIMPLE_RELEASE != 'true' }}
+        if: ${{ env.DRY_RUN != 'true' && env.SIMPLE_RELEASE != 'true' }}
         env:
+          TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-          TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
         continue-on-error: true
         run: |
           # 检查必要的环境变量
@@ -235,7 +323,7 @@ jobs:
 
           TAG_NAME="$RELEASE_TAG"
           VERSION=${TAG_NAME#v}
-          REPO="$GITHUB_REPOSITORY"
+          REPO="${{ github.repository }}"
           GHCR_IMAGE="ghcr.io/${REPO,,}"  # ${,,} converts to lowercase
 
           # 获取 tag message 内容并转义 Markdown 特殊字符

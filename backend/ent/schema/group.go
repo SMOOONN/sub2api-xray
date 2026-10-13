@@ -274,6 +274,10 @@ func (Group) Fields() []ent.Field {
 			Default(domain.GroupCodexModelsManifestConfig{}).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
 			Comment("固定账号获取 Codex Model Manifest 配置；开启后 /models 请求只用选定账号拉取（仅 openai 平台）"),
+		field.JSON("retry_filter_config", domain.GroupRetryFilterConfig{}).
+			Default(domain.GroupRetryFilterConfig{}).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
+			Comment("重试过滤预设引用；不包含凭据或上游地址"),
 
 		// 分组级每分钟请求数上限（0 = 不限制）。设置后优先于用户级兜底生效。
 		field.Int("rpm_limit").

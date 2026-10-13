@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,6 +62,22 @@ func TestCreateAndRedeem_TypeDefaultsToBalance(t *testing.T) {
 
 	assert.NotEqual(t, http.StatusBadRequest, code,
 		"omitting type should default to balance and pass validation")
+}
+
+func TestCreateAndRedeem_RejectsInvalidNormalizedCodeLength(t *testing.T) {
+	for name, value := range map[string]string{
+		"over storage limit":           strings.Repeat("a", 33),
+		"multibyte over storage limit": strings.Repeat("码", 11),
+		"blank after trim":             "   ",
+		"short after trim":             " ab ",
+	} {
+		t.Run(name, func(t *testing.T) {
+			status := postCreateAndRedeemValidation(t, newCreateAndRedeemHandler(), map[string]any{
+				"code": value, "value": 1, "user_id": 1,
+			})
+			assert.Equal(t, http.StatusBadRequest, status)
+		})
+	}
 }
 
 func TestCreateAndRedeem_SubscriptionRequiresGroupID(t *testing.T) {

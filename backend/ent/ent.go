@@ -41,6 +41,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/proxysource"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/retryfilterpreset"
+	"github.com/Wei-Shaw/sub2api/ent/retryfilterrule"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -142,6 +144,8 @@ func checkColumn(t, c string) error {
 			proxysource.Table:                   proxysource.ValidColumn,
 			redeemcode.Table:                    redeemcode.ValidColumn,
 			redeemcodeusage.Table:               redeemcodeusage.ValidColumn,
+			retryfilterpreset.Table:             retryfilterpreset.ValidColumn,
+			retryfilterrule.Table:               retryfilterrule.ValidColumn,
 			securitysecret.Table:                securitysecret.ValidColumn,
 			setting.Table:                       setting.ValidColumn,
 			subscriptionplan.Table:              subscriptionplan.ValidColumn,

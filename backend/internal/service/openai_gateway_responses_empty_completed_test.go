@@ -141,8 +141,13 @@ func TestOpenAIResponsesCompletedEventIsEmpty(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "completed with output item",
+			name: "completed with empty message shell",
 			data: `{"type":"response.completed","response":{"id":"r1","status":"completed","output":[{"type":"message","id":"msg_1"}]}}`,
+			want: true,
+		},
+		{
+			name: "completed with semantic message content",
+			data: `{"type":"response.completed","response":{"id":"r1","status":"completed","output":[{"type":"message","id":"msg_1","content":[{"type":"output_text","text":"hello"}]}]}}`,
 			want: false,
 		},
 		{

@@ -115,6 +115,57 @@ describe('Select dropdown viewport constraints', () => {
   })
 })
 
+describe('Select keyboard interaction', () => {
+  it('selects from a non-searchable menu using the focused listbox and skips disabled options', async () => {
+    const wrapper = mount(Select, {
+      attachTo: document.body,
+      props: {
+        modelValue: 'first', searchable: false,
+        options: [
+          { value: 'first', label: 'First' },
+          { value: 'disabled', label: 'Unavailable', disabled: true },
+          { value: 'last', label: 'Last' }
+        ]
+      }
+    })
+    unmountWrapper = () => wrapper.unmount()
+    const trigger = wrapper.get('button').element
+    trigger.focus()
+    const press = async (key: string) => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+      await nextTick()
+    }
+    await press('ArrowDown')
+    expect(document.activeElement).toBe(document.querySelector('[role="listbox"]'))
+    await press('ArrowDown')
+    await press('Enter')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['last']])
+    expect(wrapper.get('button').attributes('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it.each([false, true])('Escape closes only the menu when searchable=%s', async searchable => {
+    const parentEscape = vi.fn()
+    document.addEventListener('keydown', parentEscape)
+    const wrapper = mount(Select, {
+      attachTo: document.body,
+      props: { modelValue: 0, searchable, options: [{ value: 0, label: 'None' }] }
+    })
+    unmountWrapper = () => { wrapper.unmount(); document.removeEventListener('keydown', parentEscape) }
+    const trigger = wrapper.get('button').element
+    trigger.focus()
+    await wrapper.get('button').trigger('click')
+    await nextTick()
+    expect(document.activeElement).toBe(searchable ? document.querySelector('.select-search-input') : document.querySelector('[role="listbox"]'))
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await nextTick()
+    expect(parentEscape).not.toHaveBeenCalled()
+    expect(wrapper.get('button').attributes('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(trigger)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+  })
+})
+
 describe('Select remote search', () => {
   const mountRemoteSelect = (props: Record<string, unknown> = {}) => {
     const wrapper = mount(Select, {

@@ -1393,6 +1393,7 @@ const inAutoRefreshSilentWindow = () => {
 
 const shouldReplaceAutoRefreshRow = (current: Account, next: Account) => {
   return (
+    current.owner_user_id !== next.owner_user_id ||
     current.updated_at !== next.updated_at ||
     current.current_concurrency !== next.current_concurrency ||
     current.current_window_cost !== next.current_window_cost ||

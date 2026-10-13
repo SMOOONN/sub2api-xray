@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -67,9 +69,6 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		chatReq.StreamOptions = &apicompat.ChatStreamOptions{IncludeUsage: true}
 	}
 
-	convertedEffort := chatReq.ReasoningEffort
-	reasoningEffort := &convertedEffort
-	reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, billingModel)
 	serviceTier := extractOpenAIServiceTierFromBody(body)
 
 	chatBody, err := json.Marshal(chatReq)
@@ -90,11 +89,12 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		}
 		if changed {
 			chatBody = policyBody
-			if effectiveEffort := strings.TrimSpace(gjson.GetBytes(chatBody, "reasoning_effort").String()); effectiveEffort != "" {
-				reasoningEffort = &effectiveEffort
-			}
 		}
 	}
+	// Provider normalization and policy caps can both change the converted effort.
+	// Use the final outbound value for usage logs and billing.
+	reasoningEffort := extractOpenAIReasoningEffortFromBody(chatBody, upstreamModel, billingModel, originalModel)
+	reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, chatBody, upstreamModel)
 	// Unlike forwardResponsesViaRawChatCompletions, applyOpenAIFastPolicyToBody
 	// is intentionally skipped: Anthropic Messages bodies carry no service_tier,
 	// so the converted Chat Completions body never contains one and the policy
@@ -122,17 +122,18 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 	// 4. Handle error responses
 	if resp.StatusCode >= 400 {
 		respBody, upstreamMsg := s.readOpenAIUpstreamError(resp)
-		if foErr := s.failoverOpenAIUpstreamHTTPError(ctx, c, account, resp, respBody, upstreamMsg, upstreamModel); foErr != nil {
+		foErr, candidate := s.failoverOpenAIUpstreamHTTPError(ctx, c, account, resp, respBody, upstreamMsg, upstreamModel)
+		if foErr != nil {
 			return nil, foErr
 		}
 		// Non-failover error: return Anthropic-formatted error to client via the
 		// shared compat handler (passthrough rules, ops recording, cyber_policy).
-		return s.handleAnthropicErrorResponse(resp, c, account, billingModel)
+		return s.handleCompatErrorResponseWithDecision(resp, c, account, writeAnthropicError, candidate, billingModel)
 	}
 
 	// 5. Convert response
 	if clientStream {
-		return s.streamChatCompletionsAsAnthropic(c, resp, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
+		return s.streamChatCompletionsAsAnthropic(c, account, resp, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 	}
 	return s.bufferChatCompletionsAsAnthropic(c, resp, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 }
@@ -176,6 +177,7 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsAnthropic(
 
 func (s *OpenAIGatewayService) streamChatCompletionsAsAnthropic(
 	c *gin.Context,
+	account *Account,
 	resp *http.Response,
 	originalModel string,
 	billingModel string,
@@ -184,93 +186,148 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsAnthropic(
 	serviceTier *string,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
+	ctx := c.Request.Context()
 	requestID := resp.Header.Get("x-request-id")
 	writeStreamHeaders := s.newStreamHeaderWriter(c, resp.Header)
-
 	anthropicState := apicompat.NewChatCompletionsToAnthropicStreamState(originalModel)
 	clientDisconnected := false
-
-	// 与 responses 兄弟不同：客户端断开后仍继续做事件转换（喂 anthropicState），
-	// 仅跳过写出，保证 finalize 阶段的 usage 汇总不受断开影响。
-	emitChunk := func(chunk *apicompat.ChatCompletionsChunk) {
-		// CC chunk → Anthropic events (direct, single state machine)
-		anthropicEvents := apicompat.ChatCompletionsChunkToAnthropicEvents(chunk, anthropicState)
-		if clientDisconnected {
-			return
-		}
-		for _, aEvt := range anthropicEvents {
-			sse, err := apicompat.ResponsesAnthropicEventToSSE(aEvt)
-			if err != nil {
-				continue
+	var stage *openAIFirstOutputStage
+	stopKeepalive := func() {}
+	if retryFilterShouldStage(ctx, account) {
+		stage = newDefaultOpenAIFirstOutputStage()
+		defer func() {
+			if err := stage.Close(); err != nil {
+				logger.L().Warn("openai messages: close retry-filter stage", zap.Error(err))
 			}
-			writeStreamHeaders()
-			if _, err := fmt.Fprint(c.Writer, sse); err != nil {
-				clientDisconnected = true
-				break
-			}
+		}()
+		interval := 0
+		if s.cfg != nil {
+			interval = s.cfg.Gateway.StreamKeepaliveInterval
 		}
-		if !clientDisconnected && len(anthropicEvents) > 0 {
-			c.Writer.Flush()
-		}
+		stopKeepalive = startOpenAISSEKeepalive(c, retryFilterKeepaliveInterval(interval))
 	}
-
-	scan := s.scanCCStream(c, resp, "openai messages chat fallback", requestID, startTime, emitChunk)
-	usage := scan.Usage
-
-	if scan.Err != nil {
-		// Broken upstream read: skip finalization so no synthetic message_stop
-		// masks the truncation, and surface the error to flag usage incomplete
-		// (mirrors forwardResponsesViaRawChatCompletions).
-		return &OpenAIForwardResult{
-			RequestID:                   requestID,
-			UpstreamHeaders:             resp.Header,
-			Usage:                       usage,
-			Model:                       originalModel,
-			BillingModel:                billingModel,
-			UpstreamModel:               upstreamModel,
-			ReasoningEffort:             reasoningEffort,
-			UpstreamResponseServiceTier: observedUpstreamResponseServiceTier(c),
-			ServiceTier:                 resolvedOpenAIUpstreamServiceTier(c, serviceTier),
-			Stream:                      true,
-			Duration:                    time.Since(startTime),
-			FirstTokenMs:                scan.FirstTokenMs,
-			ClientDisconnect:            clientDisconnected,
-		}, fmt.Errorf("stream usage incomplete: %w", scan.Err)
-	}
-
-	// Finalize: close open blocks + emit message_delta/message_stop.
-	finalEvents := apicompat.FinalizeChatCompletionsAnthropicStream(anthropicState)
-	if !clientDisconnected {
-		for _, aEvt := range finalEvents {
-			sse, err := apicompat.ResponsesAnthropicEventToSSE(aEvt)
-			if err != nil {
-				continue
-			}
-			writeStreamHeaders()
-			if _, err := fmt.Fprint(c.Writer, sse); err != nil {
-				clientDisconnected = true
-				break
-			}
+	defer func() { stopKeepalive() }()
+	staging := stage != nil
+	semanticOutputSeen := false
+	commitStage := func() error {
+		stopKeepalive()
+		if !staging {
+			return nil
+		}
+		staging = false
+		if stage.Buffered() == 0 {
+			return stage.Close()
+		}
+		writeStreamHeaders()
+		if err := stage.CommitTo(c.Writer); err != nil {
+			clientDisconnected = true
+			return err
 		}
 		c.Writer.Flush()
+		return nil
+	}
+	writeEvents := func(events []apicompat.AnthropicStreamEvent) error {
+		if clientDisconnected {
+			return nil
+		}
+		for _, evt := range events {
+			sse, err := apicompat.ResponsesAnthropicEventToSSE(evt)
+			if err != nil {
+				continue
+			}
+			if staging {
+				if _, err := stage.WriteString(sse); err != nil {
+					return err
+				}
+				continue
+			}
+			stopKeepalive()
+			writeStreamHeaders()
+			if _, err := fmt.Fprint(c.Writer, sse); err != nil {
+				clientDisconnected = true
+				break
+			}
+		}
+		if !staging && !clientDisconnected && len(events) > 0 {
+			c.Writer.Flush()
+		}
+		return nil
+	}
+	inspect := func(payload []byte) error {
+		if !semanticOutputSeen && (gjson.GetBytes(payload, "error").Exists() || gjson.GetBytes(payload, "type").String() == "error") {
+			message := extractOpenAISSEErrorMessage(payload)
+			candidate := s.openAIStreamFailureCandidate(account, payload, message, resp.Header)
+			candidate.NextAccountAction = NextAccountStop
+			decision := prepareRetryFilterFailure(ctx, c, account, candidate)
+			if decision != nil {
+				recordRetryFilterFailure(c, account, candidate)
+			}
+			if decision.Actionable() {
+				return candidate
+			}
+		}
+		if RetryFilterResponseHasValidOutput("", payload) {
+			semanticOutputSeen = true
+			if staging {
+				return commitStage()
+			}
+		}
+		return nil
+	}
+	scan := s.scanCCStream(c, resp, "openai messages chat fallback", requestID, startTime,
+		func(chunk *apicompat.ChatCompletionsChunk) error {
+			return writeEvents(apicompat.ChatCompletionsChunkToAnthropicEvents(chunk, anthropicState))
+		}, inspect)
+	result := func() *OpenAIForwardResult {
+		return &OpenAIForwardResult{
+			RequestID: requestID, UpstreamHeaders: resp.Header, Usage: scan.Usage,
+			Model: originalModel, BillingModel: billingModel, UpstreamModel: upstreamModel,
+			ReasoningEffort: reasoningEffort, ServiceTier: resolvedOpenAIUpstreamServiceTier(c, serviceTier),
+			UpstreamResponseServiceTier: observedUpstreamResponseServiceTier(c),
+			Stream:                      true, Duration: time.Since(startTime), FirstTokenMs: scan.FirstTokenMs,
+			ClientDisconnect: clientDisconnected,
+		}
+	}
+	if scan.CallbackErr != nil {
+		return result(), scan.CallbackErr
+	}
+	if ctx.Err() != nil || errors.Is(scan.Err, context.Canceled) || errors.Is(scan.Err, context.DeadlineExceeded) {
+		if scan.Err == nil {
+			scan.Err = ctx.Err()
+		}
+		return result(), fmt.Errorf("stream usage incomplete: %w", scan.Err)
+	}
+	// Scanner/staging budgets are gateway resource failures, not evidence of
+	// an empty upstream response. They must not consume a retry-filter budget.
+	if errors.Is(scan.Err, bufio.ErrTooLong) || errors.Is(scan.Err, errOpenAIFirstOutputScannerLimit) {
+		return result(), scan.Err
+	}
+	if !scan.SemanticOutputSeen && len(scan.ErrorPayload) == 0 {
+		eventType := RetryFilterEventEmptyInterruptedStream
+		if scan.Err == nil && (scan.SawDone || scan.SawFinish) {
+			eventType = RetryFilterEventEmptyCompletedResponse
+		}
+		candidate := newRetryFilterStreamCandidate(resp.Header, nil, eventType, "upstream stream ended before valid output")
+		decision := prepareRetryFilterFailure(ctx, c, account, candidate)
+		if decision != nil {
+			recordRetryFilterFailure(c, account, candidate)
+		}
+		if decision.Actionable() {
+			return result(), candidate
+		}
+	}
+	if err := commitStage(); err != nil {
+		return result(), err
+	}
+	if scan.Err != nil {
+		return result(), fmt.Errorf("stream usage incomplete: %w", scan.Err)
+	}
+	// No actionable match retains the legacy converter's completion behavior.
+	if err := writeEvents(apicompat.FinalizeChatCompletionsAnthropicStream(anthropicState)); err != nil {
+		return result(), err
 	}
 	if !scan.SawDone {
 		logCCStreamMissingDoneSentinel("openai messages chat fallback", requestID)
 	}
-
-	return &OpenAIForwardResult{
-		RequestID:                   requestID,
-		UpstreamHeaders:             resp.Header,
-		Usage:                       usage,
-		Model:                       originalModel,
-		BillingModel:                billingModel,
-		UpstreamModel:               upstreamModel,
-		ReasoningEffort:             reasoningEffort,
-		UpstreamResponseServiceTier: observedUpstreamResponseServiceTier(c),
-		ServiceTier:                 resolvedOpenAIUpstreamServiceTier(c, serviceTier),
-		Stream:                      true,
-		Duration:                    time.Since(startTime),
-		FirstTokenMs:                scan.FirstTokenMs,
-		ClientDisconnect:            clientDisconnected,
-	}, nil
+	return result(), nil
 }
