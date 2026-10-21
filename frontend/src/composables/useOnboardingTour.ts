@@ -91,7 +91,7 @@ export function useOnboardingTour(options: OnboardingOptions) {
     return false
   }
 
-  const startTour = async (startIndex = 0) => {
+  const runTour = async (startIndex: number) => {
     // 动态获取当前用户角色和步骤
     const isAdmin = userStore.user?.role === 'admin'
     const isSimpleMode = userStore.isSimpleMode
@@ -501,6 +501,15 @@ export function useOnboardingTour(options: OnboardingOptions) {
     driverInstance.drive(startIndex)
   }
 
+  const startTour = async (startIndex = 0) => {
+    onboardingStore.setTourPending(true)
+    try {
+      await runTour(startIndex)
+    } finally {
+      onboardingStore.setTourPending(false)
+    }
+  }
+
   const nextStep = async (delay = 300) => {
     if (!driverInstance?.isActive()) return
     if (delay > 0) {
@@ -543,7 +552,9 @@ export function useOnboardingTour(options: OnboardingOptions) {
     }
 
     if (!options.autoStart || hasSeen()) return
+    onboardingStore.setTourPending(true)
     autoStartTimer = setTimeout(() => {
+      autoStartTimer = null
       void startTour()
     }, TIMING.AUTO_START_DELAY_MS)
   })
@@ -552,6 +563,7 @@ export function useOnboardingTour(options: OnboardingOptions) {
     if (autoStartTimer) {
       clearTimeout(autoStartTimer)
       autoStartTimer = null
+      onboardingStore.setTourPending(false)
     }
     // 关键修复：不再此处清理 globalKeyboardHandler，交由 driver.onDestroyed 管理
     onboardingStore.clearControlMethods()

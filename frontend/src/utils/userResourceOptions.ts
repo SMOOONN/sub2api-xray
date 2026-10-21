@@ -1,3 +1,5 @@
+import { getPlatformSpec } from '@/constants/platformCatalog'
+
 export const USER_ACCOUNT_TYPE_OPTIONS = [
   { value: 'oauth', label: 'oauth' },
   { value: 'apikey', label: 'api credential' },
@@ -6,7 +8,7 @@ export const USER_ACCOUNT_TYPE_OPTIONS = [
 ] as const
 
 export function getUserAccountTypeOptions(platform: string) {
-  const allowed = ['kimi', 'zhipu', 'deepseek'].includes(platform)
+  const allowed = platform === 'typesafe' || getPlatformSpec(platform)?.multi_protocol
     ? ['apikey']
     : platform === 'anthropic'
     ? ['oauth', 'apikey', 'setup-token', 'service_account']

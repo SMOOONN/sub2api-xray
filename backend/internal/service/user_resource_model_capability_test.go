@@ -176,14 +176,14 @@ func TestSyncAccountUpstreamModelsPreviewRejectsInvalidCNProtocolCombination(t *
 	svc.SetAccountMaintenanceServices(testService, nil)
 
 	_, err := svc.SyncAccountUpstreamModelsPreview(context.Background(), 41, UserUpstreamModelsPreviewInput{
-		Platform:    PlatformKimi,
+		Platform:    PlatformZhipu,
 		Type:        AccountTypeAPIKey,
 		APIKey:      "temporary-secret",
 		AccountMode: AccountModePayG,
 		APIProtocol: APIProtocolResponses,
 	})
 	if err == nil {
-		t.Fatal("expected Kimi responses preview to be rejected")
+		t.Fatal("expected Zhipu responses preview to be rejected")
 	}
 	if upstream.calls != 0 {
 		t.Fatalf("invalid CN preview reached upstream: calls=%d", upstream.calls)

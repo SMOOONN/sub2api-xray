@@ -451,7 +451,7 @@ func (h *RetryFilterHandler) ListAccountBindingCandidates(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	accounts, total, err := h.admin.ListAccounts(c.Request.Context(), page, pageSize, "", "", "", q, 0, "", "name", "asc")
+	accounts, total, err := h.admin.ListAccounts(c.Request.Context(), page, pageSize, "", "", "", q, 0, "", "id", "asc")
 	if err != nil {
 		retryFilterError(c, err)
 		return

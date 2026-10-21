@@ -10,6 +10,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
 )
@@ -120,6 +121,10 @@ func availableUserAccountTestModels(account *Account) []UserAccountTestModel {
 			return defaults
 		}
 		return mappedUserAccountTestModels(account.GetModelMapping(), defaults)
+	}
+
+	if account.IsTypeSafe() {
+		return []UserAccountTestModel{{ID: typesafe.JevLatestModel, Type: "model", DisplayName: typesafe.JevLatestModel}}
 	}
 
 	// OpenCode Go joins the CN providers here so the /my test dialog offers the

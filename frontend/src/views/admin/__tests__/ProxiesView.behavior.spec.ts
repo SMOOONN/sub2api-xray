@@ -130,6 +130,13 @@ const DataTableStub = defineComponent({
         :data-test="'proxy-row-' + row.id"
       >
         <slot name="cell-select" :row="row" :value="row.id" />
+        <slot name="cell-name" :row="row" :value="row.name" />
+        <slot name="cell-visibility" :row="row" />
+        <slot name="cell-nodes" :row="row" />
+        <slot name="cell-interval" :row="row" />
+        <slot name="cell-quota" :row="row" />
+        <slot name="cell-status" :row="row" />
+        <slot name="cell-actions" :row="row" />
       </div>
     </div>
   `,
@@ -440,6 +447,7 @@ describe('admin ProxiesView behavior', () => {
     await wrapper.get('[data-test="admin-proxy-source-edit-101"]').trigger('click')
     expect((wrapper.get('#proxy-source-manager-form input[type="text"]').element as HTMLInputElement).value)
       .toBe('source-101')
+    await wrapper.get('[data-test="admin-proxy-source-editor-cancel"]').trigger('click')
 
     await wrapper.get('[data-test="admin-proxy-source-sync-101"]').trigger('click')
     await flushPromises()
@@ -454,6 +462,82 @@ describe('admin ProxiesView behavior', () => {
     expect(listSources).toHaveBeenLastCalledWith(1, 100)
     expect(wrapper.text()).not.toContain('source-101')
 
+    wrapper.unmount()
+  })
+
+  it('opens separate add and edit forms without writing when cancelled', async () => {
+    listSources.mockResolvedValue(paginated([createProxySource(7)]))
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="admin-proxy-source-manager-button"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('#proxy-source-manager-form').exists()).toBe(false)
+    await wrapper.get('[data-test="admin-proxy-source-edit-7"]').trigger('click')
+    expect(wrapper.find('[data-test="admin-proxy-source-manager"]').exists()).toBe(true)
+    expect((wrapper.get('#proxy-source-name').element as HTMLInputElement).value).toBe('source-7')
+    await wrapper.get('#proxy-source-name').setValue('unsaved edit')
+    await wrapper.get('[data-test="admin-proxy-source-editor-cancel"]').trigger('click')
+
+    expect(wrapper.find('#proxy-source-manager-form').exists()).toBe(false)
+    expect(wrapper.text()).toContain('source-7')
+    await wrapper.get('[data-test="admin-proxy-source-add"]').trigger('click')
+    expect((wrapper.get('#proxy-source-name').element as HTMLInputElement).value).toBe('')
+    expect((wrapper.get('#proxy-source-interval').element as HTMLInputElement).value).toBe('1440')
+    await wrapper.get('[data-test="admin-proxy-source-editor-cancel"]').trigger('click')
+    expect(createSource).not.toHaveBeenCalled()
+    expect(updateSource).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('preserves a failed edit draft and returns to the source list after retry', async () => {
+    listSources.mockResolvedValue(paginated([createProxySource(7)]))
+    updateSource.mockRejectedValueOnce(new Error('save failed'))
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="admin-proxy-source-manager-button"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="admin-proxy-source-edit-7"]').trigger('click')
+    await wrapper.get('#proxy-source-name').setValue('source renamed')
+    await wrapper.get('#proxy-source-manager-form').trigger('submit')
+    await flushPromises()
+
+    expect((wrapper.get('#proxy-source-name').element as HTMLInputElement).value).toBe('source renamed')
+    expect(wrapper.get('[role="alert"]').text()).toBeTruthy()
+    expect(wrapper.find('[data-test="admin-proxy-source-manager"]').exists()).toBe(true)
+    await wrapper.get('#proxy-source-manager-form').trigger('submit')
+    await flushPromises()
+    expect(updateSource).toHaveBeenLastCalledWith(7, {
+      name: 'source renamed', subscription_url: 'https://source-7.example.com/subscription',
+      refresh_interval_minutes: 60, is_public: false, sync_enabled: true,
+    })
+    expect(wrapper.find('#proxy-source-manager-form').exists()).toBe(false)
+    expect(wrapper.find('[data-test="admin-proxy-source-manager"]').exists()).toBe(true)
+    expect(createSource).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('submits a new source once and prevents dismissing the pending form', async () => {
+    let resolveCreate!: (value: AdminProxySource) => void
+    createSource.mockImplementation(() => new Promise<AdminProxySource>(resolve => { resolveCreate = resolve }))
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="admin-proxy-source-manager-button"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="admin-proxy-source-add"]').trigger('click')
+    await wrapper.get('#proxy-source-name').setValue('new source')
+    await wrapper.get('#proxy-source-url').setValue('https://new.example.invalid/subscription')
+    await wrapper.get('#proxy-source-manager-form').trigger('submit')
+    await wrapper.get('#proxy-source-manager-form').trigger('submit')
+    await wrapper.get('[data-test="admin-proxy-source-editor-cancel"]').trigger('click')
+
+    expect(createSource).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('#proxy-source-manager-form').exists()).toBe(true)
+    expect(wrapper.get('#proxy-source-manager-form fieldset').attributes('disabled')).toBeDefined()
+    resolveCreate(createProxySource(8))
+    await flushPromises()
+    expect(wrapper.find('#proxy-source-manager-form').exists()).toBe(false)
+    expect(wrapper.find('[data-test="admin-proxy-source-manager"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

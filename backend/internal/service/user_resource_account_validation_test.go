@@ -55,7 +55,7 @@ func TestValidateUserAccountCredentialsChecksStructuredTypes(t *testing.T) {
 	}
 }
 
-func TestNormalizeAndValidateUserCNAccountCredentials(t *testing.T) {
+func TestNormalizeAndValidateUserProviderAccountCredentials(t *testing.T) {
 	tests := []struct {
 		name      string
 		platform  string
@@ -68,13 +68,24 @@ func TestNormalizeAndValidateUserCNAccountCredentials(t *testing.T) {
 		{name: "kimi coding anthropic", platform: PlatformKimi, input: map[string]any{"account_mode": "coding", "api_protocol": "anthropic"}, wantMode: AccountModeCoding, wantProto: APIProtocolAnthropic},
 		{name: "deepseek responses", platform: PlatformDeepseek, input: map[string]any{"account_mode": "payg", "api_protocol": "responses"}, wantMode: AccountModePayG, wantProto: APIProtocolResponses},
 		{name: "deepseek coding rejected", platform: PlatformDeepseek, input: map[string]any{"account_mode": "coding"}, wantError: true},
-		{name: "kimi responses rejected", platform: PlatformKimi, input: map[string]any{"api_protocol": "responses"}, wantError: true},
+		{name: "kimi responses", platform: PlatformKimi, input: map[string]any{"api_protocol": "responses"}, wantMode: AccountModePayG, wantProto: APIProtocolResponses},
+		{name: "minimax responses", platform: PlatformMiniMax, input: map[string]any{"api_protocol": "responses"}, wantMode: AccountModePayG, wantProto: APIProtocolResponses},
+		{name: "zhipu responses rejected", platform: PlatformZhipu, input: map[string]any{"api_protocol": "responses"}, wantError: true},
+		{name: "kimi adaptive", platform: PlatformKimi, input: map[string]any{"api_protocol": "adaptive"}, wantMode: AccountModePayG, wantProto: APIProtocolAdaptive},
+		{name: "opencode defaults", platform: PlatformOpenCodeGo, input: map[string]any{}, wantMode: AccountModeGo, wantProto: APIProtocolAdaptive},
+		{name: "opencode zen", platform: PlatformOpenCodeGo, input: map[string]any{"account_mode": " ZEN ", "api_protocol": " ANTHROPIC "}, wantMode: AccountModeZen, wantProto: APIProtocolAnthropic},
+		{name: "commandcode defaults", platform: PlatformCommandCode, input: map[string]any{}, wantMode: AccountModePayG, wantProto: APIProtocolAdaptive},
+		{name: "commandcode coding rejected", platform: PlatformCommandCode, input: map[string]any{"account_mode": "coding"}, wantError: true},
+		{name: "cline defaults", platform: PlatformCline, input: map[string]any{}, wantMode: AccountModePayG, wantProto: APIProtocolChatCompletions},
+		{name: "cline adaptive", platform: PlatformCline, input: map[string]any{"api_protocol": "adaptive"}, wantMode: AccountModePayG, wantProto: APIProtocolAdaptive},
+		{name: "cline responses rejected", platform: PlatformCline, input: map[string]any{"api_protocol": "responses"}, wantError: true},
+		{name: "unknown platform rejected", platform: "unsupported", input: map[string]any{}, wantError: true},
 		{name: "invalid protocol rejected", platform: PlatformZhipu, input: map[string]any{"api_protocol": "invalid"}, wantError: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := normalizeAndValidateUserCNAccountCredentials(tt.platform, tt.input)
+			err := normalizeAndValidateUserProviderAccountCredentials(tt.platform, tt.input)
 			if tt.wantError {
 				if err == nil {
 					t.Fatal("expected invalid CN credentials to be rejected")

@@ -257,31 +257,32 @@ describe('admin AccountsView lite account list', () => {
       .mockResolvedValueOnce({ notModified: false, etag: 'owner-9', data: refreshedData(9) })
       .mockResolvedValueOnce({ notModified: false, etag: 'system-owner', data: refreshedData() })
     const wrapper = mountView()
-    try {
-      await flushPromises()
-      expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.systemResource')
+    await flushPromises()
+    expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.systemResource')
 
-      await vi.advanceTimersByTimeAsync(6000)
-      await flushPromises()
-      expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.userResourceOwner:7')
+    await vi.advanceTimersByTimeAsync(6000)
+    await flushPromises()
+    expect(listWithEtag).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.userResourceOwner:7')
 
-      await vi.advanceTimersByTimeAsync(6000)
-      await flushPromises()
-      expect(listWithEtag).toHaveBeenLastCalledWith(
-        1, 20, expect.objectContaining({ lite: '1' }), expect.objectContaining({ etag: 'owner-7' })
-      )
-      expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.userResourceOwner:7')
+    await vi.advanceTimersByTimeAsync(6000)
+    await flushPromises()
+    expect(listWithEtag).toHaveBeenCalledTimes(2)
+    expect(listWithEtag).toHaveBeenLastCalledWith(
+      1, 20, expect.objectContaining({ lite: '1' }), expect.objectContaining({ etag: 'owner-7' })
+    )
+    expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.userResourceOwner:7')
 
-      await vi.advanceTimersByTimeAsync(6000)
-      await flushPromises()
-      expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.userResourceOwner:9')
+    await vi.advanceTimersByTimeAsync(6000)
+    await flushPromises()
+    expect(listWithEtag).toHaveBeenCalledTimes(3)
+    expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.userResourceOwner:9')
 
-      await vi.advanceTimersByTimeAsync(6000)
-      await flushPromises()
-      expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.systemResource')
-    } finally {
-      wrapper.unmount()
-    }
+    await vi.advanceTimersByTimeAsync(6000)
+    await flushPromises()
+    expect(listWithEtag).toHaveBeenCalledTimes(4)
+    expect(wrapper.get('[data-test="resource-owner"]').text()).toBe('admin.accounts.systemResource')
+    wrapper.unmount()
   })
 
   it('loads the full account by id before opening edit, test, and stats actions', async () => {

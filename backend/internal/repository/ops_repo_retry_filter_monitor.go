@@ -15,7 +15,12 @@ const retryFilterEventsCTE = `
 WITH retry_events AS (
   SELECT
     e.id AS error_id,
-    e.created_at,
+    CASE WHEN COALESCE(ev.value->>'at_unix_ms', '') ~ '^[0-9]{1,15}$'
+         THEN CASE WHEN (ev.value->>'at_unix_ms')::bigint BETWEEN 1 AND 253402300799999
+                   THEN to_timestamp((ev.value->>'at_unix_ms')::bigint / 1000)
+                        + ((ev.value->>'at_unix_ms')::bigint % 1000) * INTERVAL '1 millisecond'
+                   ELSE e.created_at END
+         ELSE e.created_at END AS created_at,
     COALESCE(e.request_id, '') AS request_id,
     CASE WHEN COALESCE(ev.value->>'account_id', '') ~ '^[1-9][0-9]*$'
          THEN (ev.value->>'account_id')::bigint ELSE e.account_id END AS account_id,

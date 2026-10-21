@@ -95,7 +95,7 @@ const rule = {
 function mountView() {
   return mount(RetryFilterView, {
     global: {
-      stubs: { AppLayout: AppLayoutStub, RouterLink: RouterLinkStub, BaseDialog: BaseDialogStub }
+      stubs: { AppLayout: AppLayoutStub, RouterLink: RouterLinkStub, BaseDialog: BaseDialogStub, RetryFilterGuide: true }
     }
   })
 }

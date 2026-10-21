@@ -29,6 +29,9 @@ describe('user resource account options', () => {
     expect(getUserAccountTypeOptions('kimi').map(option => option.value)).toEqual(['apikey'])
     expect(getUserAccountTypeOptions('zhipu').map(option => option.value)).toEqual(['apikey'])
     expect(getUserAccountTypeOptions('deepseek').map(option => option.value)).toEqual(['apikey'])
+    for (const platform of ['minimax', 'opencode_go', 'typesafe', 'command_code', 'cline']) {
+      expect(getUserAccountTypeOptions(platform).map(option => option.value)).toEqual(['apikey'])
+    }
   })
 
   it('uses only group values accepted by the service', () => {

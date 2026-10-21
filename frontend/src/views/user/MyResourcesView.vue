@@ -1264,6 +1264,8 @@ import Select, { type SelectOption } from '@/components/common/Select.vue'
 import type { Column } from '@/components/common/types'
 import Icon from '@/components/icons/Icon.vue'
 import MyProxyEditorDialog from '@/components/user/MyProxyEditorDialog.vue'
+import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
+import { isKnownPlatform, platformDisplayName } from '@/constants/platformCatalog'
 import { myResourcesApi, type ResourceItem, type ResourcePage, type UserOAuthCredentialsResult, type UserProxyTestResult } from '@/api/myResources'
 import { useAppStore } from '@/stores/app'
 import type { GroupPlatform, ProxyQualityCheckResult, ProxySourceSyncAllResult } from '@/types'
@@ -1486,16 +1488,7 @@ const groupOptions = ref<ResourceItem[]>([])
 const proxyOptions = ref<ResourceItem[]>([])
 const subscriptionGroupOptions = computed(() => groupOptions.value.filter(group => group.subscription_type === 'subscription'))
 const openAIGroupOptions = computed(() => groupOptions.value.filter(group => group.platform === 'openai'))
-const platformOptions: SelectOption[] = [
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'antigravity', label: 'Antigravity' },
-  { value: 'grok', label: 'Grok' },
-  { value: 'kimi', label: 'Kimi' },
-  { value: 'zhipu', label: 'Zhipu GLM' },
-  { value: 'deepseek', label: 'DeepSeek' },
-]
+const platformOptions: SelectOption[] = CONCRETE_PLATFORM_OPTIONS
 const platformFilterOptions = computed<SelectOption[]>(() => [
   { value: '', label: mr('filters.allPlatforms') },
   ...platformOptions,
@@ -1888,28 +1881,12 @@ function groupPlatformClass(platform: string): string {
 
 function platformLabel(value: unknown): string {
   const platform = String(value || '')
-  return platform === 'openai'
-    ? 'OpenAI'
-    : platform === 'anthropic'
-      ? 'Anthropic'
-      : platform === 'gemini'
-        ? 'Gemini'
-        : platform === 'antigravity'
-          ? 'Antigravity'
-          : platform === 'grok'
-            ? 'Grok'
-            : platform === 'kimi'
-              ? 'Kimi'
-              : platform === 'zhipu'
-                ? 'Zhipu GLM'
-                : platform === 'deepseek'
-                  ? 'DeepSeek'
-            : platform || '-'
+  return platformDisplayName(platform) || '-'
 }
 
 function normalizeGroupPlatform(value: unknown): GroupPlatform {
   const platform = String(value || '')
-  return ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek'].includes(platform)
+  return isKnownPlatform(platform)
     ? platform as GroupPlatform
     : 'anthropic'
 }

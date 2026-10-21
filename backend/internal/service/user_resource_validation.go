@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/lib/pq"
 )
@@ -108,8 +109,8 @@ func (s *UserResourceService) normalizeAndValidateGroupPayload(ctx context.Conte
 	}
 	payload["name"] = name
 	platform := strings.ToLower(strings.TrimSpace(urAsString(state["platform"])))
-	if err := validateAllowedValue("platform", platform, PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo); err != nil {
-		return err
+	if !domain.IsConcretePlatform(platform) {
+		return invalidUserResourceField("platform", "has an unsupported value")
 	}
 	if _, ok := payload["platform"]; ok {
 		payload["platform"] = platform
@@ -340,8 +341,8 @@ func (s *UserResourceService) normalizeAndValidateAccountPayload(ctx context.Con
 	}
 	payload["name"] = name
 	platform := strings.ToLower(strings.TrimSpace(urAsString(state["platform"])))
-	if err := validateAllowedValue("platform", platform, PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo); err != nil {
-		return err
+	if !domain.IsConcretePlatform(platform) {
+		return invalidUserResourceField("platform", "has an unsupported value")
 	}
 	if _, ok := payload["platform"]; ok {
 		payload["platform"] = platform
@@ -411,11 +412,7 @@ func (s *UserResourceService) normalizeAndValidateAccountPayload(ctx context.Con
 		if credentials == nil {
 			credentials = map[string]any{}
 		}
-		if IsOpenCodeGo(platform) {
-			if err := normalizeAndValidateUserOpenCodeAccountCredentials(credentials); err != nil {
-				return err
-			}
-		} else if err := normalizeAndValidateUserCNAccountCredentials(platform, credentials); err != nil {
+		if err := normalizeAndValidateUserProviderAccountCredentials(platform, credentials); err != nil {
 			return err
 		}
 		// Persist normalized defaults on create and when an existing account is
@@ -513,7 +510,7 @@ func validateUserAccountCredentials(accountType string, state map[string]any) er
 }
 
 func validateUserAccountPlatformType(platform, accountType string) error {
-	if IsMultiProtocolAPIKeyProvider(platform) {
+	if IsMultiProtocolAPIKeyProvider(platform) || platform == PlatformTypeSafe {
 		if accountType == AccountTypeAPIKey {
 			return nil
 		}
@@ -540,59 +537,38 @@ func validateUserAccountPlatformType(platform, accountType string) error {
 	return invalidUserResourceField("type", "is not supported for the selected platform")
 }
 
-func normalizeAndValidateUserCNAccountCredentials(platform string, credentials map[string]any) error {
+// normalizeAndValidateUserProviderAccountCredentials uses the same provider
+// profiles as the gateway, while retaining explicit validation for user input.
+func normalizeAndValidateUserProviderAccountCredentials(platform string, credentials map[string]any) error {
+	profile := LookupProviderProfile(platform)
+	if profile == nil {
+		return invalidUserResourceField("platform", "does not support provider credentials")
+	}
 	mode := strings.ToLower(strings.TrimSpace(urAsString(credentials["account_mode"])))
 	if mode == "" {
-		mode = AccountModePayG
+		mode = profile.DefaultMode
 	}
-	if err := validateAllowedValue("credentials.account_mode", mode, AccountModePayG, AccountModeCoding); err != nil {
-		return err
-	}
-	if platform == PlatformDeepseek && mode == AccountModeCoding {
-		return invalidUserResourceField("credentials.account_mode", "DeepSeek does not support coding mode")
+	if _, ok := profile.Modes[mode]; !ok {
+		return invalidUserResourceField("credentials.account_mode", "has an unsupported value")
 	}
 
 	protocol := strings.ToLower(strings.TrimSpace(urAsString(credentials["api_protocol"])))
 	if protocol == "" {
 		protocol = APIProtocolChatCompletions
-	}
-	if err := validateAllowedValue("credentials.api_protocol", protocol, APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses); err != nil {
-		return err
-	}
-	if protocol == APIProtocolResponses && platform != PlatformDeepseek {
-		return invalidUserResourceField("credentials.api_protocol", "responses protocol is only supported by DeepSeek")
-	}
-
-	credentials["account_mode"] = mode
-	credentials["api_protocol"] = protocol
-	return nil
-}
-
-// normalizeAndValidateUserOpenCodeAccountCredentials mirrors the CN-provider
-// normalizer for user-owned OpenCode Go accounts: the mode/protocol pair is
-// pinned to the values the gateway understands, and the admin-side protocol
-// rule normalizer runs here too so user scope stores the same shape as
-// /admin. Unlike the CN platforms OpenCode defaults to the adaptive protocol,
-// which makes credentials.api_base_urls live; those URLs are checked by
-// validateUserOwnedAccountURLs.
-func normalizeAndValidateUserOpenCodeAccountCredentials(credentials map[string]any) error {
-	mode := strings.ToLower(strings.TrimSpace(urAsString(credentials["account_mode"])))
-	if mode == "" {
-		mode = AccountModeGo
-	}
-	if err := validateAllowedValue("credentials.account_mode", mode, AccountModeGo, AccountModeZen); err != nil {
-		return err
-	}
-
-	protocol := strings.ToLower(strings.TrimSpace(urAsString(credentials["api_protocol"])))
-	if protocol == "" {
-		protocol = APIProtocolAdaptive
+		if profile.Routing == ProviderRoutingByModel {
+			protocol = APIProtocolAdaptive
+		}
 	}
 	if err := validateAllowedValue("credentials.api_protocol", protocol, APIProtocolAdaptive, APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses); err != nil {
 		return err
 	}
-	if err := NormalizeOpenCodeGoProtocolRulesCredentials(credentials); err != nil {
-		return invalidUserResourceField("credentials.protocol_rules", err.Error())
+	if protocol == APIProtocolResponses && !profile.SupportsProtocol(mode, APIProtocolResponses) {
+		return invalidUserResourceField("credentials.api_protocol", "responses protocol is not supported by the selected platform and mode")
+	}
+	if profile.Routing == ProviderRoutingByModel {
+		if err := NormalizeProtocolRulesCredentials(credentials); err != nil {
+			return invalidUserResourceField("credentials.protocol_rules", err.Error())
+		}
 	}
 
 	credentials["account_mode"] = mode

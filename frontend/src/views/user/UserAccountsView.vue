@@ -265,6 +265,7 @@ import Icon from '@/components/icons/Icon.vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import UserAccountActionMenu from '@/components/user/UserAccountActionMenu.vue'
+import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
 import { useAppStore } from '@/stores/app'
 import type { Account, AdminGroup, Proxy } from '@/types'
 import { toUnixSeconds } from '@/utils/accountProxyScope'
@@ -335,20 +336,7 @@ const visibleColumns = computed(() => allColumns.value.filter(column => !hiddenC
 const toggleableColumns = computed(() => allColumns.value.filter(column => !['select', 'actions'].includes(column.key)))
 const allSelected = computed(() => accounts.value.length > 0 && accounts.value.every(row => selectedIds.value.includes(Number(row.id))))
 
-const platformLabels: Record<string, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  gemini: 'Gemini',
-  antigravity: 'Antigravity',
-  grok: 'Grok',
-  kimi: 'Kimi',
-  zhipu: 'Zhipu GLM',
-  deepseek: 'DeepSeek',
-}
-const platformOptions: SelectOption[] = Object.entries(platformLabels).map(([value, label]) => ({
-  value,
-  label,
-}))
+const platformOptions: SelectOption[] = CONCRETE_PLATFORM_OPTIONS
 const platformFilterOptions = computed(() => [{ value: '', label: t('admin.accounts.allPlatforms') }, ...platformOptions])
 const typeFilterOptions = computed(() => [{ value: '', label: t('admin.accounts.allTypes') }, ...USER_ACCOUNT_TYPE_OPTIONS.map(option => ({ value: option.value, label: accountTypeLabel(option.value) }))])
 const statusFilterOptions = computed(() => [{ value: '', label: t('admin.accounts.allStatus') }, ...USER_ACCOUNT_STATUS_OPTIONS.map(option => ({ value: option.value, label: statusLabel(option.value) }))])

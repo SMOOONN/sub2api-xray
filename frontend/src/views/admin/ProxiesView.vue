@@ -794,7 +794,7 @@
     <BaseDialog
       :show="showProxySourcesModal"
       :title="t('admin.proxies.sourceManagerTitle')"
-      width="wide"
+      width="extra-wide"
       @close="closeProxySourcesModal"
     >
       <div data-test="admin-proxy-source-manager">
@@ -805,13 +805,22 @@
           {{ proxySourceError }}
         </div>
 
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(280px,0.9fr)]">
+        <div class="min-w-0">
           <section class="min-w-0">
             <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
               <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
                 {{ t('admin.proxies.sourceManager') }}
               </h4>
-              <div class="flex items-center gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  class="btn btn-primary btn-sm"
+                  data-test="admin-proxy-source-add"
+                  @click="openProxySourceEditor"
+                >
+                  <Icon name="plus" size="sm" class="mr-2" />
+                  {{ t('admin.proxies.sourceAddTitle') }}
+                </button>
                 <button
                   type="button"
                   class="btn btn-secondary btn-sm"
@@ -844,254 +853,144 @@
             </div>
 
             <div
-              v-if="proxySourcesLoading"
-              class="flex min-h-44 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+              class="proxy-source-table flex min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-gray-200 dark:border-dark-600"
+              data-test="admin-proxy-source-table-scroll"
             >
-              {{ t('admin.proxies.sourceLoading') }}
-            </div>
-            <div
-              v-else-if="proxySources.length === 0"
-              class="flex min-h-44 items-center justify-center rounded-md border border-dashed border-gray-300 px-4 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400"
-            >
-              {{ t('admin.proxies.sourceEmpty') }}
-            </div>
-            <template v-else>
-              <div
-                class="overflow-x-auto rounded-md border border-gray-200 dark:border-dark-600"
-                data-test="admin-proxy-source-table-scroll"
+              <DataTable
+                :columns="proxySourceColumns"
+                :data="proxySources"
+                :loading="proxySourcesLoading"
+                :expandable-actions="false"
+                row-key="id"
               >
-                <table class="w-full min-w-[1040px] divide-y divide-gray-200 text-left text-sm dark:divide-dark-600">
-                <thead class="bg-gray-50 dark:bg-dark-700/60">
-                  <tr>
-                    <th class="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">
-                      {{ t('admin.proxies.sourceColumnName') }}
-                    </th>
-                    <th class="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">
-                      {{ t('admin.proxies.sourceColumnVisibility') }}
-                    </th>
-                    <th class="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">
-                      {{ t('admin.proxies.sourceColumnNodes') }}
-                    </th>
-                    <th class="px-4 py-3 text-center font-medium text-gray-600 dark:text-gray-300">
-                      {{ t('admin.proxies.sourceColumnInterval') }}
-                    </th>
-                    <th class="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">
-                      {{ t('admin.proxies.sourceColumnQuota') }}
-                    </th>
-                    <th class="px-4 py-3 font-medium text-gray-600 dark:text-gray-300">
-                      {{ t('admin.proxies.sourceColumnStatus') }}
-                    </th>
-                    <th class="px-4 py-3 text-right font-medium text-gray-600 dark:text-gray-300">
-                      {{ t('admin.proxies.sourceColumnActions') }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100 bg-white dark:divide-dark-700 dark:bg-dark-800">
-                  <tr v-for="source in proxySources" :key="source.id">
-                    <td class="px-4 py-3 align-top">
-                      <div class="max-w-[260px] font-medium text-gray-900 dark:text-white">
-                        {{ source.name }}
-                      </div>
-                      <div
-                        class="mt-1 max-w-[260px] truncate font-mono text-xs text-gray-500 dark:text-gray-400"
-                        :title="maskSubscriptionUrl(source.subscription_url)"
-                      >
-                        {{ maskSubscriptionUrl(source.subscription_url) }}
-                      </div>
-                    </td>
-                    <td class="px-4 py-3 text-center align-top">
-                      <span :class="['badge', source.is_public ? 'badge-success' : 'badge-gray']">
-                        {{ source.is_public ? t('admin.proxies.publicResource') : t('admin.proxies.privateResource') }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-3 text-center align-top">
-                      <button
-                        type="button"
-                        class="text-primary-600 hover:underline dark:text-primary-400"
-                        :data-test="`admin-proxy-source-filter-${source.id}`"
-                        :title="t('admin.proxies.sourceFilterBySource')"
-                        @click="filterProxiesBySource(source)"
-                      >
-                        {{ t('admin.proxies.sourceNodeCount', {
-                          active: Number(source.active_node_count) || 0,
-                          total: Number(source.node_count) || 0,
-                        }) }}
-                      </button>
-                    </td>
-                    <td class="whitespace-nowrap px-4 py-3 text-center align-top text-gray-600 dark:text-gray-300">
-                      {{ t('admin.proxies.sourceIntervalValue', { minutes: source.refresh_interval_minutes }) }}
-                      <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {{ source.sync_enabled === false
-                          ? t('admin.proxies.sourceSyncPausedHint')
-                          : t('admin.proxies.sourceNextSyncAt', { time: source.next_sync_at ? formatDateTime(source.next_sync_at) : '-' }) }}
-                      </div>
-                    </td>
-                    <td class="whitespace-nowrap px-4 py-3 align-top text-gray-600 dark:text-gray-300">
-                      <div>{{ proxySourceTrafficText(source) }}</div>
-                      <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        {{ t('admin.proxies.sourceExpiresAt', { time: source.sub_expires_at ? formatDateTime(source.sub_expires_at) : '-' }) }}
-                      </div>
-                    </td>
-                    <td class="px-4 py-3 align-top">
-                      <span :class="['badge', proxySourceStatusClass(source.last_sync_status)]">
-                        {{ proxySourceStatusLabel(source.last_sync_status) }}
-                      </span>
-                      <div class="mt-1 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
-                        {{ source.last_synced_at ? formatDateTime(source.last_synced_at) : '-' }}
-                      </div>
-                      <div
-                        v-if="source.last_sync_error"
-                        class="mt-1 max-w-[220px] truncate text-xs text-red-600 dark:text-red-400"
-                        :title="source.last_sync_error"
-                      >
-                        {{ source.last_sync_error }}
-                      </div>
-                    </td>
-                    <td class="px-4 py-3 align-top">
-                      <div class="flex justify-end gap-1.5">
-                        <button
-                          type="button"
-                          class="btn btn-secondary btn-sm !px-2"
-                          :data-test="`admin-proxy-source-sync-${source.id}`"
-                          :disabled="syncingProxySourceId === source.id"
-                          :title="t('admin.proxies.sourceSync')"
-                          :aria-label="t('admin.proxies.sourceSync')"
-                          @click="syncProxySource(source)"
-                        >
-                          <Icon
-                            name="refresh"
-                            size="sm"
-                            :class="syncingProxySourceId === source.id ? 'animate-spin' : ''"
-                          />
-                        </button>
-                        <button
-                          type="button"
-                          class="btn btn-secondary btn-sm !px-2"
-                          :data-test="`admin-proxy-source-toggle-${source.id}`"
-                          :disabled="togglingProxySourceId === source.id"
-                          :title="source.sync_enabled === false ? t('admin.proxies.sourceResumeSync') : t('admin.proxies.sourcePauseSync')"
-                          :aria-label="source.sync_enabled === false ? t('admin.proxies.sourceResumeSync') : t('admin.proxies.sourcePauseSync')"
-                          @click="toggleProxySourceSync(source)"
-                        >
-                          <Icon :name="source.sync_enabled === false ? 'play' : 'ban'" size="sm" />
-                        </button>
-                        <button
-                          type="button"
-                          class="btn btn-secondary btn-sm !px-2"
-                          :data-test="`admin-proxy-source-edit-${source.id}`"
-                          :title="t('common.edit')"
-                          :aria-label="t('common.edit')"
-                          @click="editProxySource(source)"
-                        >
-                          <Icon name="edit" size="sm" />
-                        </button>
-                        <button
-                          type="button"
-                          class="btn btn-danger btn-sm !px-2"
-                          :data-test="`admin-proxy-source-delete-${source.id}`"
-                          :disabled="proxySourceDeleting"
-                          :title="t('common.delete')"
-                          :aria-label="t('common.delete')"
-                          @click="proxySourcePendingDelete = source"
-                        >
-                          <Icon name="trash" size="sm" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-                </table>
-              </div>
-              <Pagination
-                v-if="proxySourcePagination.total > PROXY_SOURCE_PAGE_SIZE"
-                :total="proxySourcePagination.total"
-                :page="proxySourcePagination.page"
-                :page-size="PROXY_SOURCE_PAGE_SIZE"
-                :show-page-size-selector="false"
-                data-test="admin-proxy-source-pagination"
-                @update:page="handleProxySourcePageChange"
-              />
-            </template>
+                <template #cell-name="{ row: source }">
+                  <div class="min-w-0 max-w-[260px] whitespace-normal break-words font-medium text-gray-900 dark:text-white">
+                    {{ source.name }}
+                  </div>
+                  <div
+                    class="mt-1 max-w-[260px] truncate font-mono text-xs text-gray-500 dark:text-gray-400"
+                    :title="maskSubscriptionUrl(source.subscription_url)"
+                  >
+                    {{ maskSubscriptionUrl(source.subscription_url) }}
+                  </div>
+                </template>
+                <template #cell-visibility="{ row: source }">
+                  <span :class="['badge', source.is_public ? 'badge-success' : 'badge-gray']">
+                    {{ source.is_public ? t('admin.proxies.publicResource') : t('admin.proxies.privateResource') }}
+                  </span>
+                </template>
+                <template #cell-nodes="{ row: source }">
+                  <button
+                    type="button"
+                    class="text-primary-600 hover:underline dark:text-primary-400"
+                    :data-test="`admin-proxy-source-filter-${source.id}`"
+                    :title="t('admin.proxies.sourceFilterBySource')"
+                    @click="filterProxiesBySource(source)"
+                  >
+                    {{ t('admin.proxies.sourceNodeCount', {
+                      active: Number(source.active_node_count) || 0,
+                      total: Number(source.node_count) || 0,
+                    }) }}
+                  </button>
+                </template>
+                <template #cell-interval="{ row: source }">
+                  {{ t('admin.proxies.sourceIntervalValue', { minutes: source.refresh_interval_minutes }) }}
+                  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ source.sync_enabled === false
+                      ? t('admin.proxies.sourceSyncPausedHint')
+                      : t('admin.proxies.sourceNextSyncAt', { time: source.next_sync_at ? formatDateTime(source.next_sync_at) : '-' }) }}
+                  </div>
+                </template>
+                <template #cell-quota="{ row: source }">
+                  <div>{{ proxySourceTrafficText(source) }}</div>
+                  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.proxies.sourceExpiresAt', { time: source.sub_expires_at ? formatDateTime(source.sub_expires_at) : '-' }) }}
+                  </div>
+                </template>
+                <template #cell-status="{ row: source }">
+                  <span :class="['badge', proxySourceStatusClass(source.last_sync_status)]">
+                    {{ proxySourceStatusLabel(source.last_sync_status) }}
+                  </span>
+                  <div class="mt-1 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
+                    {{ source.last_synced_at ? formatDateTime(source.last_synced_at) : '-' }}
+                  </div>
+                  <div
+                    v-if="source.last_sync_error"
+                    class="mt-1 max-w-[220px] truncate text-xs text-red-600 dark:text-red-400"
+                    :title="source.last_sync_error"
+                  >
+                    {{ source.last_sync_error }}
+                  </div>
+                </template>
+                <template #cell-actions="{ row: source }">
+                  <div class="flex justify-end gap-1.5">
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm !px-2"
+                      :data-test="`admin-proxy-source-sync-${source.id}`"
+                      :disabled="syncingProxySourceId === source.id"
+                      :title="t('admin.proxies.sourceSync')"
+                      :aria-label="t('admin.proxies.sourceSync')"
+                      @click="syncProxySource(source)"
+                    >
+                      <Icon
+                        name="refresh"
+                        size="sm"
+                        :class="syncingProxySourceId === source.id ? 'animate-spin' : ''"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm !px-2"
+                      :data-test="`admin-proxy-source-toggle-${source.id}`"
+                      :disabled="togglingProxySourceId === source.id"
+                      :title="source.sync_enabled === false ? t('admin.proxies.sourceResumeSync') : t('admin.proxies.sourcePauseSync')"
+                      :aria-label="source.sync_enabled === false ? t('admin.proxies.sourceResumeSync') : t('admin.proxies.sourcePauseSync')"
+                      @click="toggleProxySourceSync(source)"
+                    >
+                      <Icon :name="source.sync_enabled === false ? 'play' : 'ban'" size="sm" />
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm !px-2"
+                      :data-test="`admin-proxy-source-edit-${source.id}`"
+                      :title="t('common.edit')"
+                      :aria-label="t('common.edit')"
+                      @click="editProxySource(source)"
+                    >
+                      <Icon name="edit" size="sm" />
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-danger btn-sm !px-2"
+                      :data-test="`admin-proxy-source-delete-${source.id}`"
+                      :disabled="proxySourceDeleting"
+                      :title="t('common.delete')"
+                      :aria-label="t('common.delete')"
+                      @click="proxySourcePendingDelete = source"
+                    >
+                      <Icon name="trash" size="sm" />
+                    </button>
+                  </div>
+                </template>
+                <template #empty>
+                  <p class="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+                    {{ t('admin.proxies.sourceEmpty') }}
+                  </p>
+                </template>
+              </DataTable>
+            </div>
+            <Pagination
+              v-if="proxySourcePagination.total > PROXY_SOURCE_PAGE_SIZE"
+              :total="proxySourcePagination.total"
+              :page="proxySourcePagination.page"
+              :page-size="PROXY_SOURCE_PAGE_SIZE"
+              :show-page-size-selector="false"
+              data-test="admin-proxy-source-pagination"
+              @update:page="handleProxySourcePageChange"
+            />
           </section>
 
-          <section class="border-t border-gray-200 pt-5 dark:border-dark-600 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
-            <h4 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-              {{ editingProxySourceId ? t('admin.proxies.sourceEditTitle') : t('admin.proxies.sourceAddTitle') }}
-            </h4>
-            <form id="proxy-source-manager-form" class="space-y-5" @submit.prevent="saveProxySource">
-              <div>
-                <label class="input-label">{{ t('admin.proxies.subscriptionName') }}</label>
-                <input
-                  v-model.trim="proxySourceForm.name"
-                  type="text"
-                  required
-                  class="input"
-                  :placeholder="t('admin.proxies.subscriptionNamePlaceholder')"
-                />
-              </div>
-              <div>
-                <label class="input-label">{{ t('admin.proxies.subscriptionUrl') }}</label>
-                <input
-                  v-model.trim="proxySourceForm.subscription_url"
-                  type="url"
-                  required
-                  class="input"
-                  :placeholder="t('admin.proxies.subscriptionUrlPlaceholder')"
-                />
-              </div>
-              <div>
-                <label class="input-label">{{ t('admin.proxies.refreshIntervalMinutes') }}</label>
-                <input
-                  v-model.number="proxySourceForm.refresh_interval_minutes"
-                  type="number"
-                  min="5"
-                  max="10080"
-                  required
-                  class="input"
-                />
-                <p class="input-hint mt-2">{{ t('admin.proxies.refreshIntervalHint') }}</p>
-              </div>
-              <label class="flex cursor-pointer items-center gap-2">
-                <input
-                  v-model="proxySourceForm.sync_enabled"
-                  type="checkbox"
-                  data-test="admin-proxy-source-sync-enabled"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span class="text-sm text-gray-700 dark:text-gray-200">{{ t('admin.proxies.sourceAutoSyncEnabled') }}</span>
-              </label>
-              <label class="flex cursor-pointer items-center gap-2">
-                <input
-                  v-model="proxySourceForm.is_public"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span class="text-sm text-gray-700 dark:text-gray-200">{{ t('admin.proxies.publicToUsers') }}</span>
-              </label>
-              <div class="flex flex-wrap justify-end gap-2">
-                <button
-                  v-if="editingProxySourceId"
-                  type="button"
-                  class="btn btn-secondary"
-                  :disabled="proxySourceSaving"
-                  @click="resetProxySourceForm"
-                >
-                  {{ t('common.cancel') }}
-                </button>
-                <button
-                  type="submit"
-                  class="btn btn-primary"
-                  :disabled="proxySourceSaving || !proxySourceFormReady"
-                >
-                  {{ proxySourceSaving
-                    ? t('admin.proxies.saving')
-                    : editingProxySourceId
-                      ? t('admin.proxies.sourceUpdate')
-                      : t('admin.proxies.sourceSave') }}
-                </button>
-              </div>
-            </form>
-          </section>
         </div>
       </div>
 
@@ -1099,6 +998,102 @@
         <div class="flex justify-end">
           <button type="button" class="btn btn-secondary" @click="closeProxySourcesModal">
             {{ t('common.close') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
+    <BaseDialog
+      :show="showProxySourceEditor"
+      :title="editingProxySourceId ? t('admin.proxies.sourceEditTitle') : t('admin.proxies.sourceAddTitle')"
+      width="normal"
+      :z-index="60"
+      :close-on-escape="!proxySourceSaving"
+      :show-close-button="!proxySourceSaving"
+      @close="closeProxySourceEditor"
+    >
+      <p v-if="proxySourceEditorError" role="alert" class="mb-5 rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300">
+        {{ proxySourceEditorError }}
+      </p>
+      <form id="proxy-source-manager-form" class="space-y-5" @submit.prevent="saveProxySource">
+        <fieldset :disabled="proxySourceSaving" class="space-y-5">
+          <div>
+            <label for="proxy-source-name" class="input-label">{{ t('admin.proxies.subscriptionName') }}</label>
+            <input
+              id="proxy-source-name"
+              v-model.trim="proxySourceForm.name"
+              type="text"
+              required
+              class="input"
+              :placeholder="t('admin.proxies.subscriptionNamePlaceholder')"
+            />
+          </div>
+          <div>
+            <label for="proxy-source-url" class="input-label">{{ t('admin.proxies.subscriptionUrl') }}</label>
+            <input
+              id="proxy-source-url"
+              v-model.trim="proxySourceForm.subscription_url"
+              type="url"
+              required
+              class="input"
+              :placeholder="t('admin.proxies.subscriptionUrlPlaceholder')"
+            />
+          </div>
+          <div>
+            <label for="proxy-source-interval" class="input-label">{{ t('admin.proxies.refreshIntervalMinutes') }}</label>
+            <input
+              id="proxy-source-interval"
+              v-model.number="proxySourceForm.refresh_interval_minutes"
+              type="number"
+              min="5"
+              max="10080"
+              required
+              class="input"
+            />
+            <p class="input-hint mt-2">{{ t('admin.proxies.refreshIntervalHint') }}</p>
+          </div>
+          <label class="flex cursor-pointer items-center gap-2">
+            <input
+              v-model="proxySourceForm.sync_enabled"
+              type="checkbox"
+              data-test="admin-proxy-source-sync-enabled"
+              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <span class="text-sm text-gray-700 dark:text-gray-200">{{ t('admin.proxies.sourceAutoSyncEnabled') }}</span>
+          </label>
+          <label class="flex cursor-pointer items-center gap-2">
+            <input
+              v-model="proxySourceForm.is_public"
+              type="checkbox"
+              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <span class="text-sm text-gray-700 dark:text-gray-200">{{ t('admin.proxies.publicToUsers') }}</span>
+          </label>
+        </fieldset>
+      </form>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            data-test="admin-proxy-source-editor-cancel"
+            :disabled="proxySourceSaving"
+            @click="closeProxySourceEditor"
+          >
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="submit"
+            form="proxy-source-manager-form"
+            class="btn btn-primary"
+            data-test="admin-proxy-source-editor-save"
+            :disabled="proxySourceSaving || !proxySourceFormReady"
+          >
+            {{ proxySourceSaving
+              ? t('admin.proxies.saving')
+              : editingProxySourceId
+                ? t('admin.proxies.sourceUpdate')
+                : t('admin.proxies.sourceSave') }}
           </button>
         </div>
       </template>
@@ -1626,6 +1621,7 @@ const showQualityReportDialog = ref(false)
 const qualityReportProxy = ref<Proxy | null>(null)
 const qualityReport = ref<ProxyQualityCheckResult | null>(null)
 const showProxySourcesModal = ref(false)
+const showProxySourceEditor = ref(false)
 const proxySources = ref<AdminProxySource[]>([])
 const proxySourcesLoading = ref(false)
 const PROXY_SOURCE_PAGE_SIZE = 100
@@ -1643,6 +1639,7 @@ const proxySourceSyncAllResult = ref<ProxySourceSyncAllResult | null>(null)
 const proxySourceDeleting = ref(false)
 const proxySourcePendingDelete = ref<AdminProxySource | null>(null)
 const proxySourceError = ref('')
+const proxySourceEditorError = ref('')
 const proxySourceForm = reactive({
   name: '',
   subscription_url: '',
@@ -1650,6 +1647,15 @@ const proxySourceForm = reactive({
   is_public: false,
   sync_enabled: true,
 })
+const proxySourceColumns = computed<Column[]>(() => [
+  { key: 'name', label: t('admin.proxies.sourceColumnName'), class: 'min-w-[220px] max-w-[260px]' },
+  { key: 'visibility', label: t('admin.proxies.sourceColumnVisibility'), class: 'min-w-[96px] text-center' },
+  { key: 'nodes', label: t('admin.proxies.sourceColumnNodes'), class: 'min-w-[96px] text-center' },
+  { key: 'interval', label: t('admin.proxies.sourceColumnInterval'), class: 'min-w-[180px]' },
+  { key: 'quota', label: t('admin.proxies.sourceColumnQuota'), class: 'min-w-[180px]' },
+  { key: 'status', label: t('admin.proxies.sourceColumnStatus'), class: 'min-w-[180px]' },
+  { key: 'actions', label: t('admin.proxies.sourceColumnActions'), class: 'min-w-[156px] text-right' },
+])
 
 // One-line recap of the last "sync every source" run. Counts only: node payloads
 // and subscription URLs must never reach this strip.
@@ -1866,6 +1872,7 @@ const loadProxies = async () => {
 }
 
 const resetProxySourceForm = () => {
+  proxySourceEditorError.value = ''
   editingProxySourceId.value = null
   proxySourceForm.name = ''
   proxySourceForm.subscription_url = ''
@@ -2001,6 +2008,8 @@ const handleProxySourcePageChange = async (page: number) => {
 }
 
 const closeProxySourcesModal = () => {
+  if (proxySourceSaving.value) return
+  showProxySourceEditor.value = false
   showProxySourcesModal.value = false
   proxySourcePendingDelete.value = null
   proxySourceError.value = ''
@@ -2008,20 +2017,34 @@ const closeProxySourcesModal = () => {
 }
 
 const editProxySource = (source: AdminProxySource) => {
+  if (proxySourceSaving.value) return
   editingProxySourceId.value = source.id
   proxySourceForm.name = source.name
   proxySourceForm.subscription_url = source.subscription_url
   proxySourceForm.refresh_interval_minutes = source.refresh_interval_minutes
   proxySourceForm.is_public = source.is_public
   proxySourceForm.sync_enabled = source.sync_enabled !== false
-  proxySourceError.value = ''
+  proxySourceEditorError.value = ''
+  showProxySourceEditor.value = true
+}
+
+const openProxySourceEditor = () => {
+  if (proxySourceSaving.value) return
+  resetProxySourceForm()
+  showProxySourceEditor.value = true
+}
+
+const closeProxySourceEditor = () => {
+  if (proxySourceSaving.value) return
+  showProxySourceEditor.value = false
+  resetProxySourceForm()
 }
 
 const saveProxySource = async () => {
-  if (!proxySourceFormReady.value) return
+  if (!showProxySourceEditor.value || proxySourceSaving.value || !proxySourceFormReady.value) return
 
   proxySourceSaving.value = true
-  proxySourceError.value = ''
+  proxySourceEditorError.value = ''
   try {
     const payload = {
       name: proxySourceForm.name.trim(),
@@ -2036,11 +2059,12 @@ const saveProxySource = async () => {
       await adminAPI.proxies.sources.create(payload)
     }
     appStore.showSuccess(t('admin.proxies.sourceSaved'))
+    showProxySourceEditor.value = false
     resetProxySourceForm()
     await loadProxySources()
     void ensureProxySourceFilterOptions(true)
   } catch (error: unknown) {
-    proxySourceError.value = extractApiErrorMessage(error, t('admin.proxies.sourceSaveFailed'))
+    proxySourceEditorError.value = extractApiErrorMessage(error, t('admin.proxies.sourceSaveFailed'))
   } finally {
     proxySourceSaving.value = false
   }
@@ -2074,6 +2098,7 @@ const confirmDeleteProxySource = async () => {
   try {
     await adminAPI.proxies.sources.delete(source.id)
     if (editingProxySourceId.value === source.id) {
+      showProxySourceEditor.value = false
       resetProxySourceForm()
     }
     proxySourcePendingDelete.value = null
@@ -3107,3 +3132,9 @@ onUnmounted(() => {
   document.removeEventListener('click', closeCopyMenu)
 })
 </script>
+
+<style scoped>
+.proxy-source-table :deep(.table-wrapper) {
+  max-height: 55vh;
+}
+</style>

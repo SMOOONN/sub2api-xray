@@ -10,20 +10,13 @@
           <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">{{ t('admin.retryFilter.manageDescription') }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
+          <RetryFilterGuide />
           <button class="btn btn-secondary" :disabled="loading || busy" @click="load">{{ t('common.refresh') }}</button>
           <router-link class="btn btn-secondary" to="/admin/retry-filter/monitor">{{ t('admin.retryFilter.monitorLink') }}</router-link>
           <router-link class="btn btn-secondary" to="/admin/settings">{{ t('admin.retryFilter.settings') }}</router-link>
         </div>
       </header>
 
-      <div class="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900 shadow-sm dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-        <p class="font-semibold">{{ t('admin.retryFilter.limitsTitle') }}</p>
-        <div class="mt-3 grid gap-3 lg:grid-cols-3">
-          <p class="rounded-xl border border-amber-200/80 bg-white/50 p-3 leading-relaxed dark:border-amber-800/70 dark:bg-amber-950/20">{{ t('admin.retryFilter.scopeLimit') }}</p>
-          <p class="rounded-xl border border-amber-200/80 bg-white/50 p-3 leading-relaxed dark:border-amber-800/70 dark:bg-amber-950/20">{{ t('admin.retryFilter.wsLimit') }}</p>
-          <p class="rounded-xl border border-amber-200/80 bg-white/50 p-3 leading-relaxed dark:border-amber-800/70 dark:bg-amber-950/20">{{ t('admin.retryFilter.breakerLimit') }}</p>
-        </div>
-      </div>
       <p v-if="error" role="alert" class="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300">{{ error }}</p>
       <div v-if="loading" role="status" class="py-12 text-center text-gray-500">{{ t('common.loading') }}</div>
 
@@ -177,6 +170,7 @@ import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import RetryFilterGuide from '@/components/admin/RetryFilterGuide.vue'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import retryFilterAPI, { type RetryFilterAction, type RetryFilterBindingCandidate, type RetryFilterEmptyRequestMode, type RetryFilterEmptyResponseMode, type RetryFilterPreset, type RetryFilterRule, type RetryFilterRuleInput } from '@/api/admin/retryFilter'
@@ -326,7 +320,7 @@ function ruleSummary(rule: RetryFilterRule) {
 }
 
 async function loadPresetBindings(id: number) { selectedAccountIDs.value = new Set(); selectedGroupIDs.value = new Set(); initialAccountIDs.value = new Set(); initialGroupIDs.value = new Set(); isGlobalDefault.value = defaultID.value === id; bindingError.value = ''; try { const result = await retryFilterAPI.getPresetBindings(id); selectedAccountIDs.value = new Set(result.accounts || []); selectedGroupIDs.value = new Set(result.groups || []); initialAccountIDs.value = new Set(result.accounts || []); initialGroupIDs.value = new Set(result.groups || []) } catch { /* Older servers expose only per-entity bindings. */ } await loadCandidates() }
-async function loadCandidates() { candidateLoading.value = true; bindingError.value = ''; try { const result = await retryFilterAPI.listBindingCandidates(bindingKind.value, { q: bindingSearch.value || undefined, page: candidatePage.value, page_size: 12, preset_id: selectedID.value || undefined }); candidateItems.value = result.items || []; candidatePages.value = Math.max(1, result.pages || Math.ceil((result.total || 0) / (result.page_size || 12))); for (const item of candidateItems.value) candidateCache[bindingKind.value].set(item.id, item) } catch { try { if (bindingKind.value === 'groups') { const result = await groupsAPI.list(candidatePage.value, 12, { search: bindingSearch.value || undefined }); candidateItems.value = result.items.map(g => ({ id: g.id, name: g.name, platform: g.platform, eligible: true })); candidatePages.value = Math.max(1, result.pages); for (const item of candidateItems.value) candidateCache.groups.set(item.id, item) } else { const result = await accountsAPI.list(candidatePage.value, 12, { search: bindingSearch.value || undefined, lite: 'true' }); candidateItems.value = result.items.map(a => ({ id: a.id, name: a.name, platform: a.platform, eligible: true })); candidatePages.value = Math.max(1, result.pages); for (const item of candidateItems.value) candidateCache.accounts.set(item.id, item) } } catch (e) { candidateItems.value = []; bindingError.value = failure(e) } } finally { candidateLoading.value = false } }
+async function loadCandidates() { candidateLoading.value = true; bindingError.value = ''; try { const result = await retryFilterAPI.listBindingCandidates(bindingKind.value, { q: bindingSearch.value || undefined, page: candidatePage.value, page_size: 12, preset_id: selectedID.value || undefined }); candidateItems.value = result.items || []; candidatePages.value = Math.max(1, result.pages || Math.ceil((result.total || 0) / (result.page_size || 12))); for (const item of candidateItems.value) candidateCache[bindingKind.value].set(item.id, item) } catch { try { if (bindingKind.value === 'groups') { const result = await groupsAPI.list(candidatePage.value, 12, { search: bindingSearch.value || undefined }); candidateItems.value = result.items.map(g => ({ id: g.id, name: g.name, platform: g.platform, eligible: true })); candidatePages.value = Math.max(1, result.pages); for (const item of candidateItems.value) candidateCache.groups.set(item.id, item) } else { const result = await accountsAPI.list(candidatePage.value, 12, { search: bindingSearch.value || undefined, lite: 'true', sort_by: 'id', sort_order: 'asc' }); candidateItems.value = result.items.map(a => ({ id: a.id, name: a.name, platform: a.platform, eligible: true })); candidatePages.value = Math.max(1, result.pages); for (const item of candidateItems.value) candidateCache.accounts.set(item.id, item) } } catch (e) { candidateItems.value = []; bindingError.value = failure(e) } } finally { candidateLoading.value = false } }
 function changeCandidatePage(delta: number) { candidatePage.value = Math.min(Math.max(1, candidatePage.value + delta), candidatePages.value); void loadCandidates() }
 function toggleCandidate(item: RetryFilterBindingCandidate) { const target = bindingKind.value === 'accounts' ? selectedAccountIDs : selectedGroupIDs; const next = new Set(target.value); next.has(item.id) ? next.delete(item.id) : next.add(item.id); target.value = next; candidateCache[bindingKind.value].set(item.id, item) }
 async function saveBindings() { if (!selectedID.value) return; busy.value = true; bindingError.value = ''; try { await retryFilterAPI.setPresetBindings(selectedID.value, { accounts: Array.from(selectedAccountIDs.value), groups: Array.from(selectedGroupIDs.value), global: isGlobalDefault.value }); defaultID.value = isGlobalDefault.value ? selectedID.value : (defaultID.value === selectedID.value ? null : defaultID.value); initialAccountIDs.value = new Set(selectedAccountIDs.value); initialGroupIDs.value = new Set(selectedGroupIDs.value); saved() } catch (e) { bindingError.value = failure(e) } finally { busy.value = false } }

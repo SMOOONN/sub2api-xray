@@ -4,7 +4,7 @@
  */
 
 import { defineStore } from 'pinia'
-import { markRaw, ref, shallowRef } from 'vue'
+import { computed, markRaw, ref, shallowRef } from 'vue'
 import type { Driver } from 'driver.js'
 
 type VoidCallback = () => void
@@ -18,6 +18,12 @@ export const useOnboardingStore = defineStore('onboarding', () => {
 
   // 全局 driver 实例，跨组件保持
   const driverInstance = shallowRef<Driver | null>(null)
+  const tourPending = ref(false)
+  const tourBlocking = computed(() => tourPending.value || isDriverActive())
+
+  function setTourPending(pending: boolean): void {
+    tourPending.value = pending
+  }
 
   function setReplayCallback(callback: VoidCallback | null): void {
     replayCallback.value = callback
@@ -75,6 +81,8 @@ export const useOnboardingStore = defineStore('onboarding', () => {
   }
 
   return {
+    tourBlocking,
+    setTourPending,
     setReplayCallback,
     setControlMethods,
     clearControlMethods,
