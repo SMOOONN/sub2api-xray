@@ -132,9 +132,9 @@ fast_mode = true
 新安装先准备源码和本地镜像：
 
 ```bash
-git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+git clone --branch v0.2.15-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
 cd sub2api-xray
-docker build -t sub2api-xray:0.2.10-xray6 .
+docker build -t sub2api-xray:0.2.15-xray6 .
 cd deploy
 cp .env.example .env
 chmod 600 .env
@@ -146,7 +146,7 @@ mkdir -p data postgres_data redis_data
 ```yaml
 services:
   sub2api:
-    image: sub2api-xray:0.2.10-xray6
+    image: sub2api-xray:0.2.15-xray6
     pull_policy: never
 ```
 
@@ -268,7 +268,7 @@ docker compose logs -f sub2api
 
 ```bash
 # 1. 克隆仓库
-git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+git clone --branch v0.2.15-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
 cd sub2api-xray/deploy
 
 # 2. 复制环境配置文件
@@ -292,8 +292,10 @@ JWT_SECRET=your_jwt_secret_here
 TOTP_ENCRYPTION_KEY=your_totp_key_here
 
 # 可选：管理员账号
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=your_admin_password
+# 留空则首次启动时自动生成随机邮箱（登录用户名）和密码，并输出到日志。
+# 请勿使用 admin@example.com 这类可被猜中的值，它们是暴力破解的目标。
+ADMIN_EMAIL=
+ADMIN_PASSWORD=
 
 # 可选：自定义端口
 SERVER_PORT=8080
@@ -354,9 +356,9 @@ docker compose -f docker-compose.local.yml -f compose.local-build.yml logs -f su
 
 在浏览器中打开 `http://你的服务器IP:8080`
 
-如果管理员密码是自动生成的，在日志中查找：
+如果管理员邮箱（登录用户名）或密码是自动生成的，在日志中查找：
 ```bash
-docker compose -f docker-compose.local.yml -f compose.local-build.yml logs sub2api | grep "admin password"
+docker compose -f docker-compose.local.yml -f compose.local-build.yml logs sub2api | grep "Generated admin"
 ```
 
 #### 当前 历史源码 版本升级
@@ -416,7 +418,7 @@ Apple container 的默认镜像仍来自旧 GHCR 发布源。当前 历史源码
 Apple 芯片 Mac 在 macOS 26 上可使用 Apple `container` 1.1.0 或更高版本运行完整的 Sub2API、PostgreSQL 和 Redis：
 
 ```bash
-git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+git clone --branch v0.2.15-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
 cd sub2api-xray/deploy
 ./apple-container.sh init
 ./apple-container.sh up
@@ -433,7 +435,7 @@ cd sub2api-xray/deploy
 
 #### 前置条件
 
-- Go 1.27.0+
+- Go 1.27.2+
 - Node.js 24+
 - PostgreSQL 15+
 - Redis 7+
@@ -442,7 +444,7 @@ cd sub2api-xray/deploy
 
 ```bash
 # 1. 克隆仓库
-git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+git clone --branch v0.2.15-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
 cd sub2api-xray
 
 # 2. 安装 pnpm（如果还没有安装）
@@ -658,6 +660,31 @@ OAuth / Setup Token 图片请求使用 Responses 主控模型调用 `image_gener
 - 可选密钥窗口：设置 `SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED=true` 后，按每个 API Key 配置的 5 小时、1 天、7 天消费窗口进行限制，默认值为 `false`；启用后仍跳过余额和订阅扣费。
 - 窗口限制以数据库为准，只记录 API Key 窗口用量。它在请求完成后记账，并发中的请求可能以各自最终费用超过窗口上限。启用前的历史用量不会自动补算。
 - 安全注意事项：生产环境需同时设置 `SIMPLE_MODE_CONFIRM=true` 才允许启动
+
+---
+
+## TypeSafe / Jev 使用说明
+
+Sub2API 支持使用 TypeSafe API Key 账户，通过 Jev 原生、非流式的 System One 协议调用模型。
+
+- 平台：`typesafe`；账号类型：API Key
+- 默认上游：`https://api.typesafe.ai`
+- 对外端点：`POST /v1/systemone`
+- 模型：`jev-latest`，TypeSafe 分组的 `/v1/models` 也会返回该模型
+- 问题类型：`noul`、`choice`、`score`
+
+请求和成功响应保持 System One 原生 JSON 结构。该端点不兼容 Chat Completions、Responses、Anthropic Messages 或流式客户端。
+
+问题校验遵循 TypeSafe OpenAPI 的线上协议 schema（SDK v0.5.7 也使用该 schema）。所有问题的 `instructions` 都可以省略或为 `null`。Noul 的 `criteria` 可以省略或为 `null`，其中 `true`/`false` 的描述和 Choice 描述支持字符串、对象、数组或 `null`。Score 的 `criteria` 必须是至少包含一档描述的数组，每档支持字符串、对象或数组；单档也合法。SDK 的整数键 Score 映射会由 SDK 在发送前转换为数组。
+
+```bash
+curl https://your-sub2api.example.com/v1/systemone \
+  -H 'Authorization: Bearer sk-your-sub2api-key' \
+  -H 'Content-Type: application/json' \
+  --data '{"model":"jev-latest","state":"待评估文本","questions":{"safety":{"type":"noul","instructions":"评估文本是否不安全"}}}'
+```
+
+`jev-latest` 内置价格为输入 `$0.042/百万 tokens`、输出 `$0`，渠道定价可以覆盖。凭据、欠费、权限、限流、过载、服务端和网络错误（`401`、`402`、`403`、`429`、`529`、`5xx`、传输错误）沿用现有账号错误策略（含自定义错误码与临时不可调度规则）并切换账号；请求错误（`400`、`413`、`422`）不会切换账号重试，也不会改变账号状态。TypeSafe 分组（以及路由到 TypeSafe 的 Composite 请求）调用 Messages、Chat Completions、Responses、count_tokens 时返回 `404`。
 
 ---
 

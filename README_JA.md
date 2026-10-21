@@ -108,9 +108,9 @@ Nginx はデフォルトでアンダースコアを含むヘッダー（例: `se
 新規インストールではソースとローカルイメージを準備します：
 
 ```bash
-git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+git clone --branch v0.2.15-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
 cd sub2api-xray
-docker build -t sub2api-xray:0.2.10-xray6 .
+docker build -t sub2api-xray:0.2.15-xray6 .
 cd deploy
 cp .env.example .env
 chmod 600 .env
@@ -122,7 +122,7 @@ mkdir -p data postgres_data redis_data
 ```yaml
 services:
   sub2api:
-    image: sub2api-xray:0.2.10-xray6
+    image: sub2api-xray:0.2.15-xray6
     pull_policy: never
 ```
 
@@ -244,7 +244,7 @@ docker compose logs -f sub2api
 
 ```bash
 # 1. リポジトリをクローン
-git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+git clone --branch v0.2.15-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
 cd sub2api-xray/deploy
 
 # 2. 環境設定ファイルをコピー
@@ -268,8 +268,10 @@ JWT_SECRET=your_jwt_secret_here
 TOTP_ENCRYPTION_KEY=your_totp_key_here
 
 # オプション: 管理者アカウント
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=your_admin_password
+# 空欄の場合、初回起動時にランダムなメールアドレス（ログインユーザー名）とパスワードが自動生成され、ログに出力されます。
+# admin@example.com のような推測されやすい値は総当たり攻撃の標的になるため避けてください。
+ADMIN_EMAIL=
+ADMIN_PASSWORD=
 
 # オプション: カスタムポート
 SERVER_PORT=8080
@@ -318,9 +320,9 @@ docker compose -f docker-compose.local.yml -f compose.local-build.yml logs -f su
 
 ブラウザで `http://YOUR_SERVER_IP:8080` を開いてください。
 
-管理者パスワードが自動生成された場合は、ログで確認できます:
+管理者メールアドレス（ログインユーザー名）またはパスワードが自動生成された場合は、ログで確認できます:
 ```bash
-docker compose -f docker-compose.local.yml -f compose.local-build.yml logs sub2api | grep "admin password"
+docker compose -f docker-compose.local.yml -f compose.local-build.yml logs sub2api | grep "Generated admin"
 ```
 
 #### 現在の 履歴ソース 版を更新
@@ -380,7 +382,7 @@ Apple container の既定イメージは以前の GHCR 配布元です。この 
 Apple シリコン搭載 Mac と macOS 26 では、Apple `container` 1.1.0 以降を使用して Sub2API、PostgreSQL、Redis の完全なスタックを実行できます:
 
 ```bash
-git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+git clone --branch v0.2.15-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
 cd sub2api-xray/deploy
 ./apple-container.sh init
 ./apple-container.sh up
@@ -397,7 +399,7 @@ cd sub2api-xray/deploy
 
 #### 前提条件
 
-- Go 1.27.0+
+- Go 1.27.2+
 - Node.js 24+
 - PostgreSQL 15+
 - Redis 7+
@@ -406,7 +408,7 @@ cd sub2api-xray/deploy
 
 ```bash
 # 1. リポジトリをクローン
-git clone --branch v0.2.10-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+git clone --branch v0.2.15-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
 cd sub2api-xray
 
 # 2. pnpm をインストール（未インストールの場合）
