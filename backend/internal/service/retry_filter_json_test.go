@@ -47,7 +47,9 @@ func retryFilterJSONFixture(protocol, kind string) string {
 		"image":    `[{"type":"image_generation_call","result":"aW1hZ2U="}]`,
 		"audio":    `[{"type":"output_audio","data":"YXVkaW8="}]`,
 	}[kind]
-	return `{"id":"resp_1","object":"response","status":"completed","model":"gpt-5.4","output":` + output + `,"usage":{"input_tokens":11,"output_tokens":7,"output_tokens_details":{"reasoning_tokens":7}}}`
+	// Match the upstream Responses contract so byte-preservation assertions
+	// isolate retry-filter behavior from the gateway's missing-timestamp repair.
+	return `{"id":"resp_1","created_at":1700000000,"object":"response","status":"completed","model":"gpt-5.4","output":` + output + `,"usage":{"input_tokens":11,"output_tokens":7,"output_tokens_details":{"reasoning_tokens":7}}}`
 }
 
 // Exercise the actual JSON consumers, including their native output/usage path.

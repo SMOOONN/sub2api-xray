@@ -57,6 +57,75 @@ class ReleaseMatrixTest(unittest.TestCase):
         self.assertNotIn({'goos': 'windows', 'goarch': 'arm64'}, full)
         self.assertEqual(release.targets(True), [{'goos': 'linux', 'goarch': 'amd64'}])
 
+    def test_tag_release_does_not_inherit_a_simple_release_repository_default(self):
+        workflow = yaml.load((ROOT / '.github/workflows/release.yml').read_text(), Loader=yaml.BaseLoader)
+        simple_setting = workflow['env']['SIMPLE_RELEASE']
+        self.assertNotIn('vars.SIMPLE_RELEASE', simple_setting)
+        self.assertIn("github.event_name == 'workflow_dispatch'", simple_setting)
+        self.assertEqual(workflow['on']['workflow_dispatch']['inputs']['simple_release']['default'], 'false')
+        self.assertEqual(len(release.targets()), 5)
+
+    def test_notes_accept_exact_unsigned_and_ssh_signed_messages(self):
+        canonical = b'# Release 9.8.7\n\nRelease notes.\n'
+        notes_file = Path('docs/releases/v9.8.7_CN.md')
+        notes_file.parent.mkdir(parents=True)
+        notes_file.write_bytes(canonical)
+        header = b'object ' + b'a' * 40 + b'\ntype commit\ntag v9.8.7\ntagger Example <example@example.com> 1 +0000\n\n'
+        signature = b'-----BEGIN SSH SIGNATURE-----\nfixture\n-----END SSH SIGNATURE-----\n'
+        for suffix in (b'', signature):
+            with self.subTest(signed=bool(suffix)):
+                with patch.object(release.subprocess, 'check_output', return_value=header + canonical + suffix):
+                    release.notes(argparse.Namespace(tag='v9.8.7'))
+        self.assertEqual(notes_file.read_bytes(), canonical)
+
+    def test_notes_reject_body_and_line_ending_changes_before_the_signature(self):
+        canonical = b'# Release 9.8.7\n\nRelease notes.\n'
+        notes_file = Path('docs/releases/v9.8.7_CN.md')
+        notes_file.parent.mkdir(parents=True)
+        notes_file.write_bytes(canonical)
+        header = b'object ' + b'a' * 40 + b'\ntype commit\ntag v9.8.7\n\n'
+        signature = b'-----BEGIN SSH SIGNATURE-----\nfixture\n-----END SSH SIGNATURE-----\n'
+        for message in (canonical.replace(b'Release notes.', b'Changed notes.'), canonical + b'\n', canonical.replace(b'\n', b'\r\n')):
+            with self.subTest(message=message):
+                with patch.object(release.subprocess, 'check_output', return_value=header + message + signature):
+                    with self.assertRaisesRegex(ValueError, 'differs from the canonical'):
+                        release.notes(argparse.Namespace(tag='v9.8.7'))
+
+    def test_notes_reject_an_ssh_signature_inside_the_canonical_document(self):
+        canonical = b'# Release 9.8.7\n\n-----BEGIN SSH SIGNATURE-----\nfixture\n-----END SSH SIGNATURE-----\n'
+        notes_file = Path('docs/releases/v9.8.7_CN.md')
+        notes_file.parent.mkdir(parents=True)
+        notes_file.write_bytes(canonical)
+        with patch.object(release.subprocess, 'check_output', return_value=b'tag v9.8.7\n\n' + canonical):
+            with self.assertRaisesRegex(ValueError, 'must not contain an SSH signature'):
+                release.notes(argparse.Namespace(tag='v9.8.7'))
+
+    def test_preflight_rejects_the_previous_updater_account_and_missing_runtime(self):
+        filenames = [
+            'backend/internal/service/update_service.go',
+            'frontend/src/components/common/VersionBadge.vue',
+            'deploy/install.sh',
+            'Dockerfile.goreleaser',
+        ]
+        for filename in filenames:
+            destination = Path(filename)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / filename, destination)
+        with patch.dict(os.environ, {'GITHUB_REPOSITORY': 'SMOOONN/sub2api-xray'}):
+            release.preflight(argparse.Namespace())
+            updater = Path(filenames[0])
+            original = updater.read_text()
+            updater.write_text(original.replace('SMOOONN/sub2api-xray', 'smmooooonn/sub2api-xray'))
+            with self.assertRaisesRegex(ValueError, 'publishing repository'):
+                release.preflight(argparse.Namespace())
+            updater.write_text(original)
+            runtime = Path('Dockerfile.goreleaser')
+            runtime.write_text(runtime.read_text().replace(
+                'COPY --from=sing-box-runtime /opt/sing-box/sing-box /usr/local/bin/sing-box',
+                '# sing-box copy removed'))
+            with self.assertRaisesRegex(ValueError, 'missing the sing-box-runtime binary'):
+                release.preflight(argparse.Namespace())
+
     def test_leaf_keeps_packaging_and_selects_only_one_target(self):
         original = release.config()
         release.generate_config(argparse.Namespace(mode='build', simple=False, goos='darwin', goarch='arm64', output='leaf.yaml'))

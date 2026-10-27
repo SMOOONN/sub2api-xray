@@ -411,7 +411,7 @@ func TestRetryFilterHTTPNegativeVerdictSurvivesCompatFallback(t *testing.T) {
 	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: 422, Header: http.Header{"Content-Type": {"application/json"}},
 		Body: io.NopCloser(strings.NewReader(`{"error":{"message":"unprocessable input"}}`))}}
 	svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
-	_, err := svc.forwardResponsesViaRawChatCompletions(c.Request.Context(), c, account, []byte(`{"model":"gpt-5.4","input":"hello","stream":false}`))
+	_, err := svc.forwardResponsesViaRawChatCompletions(c.Request.Context(), c, account, []byte(`{"model":"gpt-5.4","input":"hello","stream":false}`), time.Now())
 	require.Error(t, err)
 	var failure *UpstreamFailoverError
 	require.False(t, errors.As(err, &failure))

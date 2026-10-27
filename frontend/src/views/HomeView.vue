@@ -527,7 +527,7 @@ const isHomeContentUrl = computed(() => {
 const isDark = ref(document.documentElement.classList.contains('dark'))
 
 // GitHub URL
-const githubUrl = 'https://github.com/smmooooonn/sub2api-xray'
+const githubUrl = 'https://github.com/SMOOONN/sub2api-xray'
 
 // Auth state
 const isAuthenticated = computed(() => authStore.isAuthenticated)

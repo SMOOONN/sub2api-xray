@@ -80,6 +80,9 @@ deploy/redis_data/
 # GitHub
 .github/
 
+# Generated release contexts are not image input.
+.release-context/
+
 # Claude files
 .claude/
 issues/

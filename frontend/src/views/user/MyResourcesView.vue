@@ -429,10 +429,16 @@
         <div class="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
           <div v-if="editorMode === 'default'" class="space-y-4">
             <div v-if="resource === 'groups'" class="grid gap-3 md:grid-cols-2">
-              <label class="block">
-                <span class="mb-1 block text-sm text-gray-700 dark:text-dark-100">{{ mr('fields.name') }}</span>
-                <input v-model.trim="editorForm.group.name" class="input" required />
-              </label>
+              <div class="min-w-0">
+                <GroupI18nField
+                  :model-value="editorForm.group.name"
+                  v-model:i18n="editorForm.group.i18n"
+                  :label="mr('fields.name')"
+                  field="name"
+                  required
+                  @update:model-value="editorForm.group.name = $event.trim()"
+                />
+              </div>
               <label class="block">
                 <span class="mb-1 block text-sm text-gray-700 dark:text-dark-100">{{ mr('fields.platform') }}</span>
                 <Select v-model="editorForm.group.platform" :options="platformOptions" :searchable="false" />
@@ -656,10 +662,16 @@
                   </div>
                 </div>
               </section>
-              <label class="block md:col-span-2">
-                <span class="mb-1 block text-sm text-gray-700 dark:text-dark-100">{{ mr('fields.description') }}</span>
-                <textarea v-model="editorForm.group.description" class="input min-h-20"></textarea>
-              </label>
+              <div class="min-w-0 md:col-span-2">
+                <GroupI18nField
+                  v-model="editorForm.group.description"
+                  v-model:i18n="editorForm.group.i18n"
+                  :label="mr('fields.description')"
+                  field="description"
+                  multiline
+                  rows="3"
+                />
+              </div>
             </div>
 
             <div v-else-if="resource === 'accounts'" class="grid gap-3 md:grid-cols-2">
@@ -1258,6 +1270,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import GroupCapacityBadge from '@/components/common/GroupCapacityBadge.vue'
+import GroupI18nField from '@/components/admin/group/GroupI18nField.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
@@ -1268,7 +1281,7 @@ import { CONCRETE_PLATFORM_OPTIONS } from '@/constants/platforms'
 import { isKnownPlatform, platformDisplayName } from '@/constants/platformCatalog'
 import { myResourcesApi, type ResourceItem, type ResourcePage, type UserOAuthCredentialsResult, type UserProxyTestResult } from '@/api/myResources'
 import { useAppStore } from '@/stores/app'
-import type { GroupPlatform, ProxyQualityCheckResult, ProxySourceSyncAllResult } from '@/types'
+import type { GroupI18n, GroupPlatform, ProxyQualityCheckResult, ProxySourceSyncAllResult } from '@/types'
 import {
   USER_ACCOUNT_STATUS_OPTIONS,
   USER_GROUP_STATUS_OPTIONS,
@@ -1277,6 +1290,7 @@ import {
 } from '@/utils/userResourceOptions'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { formatBytes, formatDateTime } from '@/utils/format'
+import { defaultAllowImageGenerationForPlatform } from '@/views/admin/groupsImagePricing'
 import {
   buildModelAllowlistConfig,
   createModelAllowlistState,
@@ -1676,6 +1690,7 @@ const editorForm = reactive({
   group: {
     name: '',
     description: '',
+    i18n: {} as GroupI18n,
     platform: 'anthropic',
     subscription_type: 'subscription',
     status: 'active',
@@ -1970,6 +1985,9 @@ function closeColumnSettingsOnOutsideClick(event: MouseEvent): void {
 function populateEditorForm(payload: ResourceItem): void {
   editorForm.group.name = stringValue(payload.name)
   editorForm.group.description = stringValue(payload.description)
+  editorForm.group.i18n = Object.fromEntries(
+    Object.entries((payload.i18n ?? {}) as GroupI18n).map(([locale, text]) => [locale, { ...text }])
+  )
   editorForm.group.platform = stringValue(payload.platform, 'anthropic')
   editorForm.group.subscription_type = stringValue(payload.subscription_type, 'subscription')
   editorForm.group.status = stringValue(payload.status, 'active')
@@ -2000,7 +2018,9 @@ function populateEditorForm(payload: ResourceItem): void {
   editorForm.group.claude_code_only = Boolean(payload.claude_code_only)
   editorForm.group.is_exclusive = Boolean(payload.is_exclusive)
   editorForm.group.mcp_xml_inject = Boolean(payload.mcp_xml_inject)
-  editorForm.group.allow_image_generation = Boolean(payload.allow_image_generation)
+  editorForm.group.allow_image_generation = payload.allow_image_generation == null && !editingId.value
+    ? defaultAllowImageGenerationForPlatform(editorForm.group.platform)
+    : Boolean(payload.allow_image_generation)
   editorForm.group.allow_batch_image_generation = Boolean(payload.allow_batch_image_generation)
   editorForm.group.image_rate_independent = Boolean(payload.image_rate_independent)
   editorForm.group.image_rate_multiplier = numberValue(payload.image_rate_multiplier, 1)
@@ -2069,6 +2089,7 @@ function mergeEditorFormPayload(payload: ResourceItem): ResourceItem {
   if (resource.value === 'groups') {
     out.name = editorForm.group.name
     out.description = editorForm.group.description
+    out.i18n = editorForm.group.i18n
     out.platform = editorForm.group.platform
     out.subscription_type = editorForm.group.subscription_type
     out.status = editorForm.group.status
@@ -3610,6 +3631,9 @@ watch(() => editorForm.proxy.kind, kind => {
 
 watch(() => editorForm.group.platform, platform => {
   if (platform !== 'openai') editorForm.group.allow_live = false
+  if (!editingId.value) {
+    editorForm.group.allow_image_generation = defaultAllowImageGenerationForPlatform(platform)
+  }
 })
 
 watch(() => editorForm.account.platform, platform => {

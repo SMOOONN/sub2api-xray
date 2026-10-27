@@ -28,13 +28,19 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 env:
-  SIMPLE_RELEASE: ${{ inputs.simple_release == true || vars.SIMPLE_RELEASE == 'true' }}
+  SIMPLE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.simple_release == true }}
   DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+  DOCKERHUB_USERNAME: skip
 
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    container: python:3.12-bookworm
     outputs:
       sha: ${{ steps.plan.outputs.sha }}
       owner_lower: ${{ steps.plan.outputs.owner_lower }}
@@ -45,6 +51,8 @@ jobs:
       simple: ${{ steps.plan.outputs.simple }}
       dry_run: ${{ steps.plan.outputs.dry_run }}
     steps:
+      - name: Require an isolated job container
+        run: test -f /.dockerenv
       - name: Checkout workflow tooling
         uses: actions/checkout@v6
         with:
@@ -56,9 +64,6 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
       - run: python -m pip install -r "$RUNNER_TEMP/release-tools/requirements-release.txt"
       - name: Resolve one source commit and target matrix
         id: plan
@@ -69,6 +74,10 @@ jobs:
           if [[ "$SIMPLE_RELEASE" == true ]]; then args+=(--simple); fi
           if [[ "$DRY_RUN" == true ]]; then args+=(--dry-run); fi
           python "$RUNNER_TEMP/release-tools/release_matrix.py" plan "${args[@]}"
+          python "$RUNNER_TEMP/release-tools/release_matrix.py" preflight
+          if [[ "$DRY_RUN" != true ]]; then
+            python "$RUNNER_TEMP/release-tools/release_matrix.py" notes --tag "$REQUESTED_REF"
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: release-tooling
@@ -83,7 +92,13 @@ jobs:
   build-frontend:
     needs: prepare
     runs-on: ubuntu-latest
+    container: node:20-bookworm
     steps:
+      - name: Prepare the isolated build container
+        run: |
+          test -f /.dockerenv
+          apt-get update
+          apt-get install -y --no-install-recommends xz-utils zstd
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.prepare.outputs.sha }}
@@ -108,13 +123,22 @@ jobs:
   build-binaries:
     needs: [prepare, build-frontend]
     runs-on: ubuntu-latest
+    container: golang:1.27.3-bookworm
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     env:
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       RELEASE_DATE: ${{ needs.prepare.outputs.date }}
+      GOTOOLCHAIN: local
     steps:
+      - name: Prepare the isolated build container
+        run: |
+          test -f /.dockerenv
+          apt-get update
+          apt-get install -y --no-install-recommends python3-venv xz-utils zstd
+          python3 -m venv "$RUNNER_TEMP/release-tools-venv"
+          echo "$RUNNER_TEMP/release-tools-venv/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.prepare.outputs.sha }}
@@ -131,27 +155,19 @@ jobs:
         with:
           name: frontend-dist
           path: backend/internal/web/dist/
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: backend/go.mod
-          check-latest: false
-          cache: false
       - name: Verify Go version
-        run: go version | grep -q 'go1.27.2'
+        run: go version | grep -q 'go1.27.3'
       - name: Restore target-specific Go cache
         id: go-cache
         uses: actions/cache/restore@v6
         with:
           path: |
-            ~/go/pkg/mod
+            /go/pkg/mod
             ~/.cache/go-build
           key: release-go-${{ runner.os }}-${{ runner.arch }}-${{ matrix.goos }}-${{ matrix.goarch }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}-${{ needs.prepare.outputs.sha }}
           restore-keys: |
             release-go-${{ runner.os }}-${{ runner.arch }}-${{ matrix.goos }}-${{ matrix.goarch }}-${{ hashFiles('backend/go.mod', 'backend/go.sum') }}-
             release-go-${{ runner.os }}-${{ runner.arch }}-${{ matrix.goos }}-${{ matrix.goarch }}-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
       - run: python -m pip install -r "$RUNNER_TEMP/release-tools/requirements-release.txt"
       - name: Select one GoReleaser target
         env:
@@ -186,13 +202,14 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: |
-            ~/go/pkg/mod
+            /go/pkg/mod
             ~/.cache/go-build
           key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
   release:
     needs: [prepare, build-binaries]
     runs-on: ubuntu-latest
+    container: golang:1.27.3-bookworm
     permissions:
       contents: write
       packages: write
@@ -202,7 +219,21 @@ jobs:
       RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
       RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+      GOTOOLCHAIN: local
     steps:
+      - name: Prepare the isolated publishing container
+        run: |
+          test -f /.dockerenv
+          test -S /var/run/docker.sock
+          apt-get update
+          apt-get install -y --no-install-recommends python3-venv xz-utils zstd
+          python3 -m venv "$RUNNER_TEMP/release-tools-venv"
+          echo "$RUNNER_TEMP/release-tools-venv/bin" >> "$GITHUB_PATH"
+          curl --fail --location --retry 3 \
+            https://download.docker.com/linux/static/stable/x86_64/docker-28.5.1.tgz \
+            --output "$RUNNER_TEMP/docker-cli.tgz"
+          tar -xzf "$RUNNER_TEMP/docker-cli.tgz" --directory /usr/local/bin --strip-components=1 docker/docker
+          docker version
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.prepare.outputs.sha }}
@@ -216,31 +247,16 @@ jobs:
           pattern: release-binary-*
           path: release-input
           merge-multiple: true
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
       - run: python -m pip install -r "$RUNNER_TEMP/release-tools/requirements-release.txt"
       - name: Verify complete matrix and prepare Docker contexts
         run: |
           args=(--version "$RELEASE_VERSION" --sha "$RELEASE_SHA" --input release-input --output .release-context)
           if [[ "$SIMPLE_RELEASE" == true ]]; then args+=(--simple); fi
           python "$RUNNER_TEMP/release-tools/release_matrix.py" contexts "${args[@]}"
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: backend/go.mod
-          cache: false
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Login to DockerHub
-        if: ${{ env.DRY_RUN != 'true' && env.SIMPLE_RELEASE != 'true' && env.DOCKERHUB_USERNAME != '' }}
-        uses: docker/login-action@v3
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Login to GitHub Container Registry
         if: ${{ env.DRY_RUN != 'true' }}
         uses: docker/login-action@v3
@@ -249,19 +265,23 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build images and publish manifests
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || 'skip' }}
         run: bash "$RUNNER_TEMP/release-tools/release-images.sh"
-      - name: Get annotated tag notes
-        id: tag_message
+      - name: Verify published image runtimes
+        if: ${{ env.DRY_RUN != 'true' }}
         run: |
-          TAG_MESSAGE=$(git tag -l --format='%(contents:body)' "$RELEASE_TAG")
-          DELIMITER="TAG_MESSAGE_$(openssl rand -hex 16)"
-          {
-            echo "message<<$DELIMITER"
-            echo "$TAG_MESSAGE"
-            echo "$DELIMITER"
-          } >> "$GITHUB_OUTPUT"
+          arches=(amd64 arm64)
+          if [[ "$SIMPLE_RELEASE" == true ]]; then arches=(amd64); fi
+          for arch in "${arches[@]}"; do
+            image="ghcr.io/${GITHUB_REPOSITORY,,}:$RELEASE_VERSION-$arch"
+            version_output=$(docker run --rm --platform "linux/$arch" --entrypoint /app/sub2api "$image" -version 2>&1)
+            printf '%s\n' "$version_output"
+            grep -F "$RELEASE_VERSION (commit: $RELEASE_SHA," <<< "$version_output"
+            docker run --rm --platform "linux/$arch" --entrypoint /usr/local/bin/xray "$image" version
+            docker run --rm --platform "linux/$arch" --entrypoint /usr/local/bin/sing-box "$image" version
+          done
+      - name: Recheck the canonical release notes
+        if: ${{ env.DRY_RUN != 'true' }}
+        run: python "$RUNNER_TEMP/release-tools/release_matrix.py" notes --tag "$RELEASE_TAG"
       - name: Prepare publication-only GoReleaser config
         run: |
           args=(publish --output "$RUNNER_TEMP/goreleaser.publisher.yaml")
@@ -271,15 +291,13 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
-          args: release --clean --skip=validate,before,docker ${{ env.DRY_RUN == 'true' && '--snapshot --skip=publish,announce' || '' }} --config=${{ runner.temp }}/goreleaser.publisher.yaml
+          args: release --clean --skip=validate,before,docker ${{ env.DRY_RUN == 'true' && '--snapshot --skip=publish,announce' || format('--release-notes=docs/releases/{0}_CN.md', needs.prepare.outputs.tag) }} --config=${{ runner.temp }}/goreleaser.publisher.yaml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ needs.prepare.outputs.tag }}
-          TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO_NAME: ${{ github.event.repository.name }}
           GITHUB_REPO_OWNER_LOWER: ${{ needs.prepare.outputs.owner_lower }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || 'skip' }}
       - name: Upload dry-run checksums and metadata
         if: ${{ env.DRY_RUN == 'true' }}
         uses: actions/upload-artifact@v7
@@ -291,86 +309,3 @@ jobs:
             dist/metadata.json
           if-no-files-found: error
           retention-days: 3
-
-      # Update DockerHub description
-      - name: Update DockerHub description
-        if: ${{ env.DRY_RUN != 'true' && env.SIMPLE_RELEASE != 'true' && env.DOCKERHUB_USERNAME != '' }}
-        uses: peter-evans/dockerhub-description@v5
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ secrets.DOCKERHUB_USERNAME }}/sub2api
-          short-description: "Sub2API Xray - AI API Gateway Platform"
-          readme-filepath: ./deploy/DOCKER.md
-
-      # Send Telegram notification
-      - name: Send Telegram Notification
-        if: ${{ env.DRY_RUN != 'true' && env.SIMPLE_RELEASE != 'true' }}
-        env:
-          TAG_MESSAGE: ${{ steps.tag_message.outputs.message }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        continue-on-error: true
-        run: |
-          # 检查必要的环境变量
-          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "Telegram credentials not configured, skipping notification"
-            exit 0
-          fi
-
-          TAG_NAME="$RELEASE_TAG"
-          VERSION=${TAG_NAME#v}
-          REPO="${{ github.repository }}"
-          GHCR_IMAGE="ghcr.io/${REPO,,}"  # ${,,} converts to lowercase
-
-          # 获取 tag message 内容并转义 Markdown 特殊字符
-          TAG_MESSAGE=$(echo "$TAG_MESSAGE" | sed 's/\([_*`\[]\)/\\\1/g')
-
-          # 限制消息长度（Telegram 消息限制 4096 字符，预留空间给头尾固定内容）
-          if [ ${#TAG_MESSAGE} -gt 3500 ]; then
-            TAG_MESSAGE="${TAG_MESSAGE:0:3500}..."
-          fi
-
-          # 构建消息内容
-          MESSAGE="🚀 *Sub2API Xray 新版本发布！*"$'\n'$'\n'
-          MESSAGE+="📦 版本号: \`${VERSION}\`"$'\n'$'\n'
-
-          # 添加更新内容
-          if [ -n "$TAG_MESSAGE" ]; then
-            MESSAGE+="${TAG_MESSAGE}"$'\n'$'\n'
-          fi
-
-          MESSAGE+="🐳 *Docker 部署:*"$'\n'
-          MESSAGE+="\`\`\`bash"$'\n'
-          # 根据是否配置 DockerHub 动态生成
-          if [ -n "$DOCKERHUB_USERNAME" ]; then
-            DOCKER_IMAGE="${DOCKERHUB_USERNAME}/sub2api"
-            MESSAGE+="# Docker Hub"$'\n'
-            MESSAGE+="docker pull ${DOCKER_IMAGE}:${VERSION}"$'\n'
-            MESSAGE+="# GitHub Container Registry"$'\n'
-          fi
-          MESSAGE+="docker pull ${GHCR_IMAGE}:${VERSION}"$'\n'
-          MESSAGE+="\`\`\`"$'\n'$'\n'
-          MESSAGE+="🔗 *相关链接:*"$'\n'
-          MESSAGE+="• [GitHub Release](https://github.com/${REPO}/releases/tag/${TAG_NAME})"$'\n'
-          if [ -n "$DOCKERHUB_USERNAME" ]; then
-            MESSAGE+="• [Docker Hub](https://hub.docker.com/r/${DOCKER_IMAGE})"$'\n'
-          fi
-          MESSAGE+="• [GitHub Packages](https://github.com/${REPO}/pkgs/container/sub2api)"$'\n'$'\n'
-          MESSAGE+="#Sub2API #Release #${TAG_NAME//./_}"
-
-          # 发送消息
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n \
-              --arg chat_id "${TELEGRAM_CHAT_ID}" \
-              --arg text "${MESSAGE}" \
-              '{
-                chat_id: $chat_id,
-                text: $text,
-                parse_mode: "Markdown",
-                disable_web_page_preview: true
-              }')"

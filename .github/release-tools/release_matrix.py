@@ -82,6 +82,56 @@ def plan(args):
             output.write(f'{key}={value}\n')
 
 
+def preflight(args):
+    repository = os.environ['GITHUB_REPOSITORY']
+    owners = [
+        ('backend/internal/service/update_service.go', r'\bgithubRepo\s*=\s*"([^"]+)"'),
+        ('frontend/src/components/common/VersionBadge.vue', r"\bGITHUB_REPO\s*=\s*'([^']+)'"),
+        ('deploy/install.sh', r'^GITHUB_REPO="([^"]+)"'),
+    ]
+    for filename, pattern in owners:
+        match = re.search(pattern, Path(filename).read_text(), re.MULTILINE)
+        if not match or match.group(1).casefold() != repository.casefold():
+            raise ValueError(f'{filename} does not target the publishing repository')
+    dockerfile = Path('Dockerfile.goreleaser').read_text()
+    for stage, source, destination in [
+        ('xray-runtime', '/usr/local/bin/xray', '/usr/local/bin/xray'),
+        ('sing-box-runtime', '/opt/sing-box/sing-box', '/usr/local/bin/sing-box'),
+    ]:
+        pattern = rf'^COPY --from={re.escape(stage)}\s+{re.escape(source)}\s+{re.escape(destination)}\s*$'
+        if not re.search(pattern, dockerfile, re.MULTILINE):
+            raise ValueError(f'release image is missing the {stage} binary')
+    for simple in (False, True):
+        for image in config(simple)['dockers']:
+            if image['dockerfile'] != 'Dockerfile.goreleaser':
+                raise ValueError('release image bypasses the Xray/sing-box Dockerfile')
+    linux_arches = {target['goarch'] for target in targets() if target['goos'] == 'linux'}
+    if linux_arches != {'amd64', 'arm64'}:
+        raise ValueError('full release requires both Linux image architectures')
+
+
+def notes(args):
+    if not args.tag.startswith('v') or not VERSION_RE.fullmatch(args.tag[1:]):
+        raise ValueError('release notes require a version tag')
+    canonical = Path(f'docs/releases/{args.tag}_CN.md').read_bytes()
+    canonical.decode('utf-8')
+    tag_data = subprocess.check_output(['git', 'cat-file', 'tag', f'refs/tags/{args.tag}'])
+    try:
+        tag_message = tag_data.split(b'\n\n', 1)[1]
+    except IndexError:
+        raise ValueError('annotated tag has no message') from None
+    signature_marker = b'-----BEGIN SSH SIGNATURE-----\n'
+    if signature_marker in canonical:
+        raise ValueError('canonical release notes must not contain an SSH signature')
+    unsigned, marker, signature = tag_message.partition(signature_marker)
+    if marker:
+        if not unsigned.endswith(b'\n') or not signature.rstrip().endswith(b'-----END SSH SIGNATURE-----'):
+            raise ValueError('malformed SSH signature boundary in annotated tag')
+        tag_message = unsigned
+    if tag_message != canonical:
+        raise ValueError('annotated tag message differs from the canonical release notes')
+
+
 def generate_config(args):
     data = config(args.simple if args.mode == 'publish' else False)
     data['snapshot'] = {'version_template': '{{ .Env.RELEASE_VERSION }}'}
@@ -168,6 +218,11 @@ def main():
     p.add_argument('--simple', action='store_true')
     p.add_argument('--dry-run', action='store_true')
     p.set_defaults(run=plan)
+    p = commands.add_parser('preflight')
+    p.set_defaults(run=preflight)
+    p = commands.add_parser('notes')
+    p.add_argument('--tag', required=True)
+    p.set_defaults(run=notes)
     p = commands.add_parser('config')
     p.add_argument('mode', choices=['build', 'publish'])
     p.add_argument('--goos')

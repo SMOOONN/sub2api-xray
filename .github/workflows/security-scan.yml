@@ -2,6 +2,8 @@ name: Security Scan
 
 on:
   push:
+    branches: [main]
+    tags: ['v*']
   pull_request:
   schedule:
     - cron: '0 3 * * 1'
@@ -9,21 +11,24 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   backend-security:
     runs-on: ubuntu-latest
+    container: golang:1.27.3-bookworm
     timeout-minutes: 15
+    env:
+      GOTOOLCHAIN: local
     steps:
+      - name: Require an isolated job container
+        run: test -f /.dockerenv
       - uses: actions/checkout@v6
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: backend/go.mod
-          check-latest: false
-          cache-dependency-path: backend/go.sum
       - name: Verify Go version
         run: |
-          go version | grep -q 'go1.27.2'
+          go version | grep -q 'go1.27.3'
       - name: Run govulncheck
         working-directory: backend
         run: |
@@ -32,7 +37,13 @@ jobs:
 
   frontend-security:
     runs-on: ubuntu-latest
+    container: node:20-bookworm
     steps:
+      - name: Prepare the isolated job container
+        run: |
+          test -f /.dockerenv
+          apt-get update
+          apt-get install -y --no-install-recommends python3 xz-utils zstd
       - uses: actions/checkout@v6
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -53,6 +64,6 @@ jobs:
           pnpm audit --prod --audit-level=high --json > audit.json || true
       - name: Check audit exceptions
         run: |
-          python tools/check_pnpm_audit_exceptions.py \
+          python3 tools/check_pnpm_audit_exceptions.py \
             --audit frontend/audit.json \
             --exceptions .github/audit-exceptions.yml

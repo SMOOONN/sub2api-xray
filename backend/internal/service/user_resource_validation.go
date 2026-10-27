@@ -88,6 +88,9 @@ func (s *UserResourceService) normalizeAndValidateGroupPayload(ctx context.Conte
 	if err := validateResourcePayloadTypes(payload, groupWritableColumns); err != nil {
 		return err
 	}
+	if err := normalizeUserResourceGroupI18n(payload); err != nil {
+		return err
+	}
 	if err := normalizeNullableNonNegative(payload,
 		"daily_limit_usd", "weekly_limit_usd", "monthly_limit_usd",
 		"image_price_1k", "image_price_2k", "image_price_4k",
@@ -114,6 +117,10 @@ func (s *UserResourceService) normalizeAndValidateGroupPayload(ctx context.Conte
 	}
 	if _, ok := payload["platform"]; ok {
 		payload["platform"] = platform
+	}
+	if groupID == 0 && DefaultAllowImageGenerationForPlatform(platform) {
+		payload["allow_image_generation"] = true
+		state["allow_image_generation"] = true
 	}
 	status := strings.ToLower(strings.TrimSpace(urAsString(state["status"])))
 	if err := validateAllowedValue("status", status, StatusActive, StatusDisabled); err != nil {

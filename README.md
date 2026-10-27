@@ -36,9 +36,9 @@ This repository is independently maintained and is not the upstream project's of
 
 The user resource workspace is controlled by `enable_user_resources` and is disabled by default on upgraded installations.
 
-## Current Release
+## Current Version
 
-This historical tag preserves source only; this repository does not build archives or images for it. Use the [latest release](https://github.com/SMOOONN/sub2api-xray/releases/latest) for installation and upgrades. Its retained updater may still refer to the previous account.
+The current release is [v0.2.18-xray6](https://github.com/SMOOONN/sub2api-xray/releases/tag/v0.2.18-xray6), syncing official v0.2.18 while preserving Xray features. Installers and updates use this repository, and container images are published to `ghcr.io/smooonn/sub2api-xray`.
 
 ## ⚠️ Important Notice
 
@@ -100,41 +100,7 @@ Nginx drops headers containing underscores by default (e.g. `session_id`), which
 
 ## Deployment
 
-### Current historical source release
-
-This historical tag preserves source only; this repository does not build archives or images for it. Use the [latest release](https://github.com/SMOOONN/sub2api-xray/releases/latest) for installation and upgrades. Its retained updater may still refer to the previous account.
-
-The GitHub install scripts, online updater, and GHCR `latest` retained below use the previous release source. You can also build this historical source release from source with the following steps.
-
-For a new installation, prepare the source and local image:
-
-```bash
-git clone --branch v0.2.15-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
-cd sub2api-xray
-docker build -t sub2api-xray:0.2.15-xray6 .
-cd deploy
-cp .env.example .env
-chmod 600 .env
-mkdir -p data postgres_data redis_data
-```
-
-Edit `.env` and set the required database password and other settings. Create `compose.local-build.yml` in the `deploy` directory with this image override, then start the services:
-
-```yaml
-services:
-  sub2api:
-    image: sub2api-xray:0.2.15-xray6
-    pull_policy: never
-```
-
-```bash
-docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d
-```
-
-When upgrading an existing service, back up PostgreSQL, Redis, and application data. Keep the existing `.env`, ports, and data mounts, and replace only the application image. Do not overwrite existing configuration with the new-installation steps.
-
-
-### Method 1: Previous GitHub Release Script Installation
+### Method 1: Script Installation (Recommended)
 
 One-click installation script that downloads pre-built binaries from GitHub Releases.
 
@@ -148,7 +114,7 @@ One-click installation script that downloads pre-built binaries from GitHub Rele
 #### Installation Steps
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/install.sh | sudo bash
 ```
 
 The script will:
@@ -198,12 +164,12 @@ sudo journalctl -u sub2api -f
 sudo systemctl restart sub2api
 
 # Uninstall
-curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/install.sh | sudo bash -s -- uninstall -y
+curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/install.sh | sudo bash -s -- uninstall -y
 ```
 
 ---
 
-### Method 2: Docker Compose (Use the Image Built Above)
+### Method 2: Docker Compose (Recommended)
 
 Deploy with Docker Compose, including PostgreSQL and Redis containers.
 
@@ -212,7 +178,7 @@ Deploy with Docker Compose, including PostgreSQL and Redis containers.
 - Docker 20.10+
 - Docker Compose v2+
 
-#### Previous GitHub Release One-Click Deployment
+#### Quick Start (One-Click Deployment)
 
 Use the automated deployment script for easy setup:
 
@@ -221,7 +187,7 @@ Use the automated deployment script for easy setup:
 mkdir -p sub2api-deploy && cd sub2api-deploy
 
 # Download and run deployment preparation script
-curl -sSL https://raw.githubusercontent.com/smmooooonn/sub2api-xray/main/deploy/docker-deploy.sh | bash
+curl -sSL https://raw.githubusercontent.com/SMOOONN/sub2api-xray/main/deploy/docker-deploy.sh | bash
 
 # Start services
 docker compose up -d
@@ -239,13 +205,11 @@ docker compose logs -f sub2api
 
 #### Manual Deployment
 
-For manual setup, first build the current historical source tag image and create compose.local-build.yml as described above. The service commands below use that override.
-
 If you prefer manual setup:
 
 ```bash
 # 1. Clone the repository
-git clone --branch v0.2.15-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+git clone https://github.com/SMOOONN/sub2api-xray.git
 cd sub2api-xray/deploy
 
 # 2. Copy environment configuration
@@ -296,16 +260,16 @@ mkdir -p data postgres_data redis_data
 
 # 5. Start all services
 # Option A: Local directory version (recommended - easy migration)
-docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d
+docker compose -f docker-compose.local.yml up -d
 
 # Option B: Named volumes version (simple setup)
-docker compose -f docker-compose.yml -f compose.local-build.yml up -d
+docker compose up -d
 
 # 6. Check status
-docker compose -f docker-compose.local.yml -f compose.local-build.yml ps
+docker compose -f docker-compose.local.yml ps
 
 # 7. View logs
-docker compose -f docker-compose.local.yml -f compose.local-build.yml logs -f sub2api
+docker compose -f docker-compose.local.yml logs -f sub2api
 ```
 
 #### Deployment Versions
@@ -315,7 +279,7 @@ docker compose -f docker-compose.local.yml -f compose.local-build.yml logs -f su
 | **docker-compose.local.yml** | Local directories | ✅ Easy (tar entire directory) | Production, frequent backups |
 | **docker-compose.yml** | Named volumes | ⚠️ Requires docker commands | Simple setup |
 
-**Recommendation:** Use `docker-compose.local.yml` (using the locally built image) for easier data management.
+**Recommendation:** Use `docker-compose.local.yml` (deployed by script) for easier data management.
 
 #### Access
 
@@ -323,28 +287,27 @@ Open `http://YOUR_SERVER_IP:8080` in your browser.
 
 If the admin email (login username) or password was auto-generated, find them in logs:
 ```bash
-docker compose -f docker-compose.local.yml -f compose.local-build.yml logs sub2api | grep "Generated admin"
+docker compose -f docker-compose.local.yml logs sub2api | grep "Generated admin"
 ```
 
-#### Upgrade the Current historical source Release
+#### Upgrade
 
-Back up the existing PostgreSQL, Redis, application data, and `.env` first. Build the application image from the target tag, update its version in `compose.local-build.yml`, and replace only the application service:
+Back up the existing PostgreSQL, Redis, application data, and `.env` first. Select an available version on the [GitHub Release page](https://github.com/SMOOONN/sub2api-xray/releases), set the application image to `ghcr.io/smooonn/sub2api-xray:<published-tag>` in your Compose file, and replace only the application service. Keep the existing configuration, ports, and data mounts:
 
 ```bash
-docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d --no-deps sub2api
+docker compose -f docker-compose.local.yml pull sub2api
+docker compose -f docker-compose.local.yml up -d --no-deps sub2api
 ```
-
-The previous GitHub updater and GHCR `latest` do not supply this historical source release.
 
 #### Easy Migration (Local Directory Version)
 
-Before starting on the target server, build the local application image from the same tag or transfer it with docker save / docker load. The data archive does not include the image.
+Before starting on the target server, pull the same published application image from `ghcr.io/smooonn/sub2api-xray` or transfer it with docker save / docker load. The data archive does not include the image.
 
 When using `docker-compose.local.yml`, migrate to a new server easily:
 
 ```bash
 # On source server
-docker compose -f docker-compose.local.yml -f compose.local-build.yml down
+docker compose -f docker-compose.local.yml down
 cd ..
 tar czf sub2api-complete.tar.gz sub2api-deploy/
 
@@ -354,23 +317,23 @@ scp sub2api-complete.tar.gz user@new-server:/path/
 # On new server
 tar xzf sub2api-complete.tar.gz
 cd sub2api-deploy/
-docker compose -f docker-compose.local.yml -f compose.local-build.yml up -d
+docker compose -f docker-compose.local.yml up -d
 ```
 
 #### Useful Commands
 
 ```bash
 # Stop all services
-docker compose -f docker-compose.local.yml -f compose.local-build.yml down
+docker compose -f docker-compose.local.yml down
 
 # Restart
-docker compose -f docker-compose.local.yml -f compose.local-build.yml restart
+docker compose -f docker-compose.local.yml restart
 
 # View all logs
-docker compose -f docker-compose.local.yml -f compose.local-build.yml logs -f
+docker compose -f docker-compose.local.yml logs -f
 
 # Remove all data (caution!)
-docker compose -f docker-compose.local.yml -f compose.local-build.yml down
+docker compose -f docker-compose.local.yml down
 rm -rf data/ postgres_data/ redis_data/
 ```
 
@@ -378,12 +341,12 @@ rm -rf data/ postgres_data/ redis_data/
 
 ### Method 3: Apple container (macOS)
 
-Apple container still defaults to the previous GHCR release source. For this historical source tag, build and publish the matching image first, then set APPLE_CONTAINER_SUB2API_IMAGE. The commands below do not build an image for this version.
+Apple container uses `ghcr.io/smooonn/sub2api-xray`. If setting `APPLE_CONTAINER_SUB2API_IMAGE`, select a published tag compatible with your architecture.
 
 Apple-silicon Macs running macOS 26 can run the full Sub2API, PostgreSQL, and Redis stack with Apple `container` 1.1.0 or newer:
 
 ```bash
-git clone --branch v0.2.15-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+git clone https://github.com/SMOOONN/sub2api-xray.git
 cd sub2api-xray/deploy
 ./apple-container.sh init
 ./apple-container.sh up
@@ -409,7 +372,7 @@ Build and run from source code for development or customization.
 
 ```bash
 # 1. Clone the repository
-git clone --branch v0.2.15-xray6 --single-branch https://github.com/SMOOONN/sub2api-xray.git
+git clone https://github.com/SMOOONN/sub2api-xray.git
 cd sub2api-xray
 
 # 2. Install pnpm (if not already installed)
@@ -805,11 +768,11 @@ sub2api/
 
 ## Star History
 
-<a href="https://star-history.dera.page/#smmooooonn/sub2api-xray&Date">
+<a href="https://star-history.dera.page/#SMOOONN/sub2api-xray&Date">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=smmooooonn/sub2api-xray&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=smmooooonn/sub2api-xray&type=Date" />
-   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=smmooooonn/sub2api-xray&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=SMOOONN/sub2api-xray&type=Date" />
  </picture>
 </a>
 

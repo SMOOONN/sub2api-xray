@@ -714,6 +714,7 @@ const (
 var groupWritableColumns = map[string]columnSpec{
 	"name":                                 {Kind: colString, Create: true, Update: true},
 	"description":                          {Kind: colString, Create: true, Update: true},
+	"i18n":                                 {Kind: colJSON, Create: true, Update: true},
 	"platform":                             {Kind: colString, Create: true, Update: true},
 	"rate_multiplier":                      {Kind: colFloat, Create: true, Update: true},
 	"peak_rate_enabled":                    {Kind: colBool, Create: true, Update: true},
@@ -904,6 +905,7 @@ func (s *UserResourceService) ListGroups(ctx context.Context, ownerID int64, opt
 	rows, err := s.db.QueryContext(ctx, `
 SELECT
   g.id, g.owner_user_id, g.name, COALESCE(g.description, '') AS description, g.platform,
+  COALESCE(g.i18n, '{}'::jsonb)::text AS i18n,
   g.rate_multiplier::double precision AS rate_multiplier,
   g.peak_rate_enabled, g.peak_start, g.peak_end, g.peak_rate_multiplier::double precision AS peak_rate_multiplier,
   g.is_exclusive, g.status, g.subscription_type,
@@ -953,6 +955,7 @@ func (s *UserResourceService) GetGroup(ctx context.Context, ownerID, groupID int
 	rows, err := s.db.QueryContext(ctx, `
 SELECT
   g.id, g.owner_user_id, g.name, COALESCE(g.description, '') AS description, g.platform,
+  COALESCE(g.i18n, '{}'::jsonb)::text AS i18n,
   g.rate_multiplier::double precision AS rate_multiplier, g.peak_rate_enabled, g.peak_start, g.peak_end,
   g.peak_rate_multiplier::double precision AS peak_rate_multiplier, g.is_exclusive, g.status,
   g.subscription_type, g.daily_limit_usd::double precision AS daily_limit_usd,

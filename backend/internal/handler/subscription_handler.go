@@ -64,7 +64,7 @@ func (h *SubscriptionHandler) withPoolHealth(c *gin.Context, subscriptions []ser
 		}
 	}
 	for i := range subscriptions {
-		item := dto.UserSubscriptionFromService(&subscriptions[i])
+		item := dto.UserSubscriptionFromService(&subscriptions[i]).Localized(c.GetHeader("Accept-Language"))
 		if item == nil {
 			continue
 		}
@@ -136,8 +136,11 @@ func (h *SubscriptionHandler) GetProgress(c *gin.Context) {
 			// Skip subscriptions with errors
 			continue
 		}
+		if sub.Group != nil {
+			progress.GroupName = sub.Group.I18n.LocalizeName(c.GetHeader("Accept-Language"), progress.GroupName)
+		}
 		result = append(result, SubscriptionProgressInfo{
-			Subscription: dto.UserSubscriptionFromService(sub),
+			Subscription: dto.UserSubscriptionFromService(sub).Localized(c.GetHeader("Accept-Language")),
 			Progress:     progress,
 		})
 	}
@@ -176,7 +179,7 @@ func (h *SubscriptionHandler) GetSummary(c *gin.Context) {
 
 		// Add group info if preloaded
 		if sub.Group != nil {
-			item.GroupName = sub.Group.Name
+			item.GroupName = sub.Group.I18n.LocalizeName(c.GetHeader("Accept-Language"), sub.Group.Name)
 			if sub.Group.DailyLimitUSD != nil {
 				item.DailyLimitUSD = *sub.Group.DailyLimitUSD
 			}
