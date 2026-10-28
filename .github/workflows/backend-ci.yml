@@ -71,6 +71,12 @@ jobs:
         run: |
           test -f /.dockerenv
           test -S /var/run/docker.sock
+          curl --fail --location --retry 3 \
+            https://download.docker.com/linux/static/stable/x86_64/docker-28.5.1.tgz \
+            --output "$RUNNER_TEMP/docker-cli.tgz"
+          tar -xzf "$RUNNER_TEMP/docker-cli.tgz" --directory /usr/local/bin --strip-components=1 docker/docker
+          docker --version
+          docker info --format '{{.ServerVersion}}'
       - uses: actions/checkout@v6
       - name: Verify Go version
         run: |
@@ -80,7 +86,42 @@ jobs:
         run: make test-unit
       - name: Integration tests
         working-directory: backend
-        run: make test-integration
+        run: |
+          report="$RUNNER_TEMP/integration-tests.log"
+          set +e
+          make test-integration 2>&1 | tee "$report"
+          test_status=${PIPESTATUS[0]}
+          set -e
+          if [[ "$test_status" -ne 0 ]]; then
+            if ! awk '
+              /^[[:space:]]*--- FAIL: [A-Za-z_][A-Za-z0-9_]*/ {
+                name = $0
+                sub(/^[[:space:]]*--- FAIL: /, "", name)
+                sub(/[^A-Za-z0-9_].*$/, "", name)
+                if (!tests[name]++) print "::error title=Integration test failed::" name
+              }
+              $1 == "FAIL" && $2 ~ /^github[.]com\/Wei-Shaw\/sub2api(\/[A-Za-z0-9_.-]+)*$/ {
+                if (!packages[$2]++) print "::error title=Integration package failed::" $2
+              }
+              {
+                line = tolower($0)
+                if (line ~ /docker is not available/ && !infra["docker"]++)
+                  print "::error title=Integration infrastructure::Observed category: Docker availability check failed"
+                if (line ~ /cannot connect to the docker daemon|permission denied.*docker[.]sock|docker[.]sock.*permission denied/ && !infra["socket"]++)
+                  print "::error title=Integration infrastructure::Observed category: Docker daemon or socket access failed"
+                if (line ~ /failed to start postgres container|failed to start redis container|creating reaper failed/ && !infra["startup"]++)
+                  print "::error title=Integration infrastructure::Observed category: Test container startup failed"
+                if (line ~ /dial tcp.*connection refused|dial tcp.*i\/o timeout|no such host|tls handshake timeout/ && !infra["network"]++)
+                  print "::error title=Integration infrastructure::Observed category: Network connection or name resolution failed"
+                if (line ~ /manifest unknown|pull access denied|toomanyrequests|unauthorized: authentication required/ && !infra["registry"]++)
+                  print "::error title=Integration infrastructure::Observed category: Container image registry access failed"
+              }
+            ' "$report"; then
+              printf '::warning title=Integration diagnostics::Could not extract sanitized failure identifiers\n'
+            fi
+            printf '::error title=Integration tests::make test-integration exited with status %s\n' "$test_status"
+          fi
+          exit "$test_status"
 
   frontend:
     runs-on: ubuntu-latest
