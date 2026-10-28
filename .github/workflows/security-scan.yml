@@ -33,7 +33,34 @@ jobs:
         working-directory: backend
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+          report="$RUNNER_TEMP/govulncheck.txt"
+          set +e
+          govulncheck ./... > "$report" 2>&1
+          scan_status=$?
+          set -e
+          if [[ "$scan_status" -ne 0 ]]; then
+            emit_finding() {
+              local title="$1" message="$2"
+              message="${message//'%'/'%25'}"
+              message="${message//$'\r'/'%0D'}"
+              message="${message//$'\n'/'%0A'}"
+              printf '::error title=%s::%s\n' "$title" "$message"
+            }
+            title=govulncheck
+            details=
+            while IFS= read -r line; do
+              if [[ "$line" =~ ^Vulnerability\ #[0-9]+:\ (GO-[0-9]{4}-[0-9]+) ]]; then
+                if [[ -n "$details" ]]; then emit_finding "$title" "$details"; fi
+                title="${BASH_REMATCH[1]}"
+                details="$line"
+              elif [[ "$line" =~ ^[[:space:]]*(Module|Package|Found\ in|Fixed\ in): ]] || [[ "$line" =~ ^[[:space:]]*#[0-9]+: ]]; then
+                details+=$'\n'"$line"
+              fi
+            done < "$report"
+            if [[ -n "$details" ]]; then emit_finding "$title" "$details"; fi
+            emit_finding govulncheck "Scan exited with status $scan_status; package and call-trace findings are listed separately."
+          fi
+          exit "$scan_status"
 
   frontend-security:
     runs-on: ubuntu-latest
