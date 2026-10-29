@@ -1,0 +1,57 @@
+name: Resume v0.2.18 release
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/release-recovery.yml]
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  resume:
+    if: ${{ github.repository == 'SMOOONN/sub2api-xray' }}
+    runs-on: ubuntu-latest
+    container: python:3.12-bookworm
+    steps:
+      - name: Resume the immutable release tag with the repaired workflow
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          test -f /.dockerenv
+          python - <<'PY'
+          import json
+          import os
+          from urllib.error import HTTPError
+          from urllib.request import Request, urlopen
+
+          base = 'https://api.github.com/repos/SMOOONN/sub2api-xray'
+          headers = {
+              'Authorization': 'Bearer ' + os.environ['GITHUB_TOKEN'],
+              'Accept': 'application/vnd.github+json',
+              'Content-Type': 'application/json',
+              'X-GitHub-Api-Version': '2022-11-28',
+          }
+          def request(path, data=None):
+              payload = None if data is None else json.dumps(data).encode()
+              return urlopen(Request(base + path, data=payload, headers=headers), timeout=30)
+
+          with request('/git/ref/tags/v0.2.18-xray6') as response:
+              tag = json.load(response)
+          if tag['object']['sha'] != 'cb13e45563cd388b8dacd32899cf777aa853e1a2':
+              raise RuntimeError('The published tag differs from the authorized release')
+          try:
+              with request('/releases/tags/v0.2.18-xray6'):
+                  raise RuntimeError('Release already exists; do not overwrite it')
+          except HTTPError as error:
+              if error.code != 404:
+                  raise
+          with request('/actions/workflows/release.yml/dispatches', {
+              'ref': 'main',
+              'inputs': {'tag': 'v0.2.18-xray6', 'simple_release': 'false', 'dry_run': 'false'},
+          }) as response:
+              if response.status != 204:
+                  raise RuntimeError('Workflow dispatch was not accepted')
+          print('Dispatched Release for the unchanged v0.2.18-xray6 tag.')
+          PY

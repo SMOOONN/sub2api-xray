@@ -1,4 +1,5 @@
 name: Release
+run-name: Release ${{ inputs.tag || github.ref_name }}
 
 on:
   push:
@@ -52,7 +53,9 @@ jobs:
       dry_run: ${{ steps.plan.outputs.dry_run }}
     steps:
       - name: Require an isolated job container
-        run: test -f /.dockerenv
+        run: |
+          test -f /.dockerenv
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Checkout workflow tooling
         uses: actions/checkout@v6
         with:
@@ -97,6 +100,7 @@ jobs:
       - name: Prepare the isolated build container
         run: |
           test -f /.dockerenv
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           apt-get update
           apt-get install -y --no-install-recommends xz-utils zstd
       - uses: actions/checkout@v6
@@ -135,6 +139,7 @@ jobs:
       - name: Prepare the isolated build container
         run: |
           test -f /.dockerenv
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           apt-get update
           apt-get install -y --no-install-recommends python3-venv xz-utils zstd
           python3 -m venv "$RUNNER_TEMP/release-tools-venv"
@@ -225,6 +230,7 @@ jobs:
         run: |
           test -f /.dockerenv
           test -S /var/run/docker.sock
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           apt-get update
           apt-get install -y --no-install-recommends python3-venv xz-utils zstd
           python3 -m venv "$RUNNER_TEMP/release-tools-venv"
