@@ -51,6 +51,47 @@ class ReleaseMatrixTest(unittest.TestCase):
             (directory / f"manifest-{target['goos']}-{target['goarch']}.json").write_text(json.dumps(metadata))
         return argparse.Namespace(input='release-input', version='9.8.7', sha='a' * 40, simple=simple, output='contexts')
 
+    def fixture_publication(self, simple=False):
+        canonical = '# Release 9.8.7\n\n- First change.\n- Second change.\n\nUpgrade instructions.\n'
+        notes_file = Path('docs/releases/v9.8.7_CN.md')
+        notes_file.parent.mkdir(parents=True)
+        notes_file.write_text(canonical)
+        assets = []
+        if not simple:
+            self.fixture_artifacts()
+            checksum_lines = []
+            for target in release.targets():
+                name = release.archive_name('9.8.7', target)
+                archive = Path('release-input') / name
+                digest = release.sha256(archive)
+                checksum_lines.append(f'{digest}  {name}\n')
+                assets.append({'name': name, 'digest': 'sha256:' + digest,
+                               'size': archive.stat().st_size, 'state': 'uploaded'})
+            Path('dist').mkdir()
+            checksums = Path('dist/checksums.txt')
+            checksums.write_text(''.join(checksum_lines))
+            assets.append({'name': 'checksums.txt', 'digest': 'sha256:' + release.sha256(checksums),
+                           'size': checksums.stat().st_size, 'state': 'uploaded'})
+        published = {'id': 123, 'tag_name': 'v9.8.7', 'draft': False, 'prerelease': False,
+                     'body': canonical, 'assets': assets}
+        args = argparse.Namespace(tag='v9.8.7', checksums='dist/checksums.txt', simple=simple)
+        return args, canonical, published, {'id': 123}
+
+    def read_publication(self, args, published, latest):
+        responses = [io.BytesIO(json.dumps(value).encode()) for value in (published, latest)]
+        with patch.dict(os.environ, {'GITHUB_REPOSITORY': 'ExampleOwner/sub2api-xray',
+                                    'GITHUB_TOKEN': 'publication-test-token'}):
+            with patch.object(release, 'urlopen', side_effect=responses) as api:
+                with patch('builtins.print') as output:
+                    release.publication(args)
+        requests = [call.args[0] for call in api.call_args_list]
+        self.assertEqual([request.get_method() for request in requests], ['GET', 'GET'])
+        self.assertEqual([request.full_url for request in requests], [
+            'https://api.github.com/repos/ExampleOwner/sub2api-xray/releases/tags/v9.8.7',
+            'https://api.github.com/repos/ExampleOwner/sub2api-xray/releases/latest',
+        ])
+        self.assertNotIn('publication-test-token', str(output.call_args_list))
+
     def test_full_and_simple_matrix_match_existing_targets(self):
         full = release.targets()
         self.assertEqual(len(full), 5)
@@ -61,9 +102,67 @@ class ReleaseMatrixTest(unittest.TestCase):
         workflow = yaml.load((ROOT / '.github/workflows/release.yml').read_text(), Loader=yaml.BaseLoader)
         simple_setting = workflow['env']['SIMPLE_RELEASE']
         self.assertNotIn('vars.SIMPLE_RELEASE', simple_setting)
-        self.assertIn("github.event_name == 'workflow_dispatch'", simple_setting)
+        self.assertIn('inputs.simple_release', simple_setting)
+        self.assertNotIn('github.event_name', simple_setting)
         self.assertEqual(workflow['on']['workflow_dispatch']['inputs']['simple_release']['default'], 'false')
         self.assertEqual(len(release.targets()), 5)
+
+    def test_reusable_validation_uses_inputs_and_fixed_build_tools(self):
+        workflow = yaml.load((ROOT / '.github/workflows/release.yml').read_text(), Loader=yaml.BaseLoader)
+        self.assertEqual(workflow['on']['workflow_call']['inputs']['dry_run']['type'], 'boolean')
+        self.assertEqual(workflow['on']['workflow_call']['inputs']['dry_run']['default'], 'false')
+        self.assertIn('inputs.dry_run', workflow['env']['DRY_RUN'])
+        self.assertNotIn('github.event_name', workflow['env']['DRY_RUN'])
+        versions = [step['with']['version'] for job in workflow['jobs'].values()
+                    for step in job['steps'] if step.get('uses') == 'goreleaser/goreleaser-action@v7']
+        self.assertEqual(versions, ['v2.19.0', 'v2.19.0'])
+        self.assertIn('github.event.deleted != true', workflow['jobs']['prepare']['if'])
+
+    def test_publication_accepts_only_outer_newline_differences(self):
+        args, canonical, published, latest = self.fixture_publication()
+        published['body'] = '\r\n' + canonical + '\n'
+        self.read_publication(args, published, latest)
+
+    def test_publication_rejects_empty_missing_and_extra_release_notes(self):
+        args, canonical, published, latest = self.fixture_publication()
+        for body in ('\n', canonical.replace('- Second change.\n', ''), canonical + 'Unreviewed addition.\n'):
+            with self.subTest(body=body):
+                with self.assertRaisesRegex(ValueError, 'body differs'):
+                    self.read_publication(args, dict(published, body=body), latest)
+
+    def test_publication_rejects_nonformal_or_nonlatest_state(self):
+        args, _, published, latest = self.fixture_publication()
+        for change in ({'draft': True}, {'prerelease': True}, {'tag_name': 'v9.8.6'}):
+            with self.subTest(change=change):
+                with self.assertRaisesRegex(ValueError, 'metadata'):
+                    self.read_publication(args, dict(published, **change), latest)
+        with self.assertRaisesRegex(ValueError, 'not the GitHub latest'):
+            self.read_publication(args, published, {'id': 122})
+
+    def test_publication_checks_archive_and_checksum_asset_digests(self):
+        args, _, published, latest = self.fixture_publication()
+        for index in (0, len(published['assets']) - 1):
+            with self.subTest(index=index):
+                assets = [dict(asset) for asset in published['assets']]
+                assets[index]['digest'] = 'sha256:' + '0' * 64
+                with self.assertRaisesRegex(ValueError, 'asset digest differs'):
+                    self.read_publication(args, dict(published, assets=assets), latest)
+
+    def test_publication_rejects_missing_extra_and_incomplete_assets(self):
+        args, _, published, latest = self.fixture_publication()
+        assets = published['assets']
+        for changed in (assets[:-1], assets + [dict(assets[0], name='unexpected.tar.gz')]):
+            with self.subTest(names=[asset['name'] for asset in changed]):
+                with self.assertRaisesRegex(ValueError, 'assets differ'):
+                    self.read_publication(args, dict(published, assets=changed), latest)
+        incomplete = [dict(asset) for asset in assets]
+        incomplete[0]['state'] = 'new'
+        with self.assertRaisesRegex(ValueError, 'incomplete asset'):
+            self.read_publication(args, dict(published, assets=incomplete), latest)
+
+    def test_simple_publication_requires_no_download_assets(self):
+        args, _, published, latest = self.fixture_publication(simple=True)
+        self.read_publication(args, published, latest)
 
     def test_notes_accept_exact_unsigned_and_ssh_signed_messages(self):
         canonical = b'# Release 9.8.7\n\nRelease notes.\n'

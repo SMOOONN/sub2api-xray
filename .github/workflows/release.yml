@@ -21,6 +21,19 @@ on:
         required: false
         type: boolean
         default: false
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      simple_release:
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ github.repository }}
@@ -34,12 +47,13 @@ defaults:
     shell: bash
 
 env:
-  SIMPLE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.simple_release == true }}
-  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
+  SIMPLE_RELEASE: ${{ inputs.simple_release == true }}
+  DRY_RUN: ${{ inputs.dry_run == true }}
   DOCKERHUB_USERNAME: skip
 
 jobs:
   prepare:
+    if: ${{ github.event_name != 'push' || github.event.deleted != true }}
     runs-on: ubuntu-latest
     container: python:3.12-bookworm
     outputs:
@@ -95,7 +109,7 @@ jobs:
   build-frontend:
     needs: prepare
     runs-on: ubuntu-latest
-    container: node:20-bookworm
+    container: node:24-bookworm
     steps:
       - name: Prepare the isolated build container
         run: |
@@ -111,7 +125,7 @@ jobs:
           version: 9.15.9
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
@@ -186,7 +200,7 @@ jobs:
       - name: Build and archive without publishing
         uses: goreleaser/goreleaser-action@v7
         with:
-          version: '~> v2'
+          version: 'v2.19.0'
           args: release --snapshot --clean --skip=validate,publish,docker,announce --config=${{ steps.matrix_config.outputs.config_path }}
         env:
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
@@ -236,7 +250,7 @@ jobs:
           test -S /var/run/docker.sock
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           apt-get update
-          apt-get install -y --no-install-recommends python3-venv xz-utils zstd
+          apt-get install -y --no-install-recommends python3-venv skopeo xz-utils zstd
           python3 -m venv "$RUNNER_TEMP/release-tools-venv"
           echo "$RUNNER_TEMP/release-tools-venv/bin" >> "$GITHUB_PATH"
           curl --fail --location --retry 3 \
@@ -276,19 +290,35 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build images and publish manifests
         run: bash "$RUNNER_TEMP/release-tools/release-images.sh"
-      - name: Verify published image runtimes
-        if: ${{ env.DRY_RUN != 'true' }}
+      - name: Verify candidate or published image runtimes
         run: |
           arches=(amd64 arm64)
           if [[ "$SIMPLE_RELEASE" == true ]]; then arches=(amd64); fi
           for arch in "${arches[@]}"; do
-            image="ghcr.io/${GITHUB_REPOSITORY,,}:$RELEASE_VERSION-$arch"
-            version_output=$(docker run --rm --platform "linux/$arch" --entrypoint /app/sub2api "$image" -version 2>&1)
+            if [[ "$DRY_RUN" == true ]]; then
+              archive="$RUNNER_TEMP/sub2api-$arch.oci.tar"
+              test -s "$archive"
+              image="sub2api-candidate:$arch"
+              skopeo --override-os linux --override-arch "$arch" copy --format v2s2 \
+                "oci-archive:$archive" "docker-daemon:$image"
+            else
+              image="ghcr.io/${GITHUB_REPOSITORY,,}:$RELEASE_VERSION"
+              docker pull --platform "linux/$arch" "$image"
+            fi
+            version_output=$(docker run --rm --pull=never --platform "linux/$arch" --entrypoint /app/sub2api "$image" -version 2>&1)
             printf '%s\n' "$version_output"
             grep -F "$RELEASE_VERSION (commit: $RELEASE_SHA," <<< "$version_output"
-            docker run --rm --platform "linux/$arch" --entrypoint /usr/local/bin/xray "$image" version
-            docker run --rm --platform "linux/$arch" --entrypoint /usr/local/bin/sing-box "$image" version
+            docker run --rm --pull=never --platform "linux/$arch" --entrypoint /usr/local/bin/xray "$image" version
+            docker run --rm --pull=never --platform "linux/$arch" --entrypoint /usr/local/bin/sing-box "$image" version
           done
+      - name: Preserve validated dry-run OCI images
+        if: ${{ env.DRY_RUN == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dry-run-images
+          path: ${{ runner.temp }}/sub2api-*.oci.tar
+          if-no-files-found: error
+          retention-days: 1
       - name: Recheck the canonical release notes
         if: ${{ env.DRY_RUN != 'true' }}
         run: python "$RUNNER_TEMP/release-tools/release_matrix.py" notes --tag "$RELEASE_TAG"
@@ -303,7 +333,7 @@ jobs:
       - name: Publish existing archives and release notes
         uses: goreleaser/goreleaser-action@v7
         with:
-          version: '~> v2'
+          version: 'v2.19.0'
           args: release --clean --skip=validate,before,docker ${{ env.DRY_RUN == 'true' && '--snapshot --skip=publish,announce' || format('--release-notes=docs/releases/{0}_CN.md', needs.prepare.outputs.tag) }} --config=${{ steps.publisher_config.outputs.config_path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -322,3 +352,11 @@ jobs:
             dist/metadata.json
           if-no-files-found: error
           retention-days: 3
+      - name: Verify the published release against this build
+        if: ${{ env.DRY_RUN != 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          args=(--tag "$RELEASE_TAG" --checksums dist/checksums.txt)
+          if [[ "$SIMPLE_RELEASE" == true ]]; then args+=(--simple); fi
+          python "$RUNNER_TEMP/release-tools/release_matrix.py" publication "${args[@]}"

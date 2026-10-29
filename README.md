@@ -38,7 +38,7 @@ The user resource workspace is controlled by `enable_user_resources` and is disa
 
 ## Current Version
 
-The current release is [v0.2.18-xray6](https://github.com/SMOOONN/sub2api-xray/releases/tag/v0.2.18-xray6), syncing official v0.2.18 while preserving Xray features. Installers and updates use this repository, and container images are published to `ghcr.io/smooonn/sub2api-xray`.
+The current version is **0.2.18-xray6**, including the dependency security revision. Installers and updates use [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray).
 
 ## ⚠️ Important Notice
 

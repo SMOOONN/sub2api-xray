@@ -17,6 +17,7 @@ defaults:
 
 jobs:
   backend-security:
+    if: ${{ github.event_name != 'push' || github.event.deleted != true }}
     runs-on: ubuntu-latest
     container: golang:1.27.3-bookworm
     timeout-minutes: 15
@@ -63,8 +64,9 @@ jobs:
           exit "$scan_status"
 
   frontend-security:
+    if: ${{ github.event_name != 'push' || github.event.deleted != true }}
     runs-on: ubuntu-latest
-    container: node:20-bookworm
+    container: node:24-bookworm
     steps:
       - name: Prepare the isolated job container
         run: |
@@ -75,11 +77,11 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 9.15.9
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'pnpm'
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install dependencies

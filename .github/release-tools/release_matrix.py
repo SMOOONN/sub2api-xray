@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tarfile
 from datetime import datetime, timezone
+from urllib.request import Request, urlopen
 
 import yaml
 
@@ -132,6 +133,63 @@ def notes(args):
         raise ValueError('annotated tag message differs from the canonical release notes')
 
 
+def publication(args):
+    if not args.tag.startswith('v') or not VERSION_RE.fullmatch(args.tag[1:]):
+        raise ValueError('publication verification requires a version tag')
+    repository = os.environ['GITHUB_REPOSITORY']
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
+        raise ValueError('invalid publishing repository')
+    canonical = Path(f'docs/releases/{args.tag}_CN.md').read_text(encoding='utf-8')
+    if not canonical.strip('\r\n'):
+        raise ValueError('canonical release notes are empty')
+    expected_assets = {}
+    if not args.simple:
+        checksums_path = Path(args.checksums)
+        for line in checksums_path.read_text(encoding='utf-8').splitlines():
+            match = re.fullmatch(r'([0-9a-fA-F]{64})[ \t]+\*?(.+)', line)
+            if not match:
+                raise ValueError('invalid build checksum record')
+            name = Path(match.group(2)).name
+            if name in expected_assets:
+                raise ValueError('duplicate build checksum asset')
+            expected_assets[name] = match.group(1).lower()
+        required = {archive_name(args.tag[1:], target) for target in targets()}
+        if set(expected_assets) != required:
+            raise ValueError('build checksums do not contain the complete release matrix')
+        expected_assets['checksums.txt'] = sha256(checksums_path)
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': 'Bearer ' + os.environ['GITHUB_TOKEN'],
+        'User-Agent': 'sub2api-xray-release-verification',
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+    base = f'https://api.github.com/repos/{repository}/releases'
+    with urlopen(Request(f'{base}/tags/{args.tag}', headers=headers, method='GET'), timeout=30) as response:
+        published = json.load(response)
+    with urlopen(Request(f'{base}/latest', headers=headers, method='GET'), timeout=30) as response:
+        latest = json.load(response)
+    if (not published.get('id') or published.get('tag_name') != args.tag
+            or published.get('draft') is not False or published.get('prerelease') is not False):
+        raise ValueError('published release metadata does not match the formal release')
+    if latest.get('id') != published['id']:
+        raise ValueError('published release is not the GitHub latest release')
+    body = published.get('body')
+    if not isinstance(body, str) or body.strip('\r\n') != canonical.strip('\r\n'):
+        raise ValueError('published release body differs from the canonical release notes')
+    assets = published.get('assets')
+    if not isinstance(assets, list):
+        raise ValueError('published release has no asset metadata')
+    names = [asset.get('name') for asset in assets]
+    if len(names) != len(set(names)) or set(names) != set(expected_assets):
+        raise ValueError('published release assets differ from this build')
+    for asset in assets:
+        if asset.get('state') != 'uploaded' or not isinstance(asset.get('size'), int) or asset['size'] <= 0:
+            raise ValueError('published release contains an incomplete asset')
+        if asset.get('digest') != 'sha256:' + expected_assets[asset['name']]:
+            raise ValueError(f'published asset digest differs from this build: {asset["name"]}')
+    print(f'Verified {args.tag}: canonical notes, formal/latest state, and {len(assets)} asset digests.')
+
+
 def generate_config(args):
     data = config(args.simple if args.mode == 'publish' else False)
     data['snapshot'] = {'version_template': '{{ .Env.RELEASE_VERSION }}'}
@@ -227,6 +285,11 @@ def main():
     p = commands.add_parser('notes')
     p.add_argument('--tag', required=True)
     p.set_defaults(run=notes)
+    p = commands.add_parser('publication')
+    p.add_argument('--tag', required=True)
+    p.add_argument('--checksums', default='dist/checksums.txt')
+    p.add_argument('--simple', action='store_true')
+    p.set_defaults(run=publication)
     p = commands.add_parser('config')
     p.add_argument('mode', choices=['build', 'publish'])
     p.add_argument('--goos')

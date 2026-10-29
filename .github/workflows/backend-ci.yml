@@ -30,6 +30,7 @@ jobs:
           /bin/bash -n deploy/apple-container.sh
           /bin/bash deploy/tests/apple-container-test.sh
   shell-linux:
+    if: ${{ github.event_name != 'push' || github.event.deleted != true }}
     runs-on: ubuntu-latest
     container: python:3.12-bookworm
     steps:
@@ -59,6 +60,7 @@ jobs:
           /bin/sh deploy/test-caddyfile-cache.sh
 
   test:
+    if: ${{ github.event_name != 'push' || github.event.deleted != true }}
     runs-on: ubuntu-latest
     container:
       image: golang:1.27.3-bookworm
@@ -124,8 +126,9 @@ jobs:
           exit "$test_status"
 
   frontend:
+    if: ${{ github.event_name != 'push' || github.event.deleted != true }}
     runs-on: ubuntu-latest
-    container: node:20-bookworm
+    container: node:24-bookworm
     steps:
       - name: Prepare the isolated job container
         run: |
@@ -136,11 +139,11 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 9.15.9
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'pnpm'
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install frontend dependencies
@@ -150,6 +153,7 @@ jobs:
         run: make test-frontend
 
   golangci-lint:
+    if: ${{ github.event_name != 'push' || github.event.deleted != true }}
     runs-on: ubuntu-latest
     container: golang:1.27.3-bookworm
     env:
@@ -172,6 +176,7 @@ jobs:
           working-directory: backend
 
   release-helpers:
+    if: ${{ github.event_name != 'push' || github.event.deleted != true }}
     runs-on: ubuntu-latest
     container: python:3.12-bookworm
     steps:
