@@ -10,6 +10,46 @@ permissions:
   contents: read
 
 jobs:
+  diagnose:
+    if: ${{ github.event_name == 'push' && github.event.deleted != true }}
+    runs-on: ubuntu-latest
+    container: python:3.12-bookworm
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Read the failed candidate image import
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          test -f /.dockerenv
+          python - <<'PY'
+          import os
+          import re
+          from urllib.error import HTTPError
+          from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+          class NoRedirect(HTTPRedirectHandler):
+              def redirect_request(self, *args, **kwargs):
+                  return None
+          req = Request('https://api.github.com/repos/SMOOONN/sub2api-xray/actions/jobs/123506172866/logs', headers={
+              'Authorization': 'Bearer ' + os.environ['GITHUB_TOKEN'],
+              'Accept': 'application/vnd.github+json',
+          })
+          try:
+              response = build_opener(NoRedirect).open(req, timeout=30)
+          except HTTPError as error:
+              if error.code != 302:
+                  raise RuntimeError(f'Log retrieval HTTP {error.code}') from None
+              with urlopen(error.headers['Location'], timeout=30) as response:
+                  lines = response.read().decode('utf-8', 'replace').splitlines()
+          else:
+              with response:
+                  lines = response.read().decode('utf-8', 'replace').splitlines()
+          selected = [line for line in lines if re.search(r'level=fatal|FATA|error|Error|failed|cannot|unsupported', line)]
+          for line in selected[-16:]:
+              safe = line.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::notice title=Previous image verification::' + safe)
+          PY
   audit:
     if: ${{ github.event_name == 'push' && github.event.deleted != true }}
     runs-on: ubuntu-latest
