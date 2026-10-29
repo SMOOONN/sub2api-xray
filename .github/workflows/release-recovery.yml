@@ -24,6 +24,9 @@ jobs:
           import json
           import os
           import re
+          import gzip
+          import io
+          import zipfile
           from urllib.error import HTTPError
           from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
@@ -60,10 +63,21 @@ jobs:
               # The signed storage URL needs no GitHub Authorization header.
               response = urlopen(Request(error.headers['Location']), timeout=30)
           with response:
-              log = response.read(5_000_000).decode('utf-8', 'replace')
+              payload = response.read(5_000_000)
+              content_type = response.headers.get('Content-Type', '')
+          if payload.startswith(b'\x1f\x8b'):
+              payload = gzip.decompress(payload)
+          if payload.startswith(b'PK'):
+              with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                  entries = [entry for entry in archive.infolist() if not entry.is_dir()]
+                  if sum(entry.file_size for entry in entries) > 5_000_000:
+                      raise RuntimeError('Diagnostic archive exceeds the bounded log size')
+                  payload = b'\n'.join(archive.read(entry) for entry in entries)
+          log = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', payload.decode('utf-8', 'replace'))
           failures = [line for line in log.splitlines()
-                      if ('error=' in line or 'Error:' in line or 'go: ' in line)
-                      and 'deprecated' not in line.lower()]
+                      if re.search(r'error|fail|panic|fatal|hook', line, re.IGNORECASE)]
+          print('Diagnostic payload:', len(payload), 'bytes;', content_type,
+                '; matching lines:', len(failures))
           for line in failures[-12:]:
               line = re.sub(r'(https?://)[^/@\s]+:[^/@\s]+@', r'\1[redacted]@', line)
               line = re.sub(r'(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+', '[redacted]', line)
