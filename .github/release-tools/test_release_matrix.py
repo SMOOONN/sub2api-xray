@@ -133,6 +133,10 @@ class ReleaseMatrixTest(unittest.TestCase):
         self.assertEqual(leaf['builds'][0]['goos'], ['darwin'])
         self.assertEqual(leaf['builds'][0]['goarch'], ['arm64'])
         self.assertEqual(leaf['builds'][0]['ignore'], [])
+        self.assertEqual(leaf['before'], {'hooks': []})
+        self.assertIn('-mod=readonly', leaf['builds'][0]['flags'])
+        for flag in original['builds'][0]['flags']:
+            self.assertIn(flag, leaf['builds'][0]['flags'])
         self.assertEqual(leaf['archives'], original['archives'])
         self.assertEqual(leaf['release'], original['release'])
         self.assertFalse(leaf['dockers'])
@@ -144,6 +148,7 @@ class ReleaseMatrixTest(unittest.TestCase):
                 original = release.config(simple)
                 release.generate_config(argparse.Namespace(mode='publish', simple=simple, output='publisher.yaml'))
                 data = yaml.safe_load(Path('publisher.yaml').read_text())
+                self.assertEqual(data['before'], {'hooks': []})
                 self.assertTrue(data['builds'][0]['skip'])
                 self.assertFalse(data['archives'])
                 self.assertFalse(data['dockers'])
@@ -154,6 +159,17 @@ class ReleaseMatrixTest(unittest.TestCase):
                     self.assertTrue(data['release']['skip_upload'])
                 else:
                     self.assertEqual(data['checksum']['extra_files'], data['release']['extra_files'])
+
+    def test_readonly_build_flag_is_not_duplicated(self):
+        source = release.config()
+        source['builds'][0]['flags'].append('-mod=readonly')
+        Path('.goreleaser.yaml').write_text(yaml.safe_dump(source))
+        original_bytes = Path('.goreleaser.yaml').read_bytes()
+        release.generate_config(argparse.Namespace(
+            mode='build', simple=False, goos='linux', goarch='amd64', output='leaf.yaml'))
+        leaf = yaml.safe_load(Path('leaf.yaml').read_text())
+        self.assertEqual(leaf['builds'][0]['flags'].count('-mod=readonly'), 1)
+        self.assertEqual(Path('.goreleaser.yaml').read_bytes(), original_bytes)
 
     def test_collect_and_verify_hash_and_source_binding(self):
         args = self.fixture_artifacts()

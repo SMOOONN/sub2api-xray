@@ -135,6 +135,7 @@ def notes(args):
 def generate_config(args):
     data = config(args.simple if args.mode == 'publish' else False)
     data['snapshot'] = {'version_template': '{{ .Env.RELEASE_VERSION }}'}
+    data['before'] = {'hooks': []}
     data['dockers'] = []
     data['docker_manifests'] = []
     if args.mode == 'build':
@@ -143,12 +144,13 @@ def generate_config(args):
             raise ValueError('unsupported build target')
         for build in data['builds']:
             build['goos'], build['goarch'], build['ignore'] = [args.goos], [args.goarch], []
+            if '-mod=readonly' not in build.get('flags', []):
+                build.setdefault('flags', []).append('-mod=readonly')
             build['ldflags'] = [re.sub(r'{{\s*\.Date\s*}}', '{{ .Env.RELEASE_DATE }}', flag)
                                 for flag in build.get('ldflags', [])]
     else:
         # Artifacts are supplied through the OSS extra_files mechanism. No build
         # is repeated on the publishing runner, and release templates stay intact.
-        data['before'] = {'hooks': []}
         data['builds'] = [{'id': 'sub2api', 'skip': True}]
         data['archives'] = []
         extra = [{'glob': 'release-input/sub2api_*.tar.gz'}, {'glob': 'release-input/sub2api_*.zip'}]

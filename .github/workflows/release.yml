@@ -175,15 +175,19 @@ jobs:
             release-go-${{ runner.os }}-${{ runner.arch }}-${{ matrix.goos }}-${{ matrix.goarch }}-
       - run: python -m pip install -r "$RUNNER_TEMP/release-tools/requirements-release.txt"
       - name: Select one GoReleaser target
+        id: matrix_config
         env:
           TARGET_OS: ${{ matrix.goos }}
           TARGET_ARCH: ${{ matrix.goarch }}
-        run: python "$RUNNER_TEMP/release-tools/release_matrix.py" config build --goos "$TARGET_OS" --goarch "$TARGET_ARCH" --output "$RUNNER_TEMP/goreleaser.matrix.yaml"
+        run: |
+          config_path="$RUNNER_TEMP/goreleaser.matrix.yaml"
+          python "$RUNNER_TEMP/release-tools/release_matrix.py" config build --goos "$TARGET_OS" --goarch "$TARGET_ARCH" --output "$config_path"
+          echo "config_path=$config_path" >> "$GITHUB_OUTPUT"
       - name: Build and archive without publishing
         uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
-          args: release --snapshot --clean --skip=validate,publish,docker,announce --config=${{ runner.temp }}/goreleaser.matrix.yaml
+          args: release --snapshot --clean --skip=validate,publish,docker,announce --config=${{ steps.matrix_config.outputs.config_path }}
         env:
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO_OWNER_LOWER: ${{ needs.prepare.outputs.owner_lower }}
@@ -289,15 +293,18 @@ jobs:
         if: ${{ env.DRY_RUN != 'true' }}
         run: python "$RUNNER_TEMP/release-tools/release_matrix.py" notes --tag "$RELEASE_TAG"
       - name: Prepare publication-only GoReleaser config
+        id: publisher_config
         run: |
-          args=(publish --output "$RUNNER_TEMP/goreleaser.publisher.yaml")
+          config_path="$RUNNER_TEMP/goreleaser.publisher.yaml"
+          args=(publish --output "$config_path")
           if [[ "$SIMPLE_RELEASE" == true ]]; then args+=(--simple); fi
           python "$RUNNER_TEMP/release-tools/release_matrix.py" config "${args[@]}"
+          echo "config_path=$config_path" >> "$GITHUB_OUTPUT"
       - name: Publish existing archives and release notes
         uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
-          args: release --clean --skip=validate,before,docker ${{ env.DRY_RUN == 'true' && '--snapshot --skip=publish,announce' || format('--release-notes=docs/releases/{0}_CN.md', needs.prepare.outputs.tag) }} --config=${{ runner.temp }}/goreleaser.publisher.yaml
+          args: release --clean --skip=validate,before,docker ${{ env.DRY_RUN == 'true' && '--snapshot --skip=publish,announce' || format('--release-notes=docs/releases/{0}_CN.md', needs.prepare.outputs.tag) }} --config=${{ steps.publisher_config.outputs.config_path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ needs.prepare.outputs.tag }}

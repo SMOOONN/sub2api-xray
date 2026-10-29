@@ -1,4 +1,4 @@
-name: Diagnose v0.2.18 packaging
+name: Resume v0.2.18 release
 
 on:
   push:
@@ -23,12 +23,8 @@ jobs:
           python - <<'PY'
           import json
           import os
-          import re
-          import gzip
-          import io
-          import zipfile
           from urllib.error import HTTPError
-          from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+          from urllib.request import Request, urlopen
 
           base = 'https://api.github.com/repos/SMOOONN/sub2api-xray'
           headers = {
@@ -51,38 +47,11 @@ jobs:
           except HTTPError as error:
               if error.code != 404:
                   raise
-          class NoRedirect(HTTPRedirectHandler):
-              def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  return None
-          try:
-              response = build_opener(NoRedirect).open(Request(
-                  base + '/actions/jobs/123187029217/logs', headers=headers), timeout=30)
-          except HTTPError as error:
-              if error.code != 302:
-                  raise
-              # The signed storage URL needs no GitHub Authorization header.
-              response = urlopen(Request(error.headers['Location']), timeout=30)
-          with response:
-              payload = response.read(5_000_000)
-              content_type = response.headers.get('Content-Type', '')
-          if payload.startswith(b'\x1f\x8b'):
-              payload = gzip.decompress(payload)
-          if payload.startswith(b'PK'):
-              with zipfile.ZipFile(io.BytesIO(payload)) as archive:
-                  entries = [entry for entry in archive.infolist() if not entry.is_dir()]
-                  if sum(entry.file_size for entry in entries) > 5_000_000:
-                      raise RuntimeError('Diagnostic archive exceeds the bounded log size')
-                  payload = b'\n'.join(archive.read(entry) for entry in entries)
-          log = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', payload.decode('utf-8', 'replace'))
-          failures = [line for line in log.splitlines()
-                      if re.search(r'error|fail|panic|fatal|hook', line, re.IGNORECASE)]
-          print('Diagnostic payload:', len(payload), 'bytes;', content_type,
-                '; matching lines:', len(failures))
-          for line in failures[-12:]:
-              line = re.sub(r'(https?://)[^/@\s]+:[^/@\s]+@', r'\1[redacted]@', line)
-              line = re.sub(r'(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+', '[redacted]', line)
-              line = re.sub(r'(?i)Bearer\s+[^\s"\\]+', 'Bearer [redacted]', line)
-              line = line[:3000].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-              print('::error title=Previous packaging failure::' + line)
-          print('Retrieved bounded packaging diagnostics; no build was restarted.')
+          with request('/actions/workflows/release.yml/dispatches', {
+              'ref': 'main',
+              'inputs': {'tag': 'v0.2.18-xray6', 'simple_release': 'false', 'dry_run': 'false'},
+          }) as response:
+              if response.status != 204:
+                  raise RuntimeError('Workflow dispatch was not accepted')
+          print('Dispatched Release for the unchanged v0.2.18-xray6 tag.')
           PY
