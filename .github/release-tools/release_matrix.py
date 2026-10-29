@@ -151,6 +151,8 @@ def generate_config(args):
     else:
         # Artifacts are supplied through the OSS extra_files mechanism. No build
         # is repeated on the publishing runner, and release templates stay intact.
+        # The changelog pipe must run to load the explicit --release-notes file.
+        data.setdefault('changelog', {})['disable'] = False
         data['builds'] = [{'id': 'sub2api', 'skip': True}]
         data['archives'] = []
         extra = [{'glob': 'release-input/sub2api_*.tar.gz'}, {'glob': 'release-input/sub2api_*.zip'}]

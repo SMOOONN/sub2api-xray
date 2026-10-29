@@ -139,6 +139,7 @@ class ReleaseMatrixTest(unittest.TestCase):
             self.assertIn(flag, leaf['builds'][0]['flags'])
         self.assertEqual(leaf['archives'], original['archives'])
         self.assertEqual(leaf['release'], original['release'])
+        self.assertEqual(leaf['changelog'], original['changelog'])
         self.assertFalse(leaf['dockers'])
         self.assertIn('{{ .Env.RELEASE_DATE }}', '\n'.join(leaf['builds'][0]['ldflags']))
 
@@ -152,6 +153,7 @@ class ReleaseMatrixTest(unittest.TestCase):
                 self.assertTrue(data['builds'][0]['skip'])
                 self.assertFalse(data['archives'])
                 self.assertFalse(data['dockers'])
+                self.assertFalse(data['changelog']['disable'])
                 self.assertEqual(data['release']['header'], original['release']['header'])
                 self.assertEqual(data['release']['footer'], original['release']['footer'])
                 if simple:
