@@ -45,10 +45,9 @@ jobs:
           else:
               with response:
                   lines = response.read().decode('utf-8', 'replace').splitlines()
-          selected = [line for line in lines if re.search(r'level=fatal|FATA|error|Error|failed|cannot|unsupported', line)]
-          for line in selected[-16:]:
-              safe = line.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-              print('::notice title=Previous image verification::' + safe)
+          selected = [line for line in lines if '2026-10-29T14:22:44' in line or '2026-10-29T14:22:45' in line]
+          safe = '\n'.join(selected[-50:]).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::notice title=Previous image verification::' + safe)
           PY
   audit:
     if: ${{ github.event_name == 'push' && github.event.deleted != true }}
