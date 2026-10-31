@@ -27,7 +27,7 @@ func TestUserGrokDiagnosticsEnforcesOwnershipBeforeReadingCatalog(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 			account := &Account{ID: 91, Platform: PlatformGrok, OwnerUserID: &tc.storedOwner}
 			if tc.storedOwner == 0 {
 				account.OwnerUserID = nil
@@ -56,7 +56,7 @@ func TestUserGrokDiagnosticsIsReadOnlyAndOmitsCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	ownerID := int64(41)
 	account := &Account{ID: 91, OwnerUserID: &ownerID, Platform: PlatformGrok, Type: AccountTypeAPIKey,
 		Credentials: map[string]any{"api_key": "fixture-secret", "base_url": "https://user:fixture-password@relay.example.com/v1?token=fixture-token"}}

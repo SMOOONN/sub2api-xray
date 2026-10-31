@@ -38,7 +38,7 @@ Sub2API Xray 是 [Sub2API](https://github.com/Wei-Shaw/sub2api) 的持续维护�
 
 ## 当前版本
 
-当前正式版本为 **0.2.19-xray6**，已纳入官方 v0.2.19 之后选定的补充更新。安装器与在线更新使用 [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray)。
+当前正式版本为 **0.2.19-xray6**，包含本次同名安全更新。安装器与在线更新使用 [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray)。
 
 ## ⚠️ 重要提醒
 
