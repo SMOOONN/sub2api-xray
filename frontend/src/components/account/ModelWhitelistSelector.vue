@@ -102,8 +102,9 @@
         {{ t('admin.accounts.fillRelatedModels') }}
       </button>
       <button
-        v-if="canSyncUpstream"
+        v-if="canSyncUpstream && showSyncButton"
         type="button"
+        data-testid="sync-upstream-models"
         @click="syncUpstreamModels"
         :disabled="isSyncingUpstream"
         class="rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
@@ -145,7 +146,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { accountsAPI } from '@/api/admin/accounts'
@@ -182,13 +183,13 @@ const props = withDefaults(defineProps<{
     account_mode?: string
     api_protocol?: string
   }
-}>(), {
-  scope: 'admin'
-})
+  showSyncButton?: boolean
+}>(), { scope: 'admin', showSyncButton: true })
 
 const emit = defineEmits<{
   'update:modelValue': [value: string[]]
   'upstream-synced': []
+  'upstream-sync-finished': []
 }>()
 
 const appStore = useAppStore()
@@ -199,6 +200,20 @@ const searchQuery = ref('')
 const customModel = ref('')
 const isComposing = ref(false)
 const isSyncingUpstream = ref(false)
+let upstreamSyncVersion = 0
+
+watch(
+  [() => props.accountId, () => props.scope],
+  () => {
+    upstreamSyncVersion += 1
+    isSyncingUpstream.value = false
+  }
+)
+
+onUnmounted(() => {
+  upstreamSyncVersion += 1
+})
+
 const normalizedPlatforms = computed(() => {
   const rawPlatforms =
     props.platforms && props.platforms.length > 0
@@ -306,26 +321,37 @@ const fillRelated = () => {
 const syncUpstreamModels = async () => {
   if (isSyncingUpstream.value || !canSyncUpstream.value) return
 
+  const syncVersion = upstreamSyncVersion
+  const accountId = props.accountId
+  const previewCredentials = props.syncCredentials
+  const scope = props.scope
+  const isCurrentSync = () => syncVersion === upstreamSyncVersion
   isSyncingUpstream.value = true
   try {
     let result
-    if (props.accountId) {
+    if (accountId) {
       if (props.syncAccountModels) {
-        result = await props.syncAccountModels(props.accountId)
-      } else if (props.scope === 'user') {
-        result = await myResourcesApi.accounts.syncUpstreamModels(props.accountId)
+        result = await props.syncAccountModels(accountId)
+      } else if (scope === 'user') {
+        result = await myResourcesApi.accounts.syncUpstreamModels(accountId)
       } else {
-        result = await accountsAPI.syncUpstreamModels(props.accountId)
+        result = await accountsAPI.syncUpstreamModels(accountId)
       }
-    } else if (props.syncCredentials) {
+    } else if (previewCredentials) {
       if (props.syncPreviewModels) {
-        result = await props.syncPreviewModels(props.syncCredentials as SyncUpstreamPreviewParams)
-      } else if (props.scope === 'user') {
-        result = await myResourcesApi.accounts.syncUpstreamModelsPreview(props.syncCredentials as UserSyncUpstreamPreviewParams)
+        result = await props.syncPreviewModels(previewCredentials as SyncUpstreamPreviewParams)
+      } else if (scope === 'user') {
+        result = await myResourcesApi.accounts.syncUpstreamModelsPreview(previewCredentials as UserSyncUpstreamPreviewParams)
       } else {
-        result = await accountsAPI.syncUpstreamModelsPreview(props.syncCredentials as SyncUpstreamPreviewParams)
+        result = await accountsAPI.syncUpstreamModelsPreview(previewCredentials as SyncUpstreamPreviewParams)
       }
     } else {
+      return
+    }
+    if (!isCurrentSync()) return
+
+    if (result.discovery_source === 'configured_fallback') {
+      appStore.showWarning(t('admin.accounts.grokModelDiagnostics.configuredFallback'))
       return
     }
 
@@ -335,7 +361,7 @@ const syncUpstreamModels = async () => {
       return
     }
 
-    if (!props.accountId) {
+    if (!accountId) {
       emit('upstream-synced')
     }
 
@@ -369,12 +395,20 @@ const syncUpstreamModels = async () => {
       appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
     }
   } catch (error) {
+    if (!isCurrentSync()) return
     const message = extractApiErrorMessage(error, t('admin.accounts.syncUpstreamModelsFailed'))
     appStore.showError(t('admin.accounts.syncUpstreamModelsError', { message }))
   } finally {
-    isSyncingUpstream.value = false
+    if (isCurrentSync()) {
+      isSyncingUpstream.value = false
+      if (accountId) {
+        emit('upstream-sync-finished')
+      }
+    }
   }
 }
+
+defineExpose({ syncUpstreamModels, isSyncingUpstream })
 
 const clearAll = () => {
   emit('update:modelValue', [])

@@ -186,6 +186,31 @@ func TestRetryFilterFailoverDecisionSwitchAccountSuppressesPenalty(t *testing.T)
 	require.Contains(t, state.FailedAccountIDs, int64(7))
 }
 
+func TestGeminiBoundCacheHonorsRetryFilterTerminateResponse(t *testing.T) {
+	status := 418
+	message := "configured stop"
+	runtime := newHandlerRetryFilterRuntime(&model.RetryFilterRule{
+		ID: 13, PresetID: 1, Enabled: true, StatusCodes: []int{429},
+		Action: model.RetryFilterActionTerminate, TerminateStatusCode: &status, TerminateMessage: &message,
+	})
+	err := &service.UpstreamFailoverError{StatusCode: 429,
+		ResponseBody:      []byte(`{"error":{"message":"original upstream response"}}`),
+		NextAccountAction: service.NextAccountRetry, BoundUpstreamPassthrough: true}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini:generateContent", nil)
+	account := poolModeRetryFilterAccount()
+	account.Platform = service.PlatformGemini
+	state := NewFailoverState(3, false)
+	require.Equal(t, FailoverExhausted, state.HandleFailoverDecision(c, nil, runtime, FailoverDecisionInput{
+		Account: account, Model: "gemini-3.5-flash", RetryLimit: 3, FailoverErr: err,
+	}))
+	(&GatewayHandler{}).handleGeminiCachedContentFailoverExhausted(c, err)
+	require.Equal(t, status, recorder.Code)
+	require.Contains(t, recorder.Body.String(), message)
+	require.NotContains(t, recorder.Body.String(), "original upstream response")
+}
+
 func TestRetryFilterFailoverDecisionTerminateReturnsOverride(t *testing.T) {
 	status := 418
 	message := "retry filter stopped this request"

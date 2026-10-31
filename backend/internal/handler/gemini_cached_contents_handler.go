@@ -839,7 +839,7 @@ func mergeAccountIDSets(a, b map[int64]struct{}) map[int64]struct{} {
 // 上游网关账号的限流 / 不可用响应反映持有缓存的上游账号状态，原样返回供客户端判断；
 // 其余（含官方账号）仍按普通 Gemini 路径处理：透传规则、通用映射。
 func (h *GatewayHandler) handleGeminiCachedContentFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError) {
-	if failoverErr == nil || !failoverErr.BoundUpstreamPassthrough || len(failoverErr.ResponseBody) == 0 || !json.Valid(failoverErr.ResponseBody) {
+	if _, _, override := retryFilterClientResponse(failoverErr); override || failoverErr == nil || !failoverErr.BoundUpstreamPassthrough || len(failoverErr.ResponseBody) == 0 || !json.Valid(failoverErr.ResponseBody) {
 		h.handleGeminiFailoverExhausted(c, failoverErr)
 		return
 	}

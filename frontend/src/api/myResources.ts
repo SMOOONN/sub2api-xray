@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import type { ClaudeModel, ProxyQualityCheckResult, ProxySourceSyncAllResult } from '@/types'
+import type { ClaudeModel, GrokModelDiagnostics, ProxyQualityCheckResult, ProxySourceSyncAllResult } from '@/types'
 
 export interface ResourcePage<T = Record<string, any>> {
   items: T[]
@@ -72,6 +72,8 @@ export interface SyncUpstreamModelsResult {
   models: string[]
   metadata?: Record<string, UpstreamModelMetadata>
   warnings?: UpstreamModelSyncWarning[]
+  discovery_source?: 'upstream' | 'configured_fallback'
+  grok_model_diagnostics?: GrokModelDiagnostics
 }
 
 export interface UpstreamModelSyncWarning {
@@ -160,6 +162,8 @@ export const myResourcesApi = {
     },
     syncUpstreamModels: async (id: number): Promise<SyncUpstreamModelsResult> =>
       (await apiClient.post<SyncUpstreamModelsResult>(`/my/accounts/${id}/models/sync-upstream`)).data,
+    getGrokModelDiagnostics: async (id: number): Promise<GrokModelDiagnostics | null> =>
+      (await apiClient.get<GrokModelDiagnostics | null>(`/my/accounts/${id}/grok-model-diagnostics`)).data,
     syncUpstreamModelsPreview: async (payload: SyncUpstreamPreviewParams): Promise<SyncUpstreamModelsResult> =>
       (await apiClient.post<SyncUpstreamModelsResult>('/my/accounts/models/sync-upstream-preview', payload)).data,
     getAntigravityDefaultModelMapping: async (): Promise<Record<string, string>> =>

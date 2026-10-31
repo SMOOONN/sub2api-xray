@@ -1456,30 +1456,6 @@ LIMIT 1`, accountID, ownerID)
 	return items[0], nil
 }
 
-// SyncAccountUpstreamModels loads a complete account through the shared account
-// repository only after proving that the authenticated user owns it.
-func (s *UserResourceService) SyncAccountUpstreamModels(ctx context.Context, ownerID, accountID int64) ([]string, error) {
-	if err := s.ensureOwned(ctx, "accounts", ownerID, accountID); err != nil {
-		return nil, err
-	}
-	if s.accountTestService == nil || s.accountTestService.accountRepo == nil {
-		return nil, infraerrors.ServiceUnavailable("USER_MODEL_SYNC_UNAVAILABLE", "upstream model sync is unavailable")
-	}
-
-	account, err := s.accountTestService.accountRepo.GetByID(ctx, accountID)
-	if err != nil {
-		if errors.Is(err, ErrAccountNotFound) {
-			return nil, ErrUserResourceNotFound
-		}
-		return nil, err
-	}
-	if account == nil || account.OwnerUserID == nil || *account.OwnerUserID != ownerID {
-		return nil, ErrUserResourceNotFound
-	}
-
-	return s.accountTestService.FetchUpstreamSupportedModels(ctx, account)
-}
-
 // SyncAccountUpstreamModelsPreview probes temporary API-key credentials without
 // persisting them. The owner marker enables socket-level public-network policy.
 func (s *UserResourceService) SyncAccountUpstreamModelsPreview(ctx context.Context, ownerID int64, input UserUpstreamModelsPreviewInput) ([]string, error) {
@@ -4583,7 +4559,11 @@ func (s *UserResourceService) insertForOwnerWith(ctx context.Context, db userRes
 		}
 		cols = append(cols, key)
 		args = append(args, v)
-		placeholders = append(placeholders, placeholderFor(spec.Kind, len(args)))
+		placeholder := placeholderFor(spec.Kind, len(args))
+		if table == "accounts" && key == "extra" {
+			placeholder = writableUserAccountExtraSQL(placeholder)
+		}
+		placeholders = append(placeholders, placeholder)
 	}
 	var id int64
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) RETURNING id", table, strings.Join(cols, ", "), strings.Join(placeholders, ", "))
@@ -4610,7 +4590,11 @@ func (s *UserResourceService) updateForOwnerWith(ctx context.Context, db userRes
 			return err
 		}
 		args = append(args, v)
-		assignments = append(assignments, fmt.Sprintf("%s = %s", key, placeholderFor(spec.Kind, len(args))))
+		value := placeholderFor(spec.Kind, len(args))
+		if table == "accounts" && key == "extra" {
+			value = preserveUserAccountModelExtraSQL(value)
+		}
+		assignments = append(assignments, fmt.Sprintf("%s = %s", key, value))
 	}
 	if len(assignments) == 0 {
 		return nil

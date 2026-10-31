@@ -25,6 +25,7 @@ func TestMyAccountModelCapabilityRoutesStayUnderUserScope(t *testing.T) {
 	for _, expected := range []string{
 		"POST /api/v1/my/accounts/models/sync-upstream-preview",
 		"POST /api/v1/my/accounts/:id/models/sync-upstream",
+		"GET /api/v1/my/accounts/:id/grok-model-diagnostics",
 		"GET /api/v1/my/accounts/oauth/gemini/capabilities",
 		"GET /api/v1/my/accounts/antigravity/default-model-mapping",
 	} {

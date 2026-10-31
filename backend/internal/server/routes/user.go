@@ -29,6 +29,13 @@ func RegisterUserRoutes(
 		user := authenticated.Group("/user")
 		{
 			user.GET("/profile", h.User.GetProfile)
+			if h.MCPOAuth != nil {
+				user.GET("/mcp/config", h.MCPOAuth.ConnectionConfig)
+				user.GET("/mcp/grants", h.MCPOAuth.ListGrants)
+				user.DELETE("/mcp/grants/:id", h.MCPOAuth.RevokeGrant)
+				user.GET("/mcp/authorize", h.MCPOAuth.Preview)
+				user.POST("/mcp/authorize", h.MCPOAuth.Decide)
+			}
 			user.PUT("/password", h.User.ChangePassword)
 			user.PUT("", h.User.UpdateProfile)
 			user.GET("/aff", h.User.GetAffiliate)
@@ -263,4 +270,5 @@ func registerMyAccountModelCapabilityRoutes(accounts *gin.RouterGroup, h *handle
 	accounts.GET("/oauth/gemini/capabilities", h.GetGeminiOAuthCapabilities)
 	accounts.GET("/antigravity/default-model-mapping", h.GetAntigravityDefaultModelMapping)
 	accounts.POST("/:id/models/sync-upstream", h.SyncAccountUpstreamModels)
+	accounts.GET("/:id/grok-model-diagnostics", h.GetAccountGrokModelDiagnostics)
 }

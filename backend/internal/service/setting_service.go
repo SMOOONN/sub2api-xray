@@ -117,6 +117,7 @@ type WebSearchManagerBuilder func(cfg *WebSearchEmulationConfig, proxyURLs map[i
 
 // SettingService 系统设置服务
 type SettingService struct {
+	scopedAdminKeyRepo           ScopedAdminKeyRepository
 	retryFilterRuntimeCache      atomic.Value // *cachedRetryFilterRuntime
 	retryFilterRuntimeRefreshing atomic.Bool
 	retryFilterRuntimeReloadMu   retryFilterReloadLock

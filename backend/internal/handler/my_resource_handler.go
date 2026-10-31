@@ -577,12 +577,12 @@ func (h *MyResourceHandler) SyncAccountUpstreamModels(c *gin.Context) {
 	if !ok {
 		return
 	}
-	models, err := h.userResourceService.SyncAccountUpstreamModels(c.Request.Context(), userID, accountID)
+	catalog, err := h.userResourceService.SyncAccountUpstreamModels(c.Request.Context(), userID, accountID)
 	if err != nil {
 		writeMyUpstreamModelSyncError(c, err)
 		return
 	}
-	response.Success(c, gin.H{"models": models})
+	response.Success(c, catalog)
 }
 
 func (h *MyResourceHandler) SyncAccountUpstreamModelsPreview(c *gin.Context) {

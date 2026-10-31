@@ -8,6 +8,7 @@ import zh from '@/i18n/locales/zh'
 
 const source = readFileSync(resolve(process.cwd(), 'src/views/user/MyResourcesView.vue'), 'utf8')
 const proxyEditorSource = readFileSync(resolve(process.cwd(), 'src/components/user/MyProxyEditorDialog.vue'), 'utf8')
+const proxySourcesSource = readFileSync(resolve(process.cwd(), 'src/components/user/MyProxySourcesDialog.vue'), 'utf8')
 const globalStyles = readFileSync(resolve(process.cwd(), 'src/style.css'), 'utf8')
 
 describe('MyResourcesView responsive localization', () => {
@@ -54,9 +55,14 @@ describe('MyResourcesView responsive localization', () => {
   it('constrains every resource dialog to the viewport with an internal scroll area', () => {
     const compactConstraints = source.match(/max-h-\[calc\(100dvh-1rem\)\]/g) || []
     const wideConstraints = source.match(/sm:max-h-\[calc\(100dvh-2rem\)\]/g) || []
-    expect(compactConstraints.length).toBeGreaterThanOrEqual(9)
+    // The source manager moved from an inline modal to the shared BaseDialog.
+    // Its viewport and fixed-footer constraints now come from global styles.
+    expect(compactConstraints.length).toBeGreaterThanOrEqual(8)
     expect(wideConstraints).toHaveLength(compactConstraints.length)
     expect((source.match(/overscroll-contain/g) || []).length).toBeGreaterThanOrEqual(compactConstraints.length)
+    expect(proxySourcesSource).toContain('<BaseDialog')
+    expect(proxySourcesSource).toContain('<template #footer>')
+    expect(globalStyles).toContain('max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)]')
     expect(source).not.toContain('max-h-[90vh]')
   })
 
@@ -110,34 +116,45 @@ describe('MyResourcesView responsive localization', () => {
     expect(source).toContain("'flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-2 lg:w-auto'")
   })
 
-  it('manages proxy subscription sources from one modal', () => {
+  it('delegates the source manager to the administrator dialog and table system', () => {
+    expect(source).toContain('<MyProxySourcesDialog')
+    expect(source).toContain('@changed="handleProxySourcesChanged"')
+    expect(source).toContain('@loaded="handleProxySourcesLoaded"')
+    expect(source).toContain('@deleted="handleProxySourceDeleted"')
+    expect(source).toContain('@filter="filterProxiesBySource"')
+    expect(proxySourcesSource).toContain('width="extra-wide"')
+    expect(proxySourcesSource).toContain('<DataTable')
+    expect(proxySourcesSource).toContain('<Pagination')
+    expect(proxySourcesSource).toContain('max-height: 55vh')
+
     // Sync every source, then report counts only — never node payloads or URLs.
-    expect(source).toContain("mr('actions.syncAllSources')")
-    expect(source).toContain('@click="syncAllProxySourceItems"')
-    expect(source).toContain('myResourcesApi.proxies.sources.syncAll()')
-    expect(source).toContain("mr('sources.syncAllSummary'")
+    expect(proxySourcesSource).toContain("mr('actions.syncAllSources')")
+    expect(proxySourcesSource).toContain('myResourcesApi.proxies.sources.syncAll()')
+    expect(proxySourcesSource).toContain("mr('sources.syncAllSummary'")
+    expect(proxySourcesSource).not.toContain('adminAPI')
 
     // Per-source node counts double as a filter entry point.
-    expect(source).toContain("mr('sources.nodeCount'")
-    expect(source).toContain('@click="filterProxiesBySource(source)"')
+    expect(proxySourcesSource).toContain("mr('sources.nodeCount'")
+    expect(proxySourcesSource).toContain("emit('filter', source)")
     expect(source).toContain('v-model="filters.source_id"')
     expect(source).toContain(':options="proxySourceFilterOptions"')
     expect(source).toContain('source_id: filters.source_id ? Number(filters.source_id) : undefined')
 
     // Pause/resume plus the next-run and airport-quota columns.
-    expect(source).toContain('@click="toggleProxySourceSync(source)"')
-    expect(source).toContain("mr('actions.pauseSync')")
-    expect(source).toContain("mr('actions.resumeSync')")
-    expect(source).toContain("mr('sources.nextSyncAt'")
-    expect(source).toContain("mr('sources.syncPaused')")
-    expect(source).toContain('proxySourceTrafficText(source)')
-    expect(source).toContain("mr('sources.expiresAt'")
-    expect(source).toContain('v-model="proxySourceForm.sync_enabled"')
+    expect(proxySourcesSource).toContain('@click="toggleSync(source)"')
+    expect(proxySourcesSource).toContain("'actions.pauseSync'")
+    expect(proxySourcesSource).toContain("'actions.resumeSync'")
+    expect(proxySourcesSource).toContain("mr('sources.nextSyncAt'")
+    expect(proxySourcesSource).toContain("mr('sources.syncPaused')")
+    expect(proxySourcesSource).toContain('trafficText(source)')
+    expect(proxySourcesSource).toContain("mr('sources.expiresAt'")
+    expect(proxySourcesSource).toContain('v-model="form.sync_enabled"')
 
-    // The widened modal table scrolls locally instead of clipping columns.
-    expect(source).toContain('class="min-w-0 overflow-x-auto rounded-lg border border-gray-200 dark:border-dark-700"')
-    expect(source).toContain('colspan="7"')
-    expect(source).not.toContain('colspan="5"')
+    // Shared DataTable owns the desktop scroll area and the mobile card layout.
+    expect(proxySourcesSource).toContain('min-h-0 min-w-0 flex-col overflow-hidden')
+    expect(proxySourcesSource).toContain(':expandable-actions="false"')
+    expect(proxySourcesSource).toContain('maskSubscriptionUrl(source.subscription_url)')
+    expect(source).not.toContain('lg:grid-cols-[minmax(0,1fr)_320px]')
   })
 
   it('uses project Select controls and proxy-specific filters', () => {
