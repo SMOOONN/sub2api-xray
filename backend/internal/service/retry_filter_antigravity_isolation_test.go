@@ -151,7 +151,7 @@ func TestRetryFilterAntigravityOfficialSemanticsOutsidePoolConsumers(t *testing.
 					c, rec := retryFilterAntigravityContext(t, mode)
 					resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/event-stream"}},
 						Body: io.NopCloser(strings.NewReader(retryFilterAntigravityFrame(fixture.candidate)))}
-					defer resp.Body.Close()
+					defer func() { _ = resp.Body.Close() }()
 					var result *antigravityStreamResult
 					var err error
 					start := time.Now()
@@ -215,7 +215,7 @@ func TestRetryFilterAntigravityThoughtReleasesPreContentDeadline(t *testing.T) {
 			t.Cleanup(func() { close(cancelWriter); _ = reader.Close(); _ = writer.Close() })
 			written := make(chan error, 1)
 			go func() {
-				defer writer.Close()
+				defer func() { _ = writer.Close() }()
 				_, err := io.WriteString(writer, `data: {"response":{"candidates":[{"content":{"parts":[{"thought":true,"text":"isolated thought"}]}}]}}`+"\n\n")
 				if err == nil {
 					select {
@@ -289,7 +289,7 @@ func TestRetryFilterAntigravityInlineDataBoundary(t *testing.T) {
 				c, rec := retryFilterAntigravityContext(t, "enabled_nonpool")
 				body := retryFilterAntigravityFrame(`{"content":{"parts":[{"inlineData":{"mimeType":"image/gif","data":"` + fixture.data + `"}}]},"finishReason":"STOP"}`)
 				resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				var adapter antigravityCompatStreamAdapter = newAntigravityResponsesStreamAdapter(retryFilterAntigravityModel)
 				if wire.name == "chat_stream" {
 					adapter = newAntigravityChatStreamAdapter(retryFilterAntigravityModel, true)
@@ -324,7 +324,7 @@ func TestRetryFilterAntigravityInlineDataBoundary(t *testing.T) {
 		// though the image processor emits no text for its empty data.
 		body := retryFilterAntigravityFrame(`{"content":{"parts":[{"inlineData":{"mimeType":"image/gif","data":""}}]}}`)
 		resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		collected, result, err := svc.collectClaudeStreamResponse(c, resp, time.Now(), retryFilterAntigravityModel)
 		require.NoError(t, err)
 		require.NotNil(t, result)
@@ -358,7 +358,7 @@ func TestRetryFilterAntigravityReadFailuresBeforeAndAfterThought(t *testing.T) {
 					if ending == "oversized_line" {
 						reader = io.NopCloser(strings.NewReader(prefix + "data: " + strings.Repeat("x", maxLineSize+1) + "\n\n"))
 					}
-					defer reader.Close()
+					defer func() { _ = reader.Close() }()
 					var adapter antigravityCompatStreamAdapter = newAntigravityResponsesStreamAdapter(retryFilterAntigravityModel)
 					if wire.name == "chat_stream" {
 						adapter = newAntigravityChatStreamAdapter(retryFilterAntigravityModel, true)

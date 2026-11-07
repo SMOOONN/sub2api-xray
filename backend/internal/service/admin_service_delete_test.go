@@ -83,6 +83,16 @@ func newEmptyDeprovisionClient(t *testing.T, commit bool) (*dbent.Client, sqlmoc
 	t.Cleanup(func() { _ = client.Close() })
 
 	mock.ExpectBegin()
+	expectEmptyOwnedResourceDeprovision(mock)
+	if commit {
+		mock.ExpectCommit()
+	} else {
+		mock.ExpectRollback()
+	}
+	return client, mock
+}
+
+func expectEmptyOwnedResourceDeprovision(mock sqlmock.Sqlmock) {
 	mock.ExpectQuery(`(?s)SELECT.*FROM "groups"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectQuery(`(?s)SELECT.*FROM "accounts"`).
@@ -99,12 +109,6 @@ func newEmptyDeprovisionClient(t *testing.T, commit bool) (*dbent.Client, sqlmoc
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec(`(?s)UPDATE "user_subscriptions" SET`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
-	if commit {
-		mock.ExpectCommit()
-	} else {
-		mock.ExpectRollback()
-	}
-	return client, mock
 }
 
 func TestUpdateUserDoesNotDisableUserWhenOwnedResourceDeprovisionFails(t *testing.T) {

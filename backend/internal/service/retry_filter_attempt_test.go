@@ -122,7 +122,7 @@ func TestRetryFilterCCAttemptInterceptsBeforeConverterCompletion(t *testing.T) {
 				EmptyResponseMode: model.RetryFilterEmptyResponseBoth, Action: model.RetryFilterActionSameAccountRetry,
 			})
 			c, rec, account := retryFilterAttemptContextForTest(runtime)
-			var reader io.ReadCloser = io.NopCloser(strings.NewReader(tt.body))
+			reader := io.NopCloser(strings.NewReader(tt.body))
 			if tt.readErr != nil {
 				reader = &errTailReader{data: []byte(tt.body), err: tt.readErr}
 			}
@@ -255,7 +255,7 @@ func TestRetryFilterNativeAnthropicMetaThenEnd(t *testing.T) {
 			if ending == "stream_error" {
 				body += "event: error\ndata: {\"type\":\"error\",\"error\":{\"code\":\"try_again\",\"message\":\"temporary failure\"}}\n\n"
 			}
-			var reader io.ReadCloser = io.NopCloser(strings.NewReader(body))
+			reader := io.NopCloser(strings.NewReader(body))
 			if ending == "read_error" {
 				reader = &errTailReader{data: []byte(body), err: io.ErrUnexpectedEOF}
 			}
@@ -278,7 +278,8 @@ func TestRetryFilterHeartbeatBytesAccumulateAcrossAttempts(t *testing.T) {
 		stop := startOpenAISSEKeepalive(c, time.Hour)
 		value, ok := c.Get(openAICompactSSEKeepaliveKey)
 		require.True(t, ok)
-		keepalive := value.(*openAICompactSSEKeepalive)
+		keepalive, ok := value.(*openAICompactSSEKeepalive)
+		require.True(t, ok)
 		require.True(t, keepalive.beat())
 		stop()
 		require.Equal(t, -1, before)

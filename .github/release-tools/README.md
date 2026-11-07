@@ -8,6 +8,10 @@ Go caches are isolated by target and refreshed on each source commit, with fallb
 
 All build jobs use the commit resolved by `prepare`, including a manual release's selected tag. Helper scripts come from the workflow revision and are passed as a run-local artifact, so older application tags do not need to contain the new scripts. The workflow serializes release runs to prevent simultaneous updates to moving image tags.
 
+Publishing waits for successful CI and Security Scan push runs for the exact source commit and tag, including every required job. The optional native macOS dispatch job is excluded. The gate runs before building release artifacts and again before publication; missing runs wait up to one hour, while failed, cancelled or skipped required checks stop the release.
+
+Both image architectures are exported as OCI archives and checked for the application version, commit and Xray/sing-box runtimes before any image is published. Publication requires verification records matching the source commit, version, architecture and archive SHA256. Full and simple releases share this validation path.
+
 ## Validate without publication
 
 From a branch containing this workflow:
@@ -25,6 +29,6 @@ Helper checks:
 
 ```bash
 python -m pip install -r .github/release-tools/requirements-release.txt
-python -m unittest discover -s .github/release-tools -p 'test_release_matrix.py'
+python -m unittest discover -s .github/release-tools -p 'test_release_*.py'
 bash -n .github/release-tools/release-images.sh
 ```

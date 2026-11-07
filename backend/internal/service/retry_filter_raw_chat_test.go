@@ -143,7 +143,7 @@ func TestRetryFilterRawChatErrorCancellationAndResourceBoundaries(t *testing.T) 
 			if mode == "after-output-error" {
 				body = retryFilterCCText + retryFilterCCError
 			}
-			var reader io.ReadCloser = io.NopCloser(strings.NewReader(body))
+			reader := io.NopCloser(strings.NewReader(body))
 			if mode == "cancel" {
 				reader = &errTailReader{data: []byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":7}}\n\n"), err: context.Canceled}
 			}

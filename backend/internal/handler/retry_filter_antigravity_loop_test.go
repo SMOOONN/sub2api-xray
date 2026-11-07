@@ -95,16 +95,17 @@ func newRetryFilterAntigravityLoopFixture(t *testing.T, mode string) *retryFilte
 	}
 	require.Equal(t, int64(1), runtime.ResolvePresetID(ctx, oauth, group))
 	accounts := []*service.Account{oauth}
-	if mode == "pool_switch" {
+	switch mode {
+	case "pool_switch":
 		accounts = []*service.Account{pool, oauth}
-	} else if mode == "disabled" {
+	case "disabled":
 		filters := service.NewRetryFilterService(&handlerRetryFilterRepository{
 			presets: map[int64]*model.RetryFilterPreset{1: {ID: 1, Name: "disabled-control", Enabled: true}},
 			rules:   map[int64][]*model.RetryFilterRule{1: {rule}},
 		}, nil)
 		runtime = service.NewRetryFilterRuntime(filters, func(context.Context) bool { return false }, nil)
 		require.Nil(t, runtime.Evaluate(ctx, pool, group, retryFilterAntigravityModel, &service.UpstreamFailoverError{StatusCode: 422}))
-	} else {
+	default:
 		missingPreset := int64(999)
 		oauth.Credentials["retry_filter_preset_id"] = missingPreset
 		group.RetryFilterConfig.PresetID = &missingPreset

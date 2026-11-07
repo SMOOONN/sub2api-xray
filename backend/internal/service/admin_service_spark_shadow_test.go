@@ -110,7 +110,7 @@ func (s *sparkShadowRepoStub) UpdateAccountWithGroupsAtomically(_ context.Contex
 	cp.GroupIDs = append([]int64(nil), groupIDs...)
 	cp.AccountGroups = accountGroupsFromIDs(groupIDs)
 	s.accounts[account.ID] = &cp
-	s.mockAccountRepoForGemini.accountsByID[account.ID] = &cp
+	s.accountsByID[account.ID] = &cp
 	s.groupsOf[account.ID] = append([]int64(nil), groupIDs...)
 	return nil
 }

@@ -111,6 +111,8 @@ func provideCleanup(
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	balanceNotify *service.BalanceNotifyService,
+	digestSessions *service.DigestSessionStore,
 	subscriptionService *service.SubscriptionService,
 	userResourceService *service.UserResourceService,
 	oauth *service.OAuthService,
@@ -158,6 +160,18 @@ func provideCleanup(
 			}},
 			{"XrayRuntimeManager", func() error {
 				return service.DefaultXrayRuntimeManager().Close()
+			}},
+			{"DigestSessionStore", func() error {
+				if digestSessions != nil {
+					digestSessions.Close()
+				}
+				return nil
+			}},
+			{"BalanceNotifyService", func() error {
+				if balanceNotify != nil {
+					balanceNotify.Stop()
+				}
+				return nil
 			}},
 			{"PluginManager", func() error {
 				if pluginManager != nil {

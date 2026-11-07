@@ -59,12 +59,13 @@ func callRetryFilterJSONConsumer(protocol string, c *gin.Context, account *Accou
 		svc := &GatewayService{cfg: rawChatCompletionsTestConfig(), rateLimitService: &RateLimitService{}}
 		var usage *ClaudeUsage
 		var err error
-		if protocol == "messages-bedrock" {
+		switch protocol {
+		case "messages-bedrock":
 			account.Type, account.Platform = AccountTypeBedrock, PlatformAnthropic
 			usage, err = svc.handleBedrockNonStreamingResponse(ctx, resp, c, account)
-		} else if protocol == "messages-passthrough" {
+		case "messages-passthrough":
 			usage, err = svc.handleNonStreamingResponseAnthropicAPIKeyPassthrough(ctx, resp, c, account)
-		} else {
+		default:
 			usage, err = svc.handleNonStreamingResponse(ctx, resp, c, account, "gpt-5.4", "gpt-5.4")
 		}
 		if usage == nil {

@@ -355,34 +355,98 @@ class ReleaseMatrixTest(unittest.TestCase):
         self.assertNotIn('--push', log)
         self.assertNotIn('imagetools', log)
         self.assertNotIn('skip/sub2api', log)
-        self.assertIn('ghcr.io/exampleowner/sub2api-xray', log)
+        self.assertIn('sub2api-candidate:amd64', log)
+        self.assertIn('sub2api-candidate:arm64', log)
 
+
+    def image_publish_environment(self, simple=False):
+        fake_bin = Path('bin')
+        fake_bin.mkdir(exist_ok=True)
+        docker = fake_bin / 'docker'
+        docker.write_text('#!/bin/sh\nprintf "docker %s\\n" "$*" >> "$DOCKER_LOG"\n')
+        docker.chmod(0o755)
+        skopeo = fake_bin / 'skopeo'
+        skopeo.write_text('#!/bin/sh\nprintf "skopeo %s\\n" "$*" >> "$DOCKER_LOG"\n')
+        skopeo.chmod(0o755)
+        return {**os.environ, 'PATH': str(fake_bin.resolve()) + os.pathsep + os.environ['PATH'],
+                'DOCKER_LOG': str(Path(f'docker-{simple}.log').resolve()), 'RUNNER_TEMP': self.temp.name,
+                'RELEASE_VERSION': '9.8.7', 'RELEASE_SHA': 'a' * 40, 'GITHUB_REPOSITORY': 'ExampleOwner/sub2api-xray',
+                'DRY_RUN': 'false', 'SIMPLE_RELEASE': str(simple).lower(), 'DOCKERHUB_USERNAME': 'fixturehub'}
+
+    def validated_image_archives(self, env):
+        arches = ('amd64',) if env['SIMPLE_RELEASE'] == 'true' else ('amd64', 'arm64')
+        for arch in arches:
+            archive = Path(env['RUNNER_TEMP']) / f'sub2api-{arch}.oci.tar'
+            archive.write_bytes(('verified image for ' + arch).encode())
+            Path(str(archive) + '.verified').write_text(
+                f'{env["RELEASE_SHA"]}\t{env["RELEASE_VERSION"]}\t{arch}\n'
+                f'{release.sha256(archive)}  {archive}\n')
 
     def test_published_full_and_simple_image_tags(self):
-        fake_bin = Path('bin')
-        fake_bin.mkdir()
-        docker = fake_bin / 'docker'
-        docker.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$DOCKER_LOG"\n')
-        docker.chmod(0o755)
         for simple in (False, True):
             with self.subTest(simple=simple):
-                log_path = Path(f'docker-{simple}.log').resolve()
-                env = {**os.environ, 'PATH': str(fake_bin.resolve()) + os.pathsep + os.environ['PATH'],
-                       'DOCKER_LOG': str(log_path), 'RUNNER_TEMP': self.temp.name,
-                       'RELEASE_VERSION': '9.8.7', 'RELEASE_SHA': 'a' * 40, 'GITHUB_REPOSITORY': 'ExampleOwner/sub2api-xray',
-                       'DRY_RUN': 'false', 'SIMPLE_RELEASE': str(simple).lower(), 'DOCKERHUB_USERNAME': 'fixturehub'}
-                subprocess.run(['bash', str(ROOT / '.github/release-tools/release-images.sh')], env=env, check=True)
+                env = self.image_publish_environment(simple)
+                self.validated_image_archives(env)
+                log_path = Path(env['DOCKER_LOG'])
+                subprocess.run(['bash', str(ROOT / '.github/release-tools/release-images.sh'), 'publish'], env=env, check=True)
                 log = log_path.read_text()
-                self.assertIn('--push', log)
-                self.assertEqual(log.count('buildx build'), 1 if simple else 2)
+                self.assertNotIn('buildx build', log)
+                self.assertIn('--preserve-digests', log)
+                self.assertEqual(log.count('skopeo copy'), 1 if simple else 4)
                 if simple:
                     self.assertNotIn('fixturehub', log)
-                    self.assertNotIn('imagetools', log)
+                    self.assertEqual(log.count('imagetools create'), 1)
                     self.assertIn('ghcr.io/exampleowner/sub2api-xray:latest', log)
                 else:
                     self.assertEqual(log.count('imagetools create'), 2)
                     self.assertIn('fixturehub/sub2api:9.8', log)
                     self.assertIn('ghcr.io/exampleowner/sub2api-xray:9', log)
+
+    def test_real_build_also_exports_without_publishing(self):
+        for simple in (False, True):
+            with self.subTest(simple=simple):
+                env = self.image_publish_environment(simple)
+                subprocess.run(['bash', str(ROOT / '.github/release-tools/release-images.sh'), 'build'], env=env, check=True)
+                log = Path(env['DOCKER_LOG']).read_text()
+                self.assertEqual(log.count('buildx build'), 1 if simple else 2)
+                for command in log.splitlines():
+                    self.assertEqual(command.count('--tag '), 1)
+                    self.assertIn('--tag sub2api-candidate:', command)
+                self.assertNotIn('--push', log)
+                self.assertNotIn('skopeo', log)
+                self.assertNotIn('imagetools', log)
+
+    def test_all_archives_must_be_verified_before_any_registry_write(self):
+        env = self.image_publish_environment()
+        self.validated_image_archives(env)
+        Path(self.temp.name, 'sub2api-arm64.oci.tar.verified').unlink()
+        result = subprocess.run(['bash', str(ROOT / '.github/release-tools/release-images.sh'), 'publish'], env=env)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(Path(env['DOCKER_LOG']).exists())
+
+    def test_changed_release_or_archive_cannot_reuse_verification(self):
+        for change in ('sha', 'version', 'archive', 'digest-target'):
+            with self.subTest(change=change):
+                env = self.image_publish_environment(True)
+                self.validated_image_archives(env)
+                if change == 'sha':
+                    env['RELEASE_SHA'] = 'b' * 40
+                elif change == 'version':
+                    env['RELEASE_VERSION'] = '9.8.8'
+                elif change == 'archive':
+                    Path(self.temp.name, 'sub2api-amd64.oci.tar').write_bytes(b'changed after validation')
+                else:
+                    marker = Path(self.temp.name, 'sub2api-amd64.oci.tar.verified')
+                    marker.write_text(marker.read_text().replace('sub2api-amd64.oci.tar\n', 'another-file\n'))
+                result = subprocess.run(['bash', str(ROOT / '.github/release-tools/release-images.sh'), 'publish'], env=env)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(Path(env['DOCKER_LOG']).exists())
+
+    def test_dry_run_cannot_promote_images(self):
+        env = self.image_publish_environment()
+        env['DRY_RUN'] = 'true'
+        subprocess.run(['bash', str(ROOT / '.github/release-tools/release-images.sh'), 'publish'], env=env, check=True)
+        self.assertFalse(Path(env['DOCKER_LOG']).exists())
 
 
 

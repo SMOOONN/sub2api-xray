@@ -19,7 +19,8 @@ func TestPrepareUserResourceCodexExtraForCreateOwnsSeed(t *testing.T) {
 	}
 
 	prepareUserResourceCodexExtraForCreate(payload)
-	extra := payload["extra"].(map[string]any)
+	extra, ok := payload["extra"].(map[string]any)
+	require.True(t, ok)
 	seed, ok := codexFingerprintSeed(extra)
 	require.True(t, ok)
 	require.NotEqual(t, "11111111-1111-1111-1111-111111111111", seed)
@@ -43,7 +44,8 @@ func TestPrepareUserResourceCodexExtraForUpdatePreservesExistingSeed(t *testing.
 	}
 
 	prepareUserResourceCodexExtraForUpdate(existing, payload)
-	extra := payload["extra"].(map[string]any)
+	extra, ok := payload["extra"].(map[string]any)
+	require.True(t, ok)
 	require.Equal(t, seed, extra[codexFingerprintSeedExtraKey])
 	require.Equal(t, "full", extra[codexFingerprintModeExtraKey])
 }
@@ -59,7 +61,9 @@ func TestPrepareUserResourceCodexExtraForUpdateGeneratesSeedWhenEnabling(t *test
 	}
 
 	prepareUserResourceCodexExtraForUpdate(existing, payload)
-	seed, ok := codexFingerprintSeed(payload["extra"].(map[string]any))
+	extra, ok := payload["extra"].(map[string]any)
+	require.True(t, ok)
+	seed, ok := codexFingerprintSeed(extra)
 	require.True(t, ok)
 	require.NotEmpty(t, seed)
 }
