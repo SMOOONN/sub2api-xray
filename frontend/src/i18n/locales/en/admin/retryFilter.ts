@@ -1,5 +1,17 @@
 export default {
   retryFilter: {
+    basicSettings: 'Settings', defaultShort: 'Global default', enablePreset: 'Enable rule set',
+    setSummary: '{rules} rules · {accounts} accounts · {groups} groups',
+    searchRules: 'Search rules, conditions or actions', noSearchResults: 'No matching results', clearSearch: 'Clear search',
+    ruleAndConditions: 'Rule / conditions', ruleEnabled: 'Enable rule: {name}', editNamedRule: 'Edit rule: {name}', ruleOptions: 'Rule options: {name}',
+    sortRules: 'Reorder', finishSorting: 'Done', sortHint: 'Drag rules or use the arrow buttons. Changes are saved automatically.', moveUp: 'Move {name} up', moveDown: 'Move {name} down',
+    retrySummary: '{count} retries · {delay} ms', presetDisabledHint: 'This rule set is disabled. The next available rule set will be used.',
+    ruleSteps: 'Rule configuration steps', chooseConditions: 'What should this rule match?', onMatch: 'When this rule matches', previousStep: 'Previous', nextAction: 'Next: action',
+    actionShortHints: { same_account_retry: 'Try again with the current account.', switch_account: 'Try another available account.', terminate: 'Stop switching and return the error.', observe: 'Record the match and keep the original decision.' },
+    unsaved: 'Unsaved changes', undoChanges: 'Discard edits', discardTitle: 'Discard unsaved changes?', discardHint: 'These changes have not been saved. Discarding restores the saved configuration.', keepEditing: 'Keep editing', discardChanges: 'Discard changes',
+    duplicatePreset: 'Duplicate rule set', duplicateHint: 'Copy details and rules, then configure assignments separately.', deletePreset: 'Delete rule set',
+    invalidTerminateStatus: 'Enter an integer from 100 to 599, or leave the response status blank.', invalidPriority: 'Priority must be an integer.',
+    replaceBindingsTitle: 'Replace assignments?', replaceBindingsHint: 'A selected resource or global default uses another rule set, or its current assignment could not be confirmed. Saving replaces these assignments with your selection.', confirmReplaceBindings: 'Confirm and save',
     title: 'Retry Filter', manageTitle: 'Rule management', monitorTitle: 'Retry monitor', manageDescription: 'Build reusable rule sets, order rules, and assign them to accounts or groups from one workspace.', monitorDescription: 'Inspect retry filter matches, empty streams, account switches, and terminated requests.', manageLink: 'Rule management', monitorLink: 'Retry monitor',
     description: 'Classify upstream failures with reusable presets and choose the next retry action.', settings: 'System settings',
     limitsTitle: 'Version 1 scope and limitations', scopeLimit: 'Applies only to pool-mode API Key and Bedrock accounts. OAuth accounts are excluded, even on supported gateway paths.', wsLimit: 'WebSocket same-account retries require HTTP 429 and an upstream retry deadline. Rules cannot override this prerequisite.', breakerLimit: 'Alpha Search and Images may still report one failure to the circuit breaker when a rule switches accounts.',

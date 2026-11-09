@@ -1,5 +1,17 @@
 export default {
   retryFilter: {
+    basicSettings: '基本设置', defaultShort: '全局默认', enablePreset: '启用规则集',
+    setSummary: '{rules} 条规则 · {accounts} 个账号 · {groups} 个分组',
+    searchRules: '搜索规则名称、条件或动作', noSearchResults: '没有匹配的结果', clearSearch: '清除搜索',
+    ruleAndConditions: '规则 / 匹配条件', ruleEnabled: '启用规则：{name}', editNamedRule: '编辑规则：{name}', ruleOptions: '规则操作：{name}',
+    sortRules: '调整顺序', finishSorting: '完成排序', sortHint: '拖动规则或使用上下按钮调整顺序，更改后自动保存。', moveUp: '上移 {name}', moveDown: '下移 {name}',
+    retrySummary: '{count} 次 · {delay} 毫秒', presetDisabledHint: '此规则集已停用，系统会继续查找下一层可用的规则集。',
+    ruleSteps: '规则配置步骤', chooseConditions: '需要匹配哪些条件？', onMatch: '命中这条规则后', previousStep: '上一步', nextAction: '下一步：命中动作',
+    actionShortHints: { same_account_retry: '使用当前账号再次请求。', switch_account: '尝试其他账号继续请求。', terminate: '停止切换，直接返回错误。', observe: '记录命中，保留原有判定。' },
+    unsaved: '有未保存的更改', undoChanges: '撤销更改', discardTitle: '放弃未保存的更改？', discardHint: '本次修改尚未保存，放弃后将恢复已保存的配置。', keepEditing: '继续编辑', discardChanges: '放弃更改',
+    duplicatePreset: '复制规则集', duplicateHint: '复制基本信息和全部规则，应用范围需单独配置。', deletePreset: '删除规则集',
+    invalidTerminateStatus: '返回状态码必须是 100–599 的整数，或留空。', invalidPriority: '优先级必须为整数。',
+    replaceBindingsTitle: '替换应用关系？', replaceBindingsHint: '所选对象或全局默认已使用其他规则集，或现有绑定未能确认。保存将以当前选择替换应用关系，请确认后继续。', confirmReplaceBindings: '确认并保存',
     title: '重试过滤器', manageTitle: '过滤规则管理', monitorTitle: '重试监控', manageDescription: '在一个工作区内创建规则集、调整规则顺序，并将规则集分配给账号或分组。', monitorDescription: '查看重试过滤命中、空流、账号切换和终止请求。', manageLink: '过滤规则管理', monitorLink: '重试监控',
     description: '通过可复用预设分类上游失败，并选择后续重试动作。', settings: '系统设置',
     limitsTitle: 'v1 生效范围与限制', scopeLimit: '仅对开启池模式的 API Key 与 Bedrock 账号生效。即使网关链路已覆盖，OAuth 账号也不在 v1 范围内。', wsLimit: 'WebSocket 同账号重试要求 HTTP 429 且上游提供重试截止窗口；规则无法绕过此前置条件。', breakerLimit: 'Alpha Search 与 Images 链路命中切换账号动作时，仍可能向熔断器上报一次失败。',

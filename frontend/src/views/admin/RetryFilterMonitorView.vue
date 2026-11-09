@@ -1,9 +1,9 @@
 <template>
   <AppLayout>
-    <div class="space-y-6 pb-12">
-      <header class="flex flex-wrap items-start justify-between gap-4">
-        <div><h1 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ t('admin.retryFilter.monitorTitle') }}</h1><p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.retryFilter.monitorDescription') }}</p></div>
-        <div class="flex flex-wrap gap-2"><router-link class="btn btn-secondary" to="/admin/retry-filter">{{ t('admin.retryFilter.manageLink') }}</router-link><button class="btn btn-secondary" :disabled="loading" @click="load">{{ t('common.refresh') }}</button></div>
+    <div class="-mt-2 space-y-4 pb-12">
+      <header class="flex flex-wrap items-center justify-between gap-3">
+        <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ t('admin.retryFilter.monitorTitle') }}</h1>
+        <div class="flex flex-wrap gap-2"><router-link class="btn btn-secondary btn-sm" to="/admin/retry-filter">{{ t('admin.retryFilter.manageLink') }}</router-link><button class="btn btn-secondary btn-sm" :disabled="loading" @click="load">{{ t('common.refresh') }}</button></div>
       </header>
       <p v-if="error" role="alert" class="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300">{{ error }}</p>
 

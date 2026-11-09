@@ -38,7 +38,7 @@ The user resource workspace is controlled by `enable_user_resources` and is disa
 
 ## Current Version
 
-The current release is **0.2.20-xray6**, synchronized with upstream v0.2.20. Installers and updates use [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray).
+The current release is **0.2.20-xray7**, based on upstream v0.2.20 with a redesigned retry filter rule management interface. Installers and updates use [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray).
 
 ## ⚠️ Important Notice
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount, type DOMWrapper } from '@vue/test-utils'
 import RetryFilterView from '../RetryFilterView.vue'
 
 const {
@@ -109,6 +109,21 @@ async function openNewRule(wrapper: ReturnType<typeof mountView>) {
   return form
 }
 
+async function saveRuleForm(form: DOMWrapper<Element>) {
+  const fromConditions = form.get('#retry-rule-tab-conditions').attributes('aria-selected') === 'true'
+  await form.trigger('submit')
+  await flushPromises()
+  if (fromConditions && form.get('#retry-rule-tab-action').attributes('aria-selected') === 'true') {
+    await form.trigger('submit')
+    await flushPromises()
+  }
+}
+
+async function enableDimension(form: DOMWrapper<Element>, key: string) {
+  const button = form.get(`[data-dimension="${key}"]`)
+  if (button.attributes('aria-pressed') !== 'true') await button.trigger('click')
+}
+
 describe('admin RetryFilterView', () => {
   beforeEach(() => {
     listPresets.mockReset().mockResolvedValue([preset])
@@ -141,7 +156,7 @@ describe('admin RetryFilterView', () => {
 
     let dialog = wrapper.get('[data-test="base-dialog"]')
     expect(dialog.attributes('data-title')).toBe('admin.retryFilter.addRule')
-    expect(dialog.attributes('data-width')).toBe('extra-wide')
+    expect(dialog.attributes('data-width')).toBe('wide')
     expect(dialog.find('form#retry-filter-rule-editor').exists()).toBe(true)
     await dialog.findAll('button').find(button => button.text() === 'common.cancel')!.trigger('click')
     expect(wrapper.find('[data-test="base-dialog"]').exists()).toBe(false)
@@ -150,7 +165,7 @@ describe('admin RetryFilterView', () => {
     const form = wrapper.get('form#retry-filter-rule-editor')
     await form.get('[name="name"]').setValue('New rule')
     await form.get('[name="statusText"]').setValue('429')
-    await form.trigger('submit')
+    await saveRuleForm(form)
     await flushPromises()
     expect(createRule).toHaveBeenCalledWith(7, expect.objectContaining({ name: 'New rule', status_codes: [429] }))
     expect(wrapper.find('[data-test="base-dialog"]').exists()).toBe(false)
@@ -163,9 +178,8 @@ describe('admin RetryFilterView', () => {
     const presetSwitch = wrapper.get('[role="switch"]')
     expect(presetSwitch.attributes('aria-checked')).toBe('true')
     await presetSwitch.trigger('click')
-    expect(presetSwitch.attributes('aria-checked')).toBe('false')
-    await wrapper.findAll('button').find(button => button.text() === 'admin.retryFilter.savePreset')!.trigger('click')
     await flushPromises()
+    expect(presetSwitch.attributes('aria-checked')).toBe('false')
     expect(updatePreset).toHaveBeenCalledWith(7, expect.objectContaining({ enabled: false }))
 
     expect(wrapper.text()).toContain('admin.retryFilter.idLabel')
@@ -193,7 +207,7 @@ describe('admin RetryFilterView', () => {
     expect(form.get('[name="statusText"]').attributes('placeholder')).toBe('admin.retryFilter.statusPlaceholder')
     expect(form.get('#retry-filter-status-hint').text()).toBe('admin.retryFilter.statusHint')
     await form.get('[name="statusText"]').setValue(input)
-    await form.trigger('submit')
+    await saveRuleForm(form)
     await flushPromises()
 
     expect(createRule).toHaveBeenCalledTimes(1)
@@ -208,6 +222,7 @@ describe('admin RetryFilterView', () => {
     else await wrapper.get('button[title="common.edit"]').trigger('click')
     const form = wrapper.get('#retry-filter-rule-editor')
     // A valid second condition must never cause an invalid status entry to be ignored.
+    await enableDimension(form, 'keywordsText')
     await form.get('[name="keywordsText"]').setValue('overloaded')
 
     for (const input of [
@@ -232,7 +247,7 @@ describe('admin RetryFilterView', () => {
     await form.get('[name="statusText"]').setValue('500 - 502')
     expect(form.find('#retry-filter-status-error').exists()).toBe(false)
     expect(form.get('[name="statusText"]').attributes('aria-invalid')).toBe('false')
-    await form.trigger('submit')
+    await saveRuleForm(form)
     await flushPromises()
 
     const payload = expect.objectContaining({ status_codes: [500, 501, 502], keywords: ['overloaded'] })
@@ -265,7 +280,7 @@ describe('admin RetryFilterView', () => {
     await card.get('button[title="common.edit"]').trigger('click')
     const form = wrapper.get('#retry-filter-rule-editor')
     expect((form.get('[name="statusText"]').element as HTMLTextAreaElement).value).toBe('400-402, 429, 500-502')
-    await form.trigger('submit')
+    await saveRuleForm(form)
     await flushPromises()
 
     expect(updateRule).toHaveBeenCalledWith(7, 21, expect.objectContaining({
@@ -294,6 +309,7 @@ describe('admin RetryFilterView', () => {
     await flushPromises()
     const form = await openNewRule(wrapper)
     await form.get('[name="statusText"]').setValue(' \n\t ')
+    await enableDimension(form, 'codesText')
     await form.get('[name="pathsText"]').setValue('error.code')
     await form.trigger('submit')
     await flushPromises()
@@ -301,6 +317,7 @@ describe('admin RetryFilterView', () => {
     expect(createRule).not.toHaveBeenCalled()
     expect(form.get('[role="alert"]').text()).toBe('admin.retryFilter.conditionRequired')
     expect(form.find('#retry-filter-status-error').exists()).toBe(false)
+    await enableDimension(form, field)
     if (field === 'emptyResponseMode') {
       await form.get('#retry-filter-emptyResponseMode').trigger('click')
       const option = Array.from(document.querySelectorAll('[role="option"]'))
@@ -312,7 +329,7 @@ describe('admin RetryFilterView', () => {
     } else {
       await form.get('[name="' + field + '"]').setValue(value)
     }
-    await form.trigger('submit')
+    await saveRuleForm(form)
     await flushPromises()
 
     expect(createRule).toHaveBeenCalledWith(7, expect.objectContaining({
@@ -335,12 +352,14 @@ describe('admin RetryFilterView', () => {
 
     expect(wrapper.get('[data-rule-id="23"]').text()).toContain(longName)
     expect(wrapper.get('[data-rule-id="23"]').text()).toContain(longCode)
+    await wrapper.findAll('button').find(button => button.text() === 'admin.retryFilter.sortRules')!.trigger('click')
     await wrapper.get('[data-rule-id="23"]').trigger('dragstart')
     await wrapper.get('[data-rule-id="21"]').trigger('drop')
     await flushPromises()
     expect(reorderRules).toHaveBeenCalledWith(7, [23, 21])
     expect(wrapper.findAll('[data-rule-id]')[0].attributes('data-rule-id')).toBe('23')
 
+    await wrapper.get('[data-rule-id="21"] button[aria-expanded]').trigger('click')
     await wrapper.get('[data-rule-id="21"] button[title="admin.retryFilter.duplicate"]').trigger('click')
     await flushPromises()
     expect(createRule).toHaveBeenCalledWith(7, expect.objectContaining({
@@ -355,6 +374,7 @@ describe('admin RetryFilterView', () => {
     expect(updateRule).toHaveBeenCalledWith(7, 21, expect.objectContaining({ enabled: false, status_codes: [429] }))
     expect(wrapper.get('[data-rule-id="21"] [role="switch"]').attributes('aria-checked')).toBe('false')
 
+    await wrapper.get('[data-rule-id="21"] button[aria-expanded]').trigger('click')
     await wrapper.get('[data-rule-id="21"] button[title="common.delete"]').trigger('click')
     expect(deleteRule).not.toHaveBeenCalled()
     const dialog = wrapper.get('[data-test="base-dialog"]')
@@ -381,7 +401,7 @@ describe('admin RetryFilterView', () => {
     await flushPromises()
     const scope = wrapper.get('section[aria-labelledby="retry-filter-scope-title"]')
     await scope.get('input[aria-label="admin.retryFilter.searchBinding"]').setValue('team')
-    await scope.get('input[aria-label="admin.retryFilter.searchBinding"]').trigger('keyup', { key: 'Enter' })
+    await scope.get('form').trigger('submit')
     await flushPromises()
     expect(listBindingCandidates).toHaveBeenLastCalledWith('groups', {
       q: 'team', page: 1, page_size: 12, preset_id: 7
@@ -412,7 +432,7 @@ describe('admin RetryFilterView', () => {
     await scope.get('button[aria-label="admin.retryFilter.removeBinding"]').trigger('click')
     expect((scope.get('[data-candidate-id="314"] input').element as HTMLInputElement).checked).toBe(false)
     expect(scope.text()).toContain(groupTwo.name)
-    await scope.get('input[aria-describedby="retry-filter-default-hint"]').setValue(true)
+    await scope.get('button[aria-describedby="retry-filter-default-hint"]').trigger('click')
     await scope.findAll('button').find(button => button.text() === 'admin.retryFilter.saveBindings')!.trigger('click')
     await flushPromises()
 
@@ -423,15 +443,14 @@ describe('admin RetryFilterView', () => {
     const wrapper = mountView()
     await flushPromises()
     const details = wrapper.get('section[aria-labelledby="retry-filter-preset-title"]')
-    const save = details.findAll('button').find(button => button.text() === 'admin.retryFilter.savePreset')!
     await details.get('input').setValue('')
-    await save.trigger('click')
+    await details.get('form').trigger('submit')
     await flushPromises()
     expect(updatePreset).not.toHaveBeenCalled()
     expect(wrapper.get('[role="alert"]').text()).toBe('admin.retryFilter.nameRequired')
 
     await details.get('input').setValue('Renamed policy')
-    await save.trigger('click')
+    await details.get('form').trigger('submit')
     await flushPromises()
     expect(updatePreset).toHaveBeenCalledWith(7, expect.objectContaining({ name: 'Renamed policy' }))
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
@@ -450,20 +469,112 @@ describe('admin RetryFilterView', () => {
     await search.setValue('')
 
     await wrapper.get('aside').findAll('button').find(button => button.text() === 'common.add')!.trigger('click')
+    await wrapper.get('#retry-new-preset input').setValue('New policy')
+    await wrapper.get('#retry-new-preset').trigger('submit')
     await flushPromises()
-    expect(createPreset).toHaveBeenCalledWith({ name: 'admin.retryFilter.newRuleSet', description: '', enabled: true })
+    expect(createPreset).toHaveBeenCalledWith({ name: 'New policy', description: '', enabled: true })
     const details = wrapper.get('section[aria-labelledby="retry-filter-preset-title"]')
     createPreset.mockResolvedValueOnce({ ...preset, id: 10, name: 'Copied policy' })
     await details.findAll('button').find(button => button.text() === 'admin.retryFilter.duplicate')!.trigger('click')
     await flushPromises()
     expect(createRule).toHaveBeenCalledWith(10, expect.objectContaining({ name: 'Rate limited', status_codes: [429] }))
 
-    await details.findAll('button').find(button => button.text() === 'common.delete')!.trigger('click')
+    await wrapper.get('section[aria-labelledby="retry-filter-preset-title"]').findAll('button').find(button => button.text() === 'common.delete')!.trigger('click')
     expect(deletePreset).not.toHaveBeenCalled()
     const dialog = wrapper.get('[data-test="base-dialog"]')
     await dialog.findAll('button').find(button => button.text() === 'common.delete')!.trigger('click')
     await flushPromises()
     expect(deletePreset).toHaveBeenCalledWith(10)
     expect(wrapper.find('[data-test="base-dialog"]').exists()).toBe(false)
+  })
+
+  it('keeps rule and scope drafts when changing tabs and warns before changing rule sets', async () => {
+    listPresets.mockResolvedValue([preset, { ...preset, id: 8, name: 'Alternate policy' }])
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.get('#retry-filter-panel-rules').isVisible()).toBe(true)
+    expect(wrapper.get('#retry-filter-panel-scope').isVisible()).toBe(false)
+    expect(wrapper.get('#retry-filter-panel-settings').isVisible()).toBe(false)
+    await wrapper.get('#retry-filter-preset-title').trigger('click')
+    await wrapper.get('#retry-filter-panel-settings input').setValue('Draft name')
+    await wrapper.get('#retry-filter-scope-title').trigger('click')
+    const globalButton = wrapper.get('button[aria-describedby="retry-filter-default-hint"]')
+    await globalButton.trigger('click')
+    expect(globalButton.attributes('aria-pressed')).toBe('true')
+    await wrapper.get('#retry-filter-preset-title').trigger('click')
+    expect((wrapper.get('#retry-filter-panel-settings input').element as HTMLInputElement).value).toBe('Draft name')
+    await wrapper.findAll('aside button[aria-pressed]')[1].trigger('click')
+    expect(listRules).toHaveBeenCalledTimes(1)
+    const confirmation = wrapper.get('[data-title="admin.retryFilter.discardTitle"]')
+    await confirmation.findAll('button').find(button => button.text() === 'admin.retryFilter.keepEditing')!.trigger('click')
+    expect((wrapper.get('#retry-filter-panel-settings input').element as HTMLInputElement).value).toBe('Draft name')
+    await wrapper.findAll('aside button[aria-pressed]')[1].trigger('click')
+    await wrapper.get('[data-title="admin.retryFilter.discardTitle"]').findAll('button').find(button => button.text() === 'admin.retryFilter.discardChanges')!.trigger('click')
+    await flushPromises()
+    expect(listRules).toHaveBeenLastCalledWith(8)
+    expect((wrapper.get('#retry-filter-panel-settings input').element as HTMLInputElement).value).toBe('Alternate policy')
+    expect(updatePreset).not.toHaveBeenCalled()
+    expect(setPresetBindings).not.toHaveBeenCalled()
+  })
+
+  it('does not write on the first editor step and preserves a draft after a failed save', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const form = await openNewRule(wrapper)
+    await form.get('[name="statusText"]').setValue('429')
+    await form.trigger('submit')
+    await flushPromises()
+    expect(createRule).not.toHaveBeenCalled()
+    expect(form.get('#retry-rule-panel-conditions').isVisible()).toBe(false)
+    expect(form.get('#retry-rule-panel-action').isVisible()).toBe(true)
+    await form.get('[name="retryCount"]').setValue('3')
+    await form.get('[name="retryDelay"]').setValue('1000')
+    createRule.mockRejectedValueOnce(new Error('unavailable'))
+    await form.trigger('submit')
+    await flushPromises()
+    expect(form.get('[role="alert"]').text()).toBe('admin.retryFilter.failed')
+    expect((form.get('[name="retryCount"]').element as HTMLInputElement).value).toBe('3')
+    await form.get('#retry-rule-tab-conditions').trigger('click')
+    expect((form.get('[name="statusText"]').element as HTMLTextAreaElement).value).toBe('429')
+    await saveRuleForm(form)
+    expect(createRule).toHaveBeenLastCalledWith(7, expect.objectContaining({ status_codes: [429], retry_count_override: 3, retry_delay_ms: 1000 }))
+  })
+
+  it('warns when closing a changed rule and prevents writes when existing bindings failed to load', async () => {
+    getPresetBindings.mockRejectedValueOnce(new Error('unavailable'))
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.get('button[aria-describedby="retry-filter-default-hint"]').attributes('disabled')).toBeDefined()
+    const saveScope = wrapper.get('#retry-filter-panel-scope').findAll('button').find(button => button.text() === 'admin.retryFilter.saveBindings')!
+    expect(saveScope.attributes('disabled')).toBeDefined()
+    await openNewRule(wrapper)
+    await wrapper.get('[data-title="admin.retryFilter.addRule"]').findAll('button').find(button => button.text() === 'common.cancel')!.trigger('click')
+    expect(wrapper.find('[data-title="admin.retryFilter.discardTitle"]').exists()).toBe(true)
+    await wrapper.get('[data-title="admin.retryFilter.discardTitle"]').findAll('button').find(button => button.text() === 'admin.retryFilter.keepEditing')!.trigger('click')
+    expect((wrapper.get('[name="name"]').element as HTMLInputElement).value).toBe('New rule')
+    expect(createRule).not.toHaveBeenCalled()
+    expect(setPresetBindings).not.toHaveBeenCalled()
+  })
+
+  it('requires confirmation before replacing another rule set assignment', async () => {
+    getDefault.mockResolvedValue({ preset_id: 8, enabled: true })
+    listBindingCandidates.mockResolvedValue({ items: [{ id: 314, name: 'Assigned group', preset_id: 8, eligible: true }], total: 1, pages: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('#retry-filter-scope-title').trigger('click')
+    await wrapper.get('[data-candidate-id="314"] input').setValue(true)
+    await wrapper.get('button[aria-describedby="retry-filter-default-hint"]').trigger('click')
+    const save = wrapper.get('#retry-filter-panel-scope').findAll('button').find(button => button.text() === 'admin.retryFilter.saveBindings')!
+    await save.trigger('click')
+    expect(setPresetBindings).not.toHaveBeenCalled()
+    let confirmation = wrapper.get('[data-title="admin.retryFilter.replaceBindingsTitle"]')
+    await confirmation.findAll('button').find(button => button.text() === 'common.cancel')!.trigger('click')
+    expect((wrapper.get('[data-candidate-id="314"] input').element as HTMLInputElement).checked).toBe(true)
+    await save.trigger('click')
+    confirmation = wrapper.get('[data-title="admin.retryFilter.replaceBindingsTitle"]')
+    await confirmation.findAll('button').find(button => button.text() === 'admin.retryFilter.confirmReplaceBindings')!.trigger('click')
+    await flushPromises()
+    expect(setPresetBindings).toHaveBeenCalledWith(7, { accounts: [], groups: [314], global: true })
+    expect(wrapper.find('[data-title="admin.retryFilter.replaceBindingsTitle"]').exists()).toBe(false)
   })
 })
