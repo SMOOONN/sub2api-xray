@@ -38,7 +38,7 @@ The user resource workspace is controlled by `enable_user_resources` and is disa
 
 ## Current Version
 
-The current release is **0.2.20-xray7**, based on upstream v0.2.20 with a redesigned retry filter rule management interface. Installers and updates use [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray).
+This version is **0.2.21-xray7**, based on upstream v0.2.21 with model, billing, and gateway updates while retaining Xray capabilities and the retry filter interface. Installers and updates use [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray).
 
 ## ⚠️ Important Notice
 
@@ -590,6 +590,16 @@ Simple Mode is designed for individual developers or internal teams who want qui
 - Optional key windows: Set `SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED=true` to enforce each API key's configured 5-hour, daily, and 7-day spending windows. The default is `false`; balance and subscription debit remain bypassed when enabled.
 - Window enforcement uses the database as its source of truth and records only API-key window usage. It is a post-request soft cap, so concurrent in-flight requests can overshoot by their final costs. Historical simple-mode usage is not backfilled.
 - Security note: In production, you must also set `SIMPLE_MODE_CONFIRM=true` to allow startup
+
+---
+
+## OpenAI Image Output Formats
+
+On `/v1/images/generations` and `/v1/images/edits`, OAuth / Setup Token requests use the Codex-native Images endpoints when the mapped upstream model is a supported GPT Image 1.5, 2, 2.5, or 2.6 model. Models before 2.6 can fall back to Responses if the native endpoint returns 404 or 405.
+
+Sub2API forwards `output_format` and `output_compression`, but whether they take effect depends on the upstream account and endpoint. An upstream may reject a format with a 4xx error or return HTTP 200 with a different format: for example, requesting `jpeg` or `svg` can yield `output_format: "png"` and PNG data. This behavior has also been reported for `gpt-image-2.5-flare` requests for `jpeg`.
+
+Before saving or serving an image, compare the returned `output_format` (including any per-image value) with the request and verify the actual image format. Use the actual output format for the filename extension and MIME type. A successful response containing a different format retains its status, image content, and usage; it can still incur charges. Automatically retrying may generate and bill another image.
 
 ---
 

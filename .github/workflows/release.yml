@@ -152,7 +152,7 @@ jobs:
   build-binaries:
     needs: [prepare, build-frontend]
     runs-on: ubuntu-latest
-    container: golang:1.27.3-bookworm
+    container: golang:1.27.4-bookworm
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
@@ -186,7 +186,7 @@ jobs:
           name: frontend-dist
           path: backend/internal/web/dist/
       - name: Verify Go version
-        run: go version | grep -q 'go1.27.3'
+        run: go version | grep -q 'go1.27.4'
       - name: Restore target-specific Go cache
         id: go-cache
         uses: actions/cache/restore@v6
@@ -243,7 +243,7 @@ jobs:
   release:
     needs: [prepare, build-binaries]
     runs-on: ubuntu-latest
-    container: golang:1.27.3-bookworm
+    container: golang:1.27.4-bookworm
     permissions:
       contents: write
       packages: write

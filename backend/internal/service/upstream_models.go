@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 )
@@ -1358,6 +1357,8 @@ func (s *AccountTestService) fetchAntigravityOAuthUpstreamModels(ctx context.Con
 		return nil, nil, newUpstreamModelSyncConfigError("Antigravity token provider is not configured", nil)
 	}
 
+	proxyURL := upstreamModelsProxyURL(account)
+	ctx = antigravityAccountRequestContext(ctx, account, account.Proxy, proxyURL)
 	accessToken, err := s.antigravityGatewayService.GetTokenProvider().GetAccessToken(ctx, account)
 	if err != nil {
 		return nil, nil, newUpstreamModelSyncUpstreamError("Failed to get Antigravity access token", err)
@@ -1367,7 +1368,7 @@ func (s *AccountTestService) fetchAntigravityOAuthUpstreamModels(ctx context.Con
 		return nil, nil, newUpstreamModelSyncConfigError("No Antigravity access token is available", nil)
 	}
 
-	client, err := antigravity.NewClient(upstreamModelsProxyURL(account))
+	client, err := newAntigravityClientForContext(ctx, proxyURL)
 	if err != nil {
 		return nil, nil, newUpstreamModelSyncConfigError("Failed to configure Antigravity client", err)
 	}

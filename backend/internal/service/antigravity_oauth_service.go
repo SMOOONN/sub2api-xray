@@ -179,7 +179,7 @@ func (s *AntigravityOAuthService) RefreshToken(ctx context.Context, refreshToken
 			time.Sleep(backoff)
 		}
 
-		client, err := antigravity.NewClient(proxyURL)
+		client, err := newAntigravityClientForContext(ctx, proxyURL)
 		if err != nil {
 			return nil, fmt.Errorf("create antigravity client failed: %w", err)
 		}
@@ -286,13 +286,16 @@ func (s *AntigravityOAuthService) RefreshAccountToken(ctx context.Context, accou
 	}
 
 	var proxyURL string
+	resolvedProxy := account.Proxy
 	if account.ProxyID != nil {
 		proxy, err := s.proxyRepo.GetByID(ctx, *account.ProxyID)
 		if err == nil && proxy != nil {
 			proxyURL = proxy.URL()
+			resolvedProxy = proxy
 		}
 	}
 
+	ctx = antigravityAccountRequestContext(ctx, account, resolvedProxy, proxyURL)
 	tokenInfo, err := s.RefreshToken(ctx, refreshToken, proxyURL)
 	if err != nil {
 		return nil, err
@@ -347,7 +350,7 @@ func (s *AntigravityOAuthService) loadProjectIDWithRetry(ctx context.Context, ac
 			time.Sleep(backoff)
 		}
 
-		client, err := antigravity.NewClient(proxyURL)
+		client, err := newAntigravityClientForContext(ctx, proxyURL)
 		if err != nil {
 			return nil, fmt.Errorf("create antigravity client failed: %w", err)
 		}
@@ -442,12 +445,15 @@ func resolveDefaultTierID(loadRaw map[string]any) string {
 // FillProjectID 仅获取 project_id，不刷新 OAuth token
 func (s *AntigravityOAuthService) FillProjectID(ctx context.Context, account *Account, accessToken string) (string, error) {
 	var proxyURL string
+	resolvedProxy := account.Proxy
 	if account.ProxyID != nil {
 		proxy, err := s.proxyRepo.GetByID(ctx, *account.ProxyID)
 		if err == nil && proxy != nil {
 			proxyURL = proxy.URL()
+			resolvedProxy = proxy
 		}
 	}
+	ctx = antigravityAccountRequestContext(ctx, account, resolvedProxy, proxyURL)
 	result, err := s.loadProjectIDWithRetry(ctx, accessToken, proxyURL, 3)
 	if result != nil {
 		return result.ProjectID, err

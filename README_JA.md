@@ -38,7 +38,7 @@ Sub2API Xray は [Sub2API](https://github.com/Wei-Shaw/sub2api) の継続的に�
 
 ## 現在のバージョン
 
-現在の正式リリースは **0.2.20-xray7** で、公式 v0.2.20 をベースにリトライフィルターのルール管理画面を再設計しています。インストーラーと更新先は [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray) です。
+本バージョンは **0.2.21-xray7** です。公式 v0.2.21 のモデル・料金計算・ゲートウェイ更新を取り込み、Xray の機能とリトライフィルター画面を維持しています。インストーラーと更新先は [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray) です。
 
 ## ⚠️ 重要なお知らせ
 

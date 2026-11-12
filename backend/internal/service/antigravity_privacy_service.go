@@ -5,8 +5,6 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-
-	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 )
 
 const (
@@ -28,7 +26,7 @@ func setAntigravityPrivacy(ctx context.Context, accessToken, projectID, proxyURL
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	client, err := antigravity.NewClient(proxyURL)
+	client, err := newAntigravityClientForContext(ctx, proxyURL)
 	if err != nil {
 		slog.Warn("antigravity_privacy_client_error", "error", err.Error())
 		return AntigravityPrivacyFailed

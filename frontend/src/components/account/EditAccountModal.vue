@@ -4170,6 +4170,17 @@ const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist'
 const antigravityWhitelistModels = ref<string[]>([])
 const antigravityModelMappings = ref<ModelMapping[]>([])
 const isSyncingAntigravityUpstream = ref(false)
+let antigravitySyncVersion = 0
+const resetAntigravitySync = () => {
+  antigravitySyncVersion += 1
+  isSyncingAntigravityUpstream.value = false
+}
+watch(
+  [() => props.show, () => props.account?.id, () => props.account?.platform, () => props.scope],
+  resetAntigravitySync,
+  { flush: 'sync' }
+)
+onBeforeUnmount(resetAntigravitySync)
 const tempUnschedEnabled = ref(false)
 const accountSchedulingThresholdOverrideEnabled = ref(false)
 const accountSchedulingThresholdOverrideValue = ref(100)
@@ -5181,12 +5192,20 @@ const addAntigravityPresetMapping = (from: string, to: string) => {
 }
 
 const syncAntigravityUpstreamModels = async () => {
-  if (isUserScope.value) return
-  if (!props.account?.id || isSyncingAntigravityUpstream.value) return
+  const id = props.account?.id
+  const scope = props.scope
+  if (!props.show || props.account?.platform !== 'antigravity' || !id || isSyncingAntigravityUpstream.value) return
 
+  const syncVersion = ++antigravitySyncVersion
+  const isCurrentSync = () => syncVersion === antigravitySyncVersion
+    && props.show && props.account?.id === id && props.scope === scope
+    && props.account?.platform === 'antigravity'
   isSyncingAntigravityUpstream.value = true
   try {
-    const result = await adminAPI.accounts.syncUpstreamModels(props.account.id)
+    const result = scope === 'user'
+      ? await myResourcesApi.accounts.syncUpstreamModels(id)
+      : await adminAPI.accounts.syncUpstreamModels(id)
+    if (!isCurrentSync()) return
     const upstreamModels = result.models.map((model) => model.trim()).filter(Boolean)
     if (upstreamModels.length === 0) {
       appStore.showInfo(t('admin.accounts.syncUpstreamModelsEmpty'))
@@ -5222,10 +5241,11 @@ const syncAntigravityUpstreamModels = async () => {
       appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
     }
   } catch (error) {
+    if (!isCurrentSync()) return
     const message = extractApiErrorMessage(error, t('admin.accounts.syncUpstreamModelsFailed'))
     appStore.showError(t('admin.accounts.syncUpstreamModelsError', { message }))
   } finally {
-    isSyncingAntigravityUpstream.value = false
+    if (isCurrentSync()) isSyncingAntigravityUpstream.value = false
   }
 }
 

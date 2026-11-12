@@ -17,17 +17,26 @@ const { updateAccountMock, checkMixedChannelRiskMock, authIsSimpleMode, userApiP
   saveOpenCodeGoUsageMock: vi.fn()
 }))
 
+const { userApiPostMock, syncUpstreamModelsMock, modelSyncErrorMock, modelSyncSuccessMock } = vi.hoisted(() => ({
+  userApiPostMock: vi.fn(),
+  syncUpstreamModelsMock: vi.fn(),
+  modelSyncErrorMock: vi.fn(),
+  modelSyncSuccessMock: vi.fn()
+}))
+
 vi.mock('@/api/client', () => ({
   apiClient: {
     put: userApiPutMock,
+    post: userApiPostMock,
   },
 }))
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
-    showSuccess: vi.fn(),
-    showInfo: vi.fn()
+    showError: modelSyncErrorMock,
+    showSuccess: modelSyncSuccessMock,
+    showInfo: vi.fn(),
+    showWarning: vi.fn()
   })
 }))
 
@@ -43,6 +52,7 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       update: updateAccountMock,
+      syncUpstreamModels: syncUpstreamModelsMock,
       checkMixedChannelRisk: checkMixedChannelRiskMock,
       getOpenCodeGoUsage: getOpenCodeGoUsageMock,
       refreshOpenCodeGoUsage: refreshOpenCodeGoUsageMock,
@@ -2224,6 +2234,116 @@ describe('EditAccountModal temp-unschedulable rule scope', () => {
     await addRule!.trigger('click')
 
     expect(checkedScopes(wrapper)).toEqual(['temp-unsched-scope-model'])
+    wrapper.unmount()
+  })
+})
+
+describe('EditAccountModal Antigravity model sync ownership', () => {
+  beforeEach(() => {
+    authIsSimpleMode.value = true
+    userApiPostMock.mockReset()
+    syncUpstreamModelsMock.mockReset()
+    modelSyncErrorMock.mockReset()
+    modelSyncSuccessMock.mockReset()
+  })
+
+  function syncButton(wrapper: ReturnType<typeof mountModal>) {
+    return wrapper.findAll('button').find(button =>
+      button.text().startsWith('admin.accounts.syncUpstreamModels')
+    )!
+  }
+
+  function requestModels(wrapper: ReturnType<typeof mountModal>) {
+    return wrapper.findAll('input').filter(input =>
+      input.attributes('placeholder') === 'admin.accounts.requestModel'
+    ).map(input => (input.element as HTMLInputElement).value)
+  }
+
+  function pendingResult() {
+    let resolve!: (value: unknown) => void
+    let reject!: (reason: unknown) => void
+    const promise = new Promise((resolvePromise, rejectPromise) => {
+      resolve = resolvePromise
+      reject = rejectPromise
+    })
+    return { promise, resolve, reject }
+  }
+
+  it.each(['admin', 'user'] as const)('syncs through the %s API and preserves existing mappings', async scope => {
+    const result = { models: ['gemini-2.5-flash', ' gemini-new-model '] }
+    userApiPostMock.mockResolvedValue({ data: result })
+    syncUpstreamModelsMock.mockResolvedValue(result)
+    const wrapper = mountModal(buildAntigravityAccount(), false, scope)
+    await syncButton(wrapper).trigger('click')
+    await flushPromises()
+
+    if (scope === 'user') {
+      expect(userApiPostMock).toHaveBeenCalledWith('/my/accounts/3/models/sync-upstream')
+      expect(syncUpstreamModelsMock).not.toHaveBeenCalled()
+    } else {
+      expect(syncUpstreamModelsMock).toHaveBeenCalledWith(3)
+      expect(userApiPostMock).not.toHaveBeenCalled()
+    }
+    expect(requestModels(wrapper)).toEqual(['gemini-2.5-flash', 'gemini-new-model'])
+    expect(modelSyncSuccessMock).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('disables duplicate sync and permits retry after a user request fails', async () => {
+    const pending = pendingResult()
+    userApiPostMock.mockReturnValueOnce(pending.promise)
+    const wrapper = mountModal(buildAntigravityAccount(), false, 'user')
+    await syncButton(wrapper).trigger('click')
+    expect((syncButton(wrapper).element as HTMLButtonElement).disabled).toBe(true)
+    await syncButton(wrapper).trigger('click')
+    expect(userApiPostMock).toHaveBeenCalledOnce()
+    pending.reject(new Error('upstream unavailable'))
+    await flushPromises()
+    expect(modelSyncErrorMock).toHaveBeenCalledOnce()
+    expect((syncButton(wrapper).element as HTMLButtonElement).disabled).toBe(false)
+    expect(requestModels(wrapper)).toEqual(['gemini-2.5-flash'])
+
+    userApiPostMock.mockResolvedValueOnce({ data: { models: ['gemini-recovered'] } })
+    await syncButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(requestModels(wrapper)).toEqual(['gemini-2.5-flash', 'gemini-recovered'])
+    wrapper.unmount()
+  })
+
+  it.each(['account', 'reopen', 'scope'] as const)('ignores a stale result after an editor %s change', async change => {
+    const oldRequest = pendingResult()
+    const currentRequest = pendingResult()
+    userApiPostMock.mockReturnValueOnce(oldRequest.promise)
+    const wrapper = mountModal(buildAntigravityAccount(), false, 'user')
+    await syncButton(wrapper).trigger('click')
+
+    if (change === 'account') {
+      await wrapper.setProps({ account: { ...buildAntigravityAccount(), id: 4 } })
+    } else if (change === 'reopen') {
+      await wrapper.setProps({ show: false })
+      await wrapper.setProps({ show: true })
+    } else {
+      await wrapper.setProps({ scope: 'admin' })
+    }
+    await flushPromises()
+    expect((syncButton(wrapper).element as HTMLButtonElement).disabled).toBe(false)
+    if (change === 'scope') syncUpstreamModelsMock.mockReturnValueOnce(currentRequest.promise)
+    else userApiPostMock.mockReturnValueOnce(currentRequest.promise)
+    await syncButton(wrapper).trigger('click')
+
+    if (change === 'reopen') oldRequest.reject(new Error('stale failure'))
+    else oldRequest.resolve({ data: { models: ['stale-model'] } })
+    await flushPromises()
+    expect(requestModels(wrapper)).not.toContain('stale-model')
+    expect(modelSyncErrorMock).not.toHaveBeenCalled()
+    expect(modelSyncSuccessMock).not.toHaveBeenCalled()
+    expect((syncButton(wrapper).element as HTMLButtonElement).disabled).toBe(true)
+
+    const currentResult = { models: ['current-model'] }
+    currentRequest.resolve(change === 'scope' ? currentResult : { data: currentResult })
+    await flushPromises()
+    expect(requestModels(wrapper)).toContain('current-model')
+    expect((syncButton(wrapper).element as HTMLButtonElement).disabled).toBe(false)
     wrapper.unmount()
   })
 })

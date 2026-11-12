@@ -15,8 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 )
 
@@ -287,29 +285,7 @@ const (
 )
 
 func NewClient(proxyURL string) (*Client, error) {
-	client := &http.Client{
-		Timeout: clientTimeout,
-	}
-
-	_, parsed, err := proxyurl.Parse(proxyURL)
-	if err != nil {
-		return nil, err
-	}
-	if parsed != nil {
-		transport := &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout: proxyDialTimeout,
-			}).DialContext,
-			TLSHandshakeTimeout: proxyTLSHandshakeTimeout,
-		}
-		if err := proxyutil.ConfigureTransportProxy(transport, parsed); err != nil {
-			return nil, fmt.Errorf("configure proxy: %w", err)
-		}
-		client.Transport = transport
-	}
-	return &Client{
-		httpClient: client,
-	}, nil
+	return NewClientWithDialer(proxyURL, nil)
 }
 
 // IsConnectionError 判断是否为连接错误（网络超时、DNS 失败、连接拒绝）
