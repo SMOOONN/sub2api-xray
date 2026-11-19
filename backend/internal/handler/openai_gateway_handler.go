@@ -366,7 +366,7 @@ func NewOpenAIGatewayHandler(
 	cfg *config.Config,
 	retryFilterRuntimes ...*service.RetryFilterRuntime,
 ) *OpenAIGatewayHandler {
-	pingInterval := time.Duration(0)
+	pingInterval := defaultPingInterval
 	maxAccountSwitches := 3
 	if cfg != nil {
 		pingInterval = time.Duration(cfg.Concurrency.PingInterval) * time.Second
@@ -492,9 +492,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	} else if changed {
 		body = cappedBody
 	}
-	if normalizedBody, changed := normalizeCodexPageContext(body); changed {
+	if normalizedBody, changed := normalizeCodexUntrustedContext(body); changed {
 		body = normalizedBody
-		reqLog.Info("openai.codex_page_context_normalized",
+		reqLog.Info("openai.codex_untrusted_context_normalized",
 			zap.String("normalization", "call_output_to_user_message"),
 		)
 	}
@@ -1536,6 +1536,11 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, true)
 						return
 					}
+					// Only keepalive bytes were written, so failover may continue, but
+					// every later error must be written as an SSE event.
+					if c.Writer.Written() {
+						streamStarted = true
+					}
 					if failoverErr.ShouldReportAccountScheduleFailure() {
 						h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, currentRoutingModel, false, nil), false, nil, err)
 					}
@@ -1702,20 +1707,24 @@ func (h *OpenAIGatewayHandler) handleAnthropicFailoverExhausted(c *gin.Context, 
 		h.anthropicStreamingAwareError(c, status, "api_error", failoverErr.ClientMessage, streamStarted)
 		return
 	}
+	// A failed or error frame that triggered the failover no longer reaches the
+	// client in-band, so its error passthrough rule is applied here instead.
+	if status, errType, msg, ok := service.ApplyOpenAIStreamFailedFrameRule(c, failoverErr); ok {
+		h.anthropicStreamingAwareError(c, status, errType, msg, streamStarted)
+		return
+	}
 	status, errType, errMsg := h.mapUpstreamError(failoverErr.StatusCode)
 	h.anthropicStreamingAwareError(c, status, errType, errMsg, streamStarted)
 }
 
 // ensureAnthropicErrorResponse writes a fallback Anthropic error if no response was written.
 func (h *OpenAIGatewayHandler) ensureAnthropicErrorResponse(c *gin.Context, streamStarted bool) bool {
-	if c == nil || c.Writer == nil || service.IsResponseCommitted(c) {
+	// Keepalive pings alone do not count as a written response, but they do
+	// commit the response as SSE, so the fallback must then be an SSE event.
+	if c == nil || c.Writer == nil || service.IsResponseCommitted(c) || service.OpenAICompactKeepaliveAdjustedWrittenSize(c) >= 0 {
 		return false
 	}
-	if c.Writer.Written() && service.OpenAICompactKeepaliveAdjustedWrittenSize(c) >= 0 {
-		return false
-	}
-	streamStarted = streamStarted || c.Writer.Written()
-	h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)
+	h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted || c.Writer.Written())
 	return true
 }
 
@@ -1772,11 +1781,23 @@ func normalizeCodexAutomationBootstrap(body []byte) ([]byte, bool) {
 // mayContainCodexCallOutputCandidate is a necessary condition for a bootstrap
 // candidate, checked before the full uniqueness scan and decode. Its type and
 // tool name are JSON strings, which appear literally unless a \u escape spells
-// their letters; without either, normalization cannot change the body.
+// their letters; without either, normalization cannot change the body. Escapes
+// that real clients emit (control characters, HTML-safe and non-ASCII runes)
+// cannot spell those letters and must not force the full decode.
+//
+// Tool declarations carry the same names, so a literal hit is confirmed by a
+// zero-copy scan for an input item of type function_call_output whose name
+// starts with one of toolNames. The full path rejects bodies with duplicate
+// members, and without duplicates the scan reads the same values as the
+// decoder.
 func mayContainCodexCallOutputCandidate(body []byte, toolNames ...string) bool {
-	if bytes.Contains(body, []byte(`\u`)) {
-		return true
+	if !service.JSONMayEscapePlainASCII(body) && !containsCodexCallOutputLiterals(body, toolNames) {
+		return false
 	}
+	return service.ResponsesInputHasFunctionCallOutputNamed(body, toolNames...)
+}
+
+func containsCodexCallOutputLiterals(body []byte, toolNames []string) bool {
 	if !bytes.Contains(body, []byte("function_call_output")) {
 		return false
 	}

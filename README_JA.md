@@ -38,7 +38,7 @@ Sub2API Xray は [Sub2API](https://github.com/Wei-Shaw/sub2api) の継続的に�
 
 ## 現在のバージョン
 
-本バージョンは **0.2.21-xray7** です。公式 v0.2.21 のモデル・料金計算・ゲートウェイ更新を取り込み、Xray の機能とリトライフィルター画面を維持しています。インストーラーと更新先は [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray) です。
+本バージョンは **0.2.23-xray7** です。公式 v0.2.23 をベースに、GPT-6.2 Sol と Astra、Ultra Fast の料金設定、ストリーミングとキャッシュ課金の更新を取り込んでいます。インストーラーと更新先は [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray) です。
 
 ## ⚠️ 重要なお知らせ
 

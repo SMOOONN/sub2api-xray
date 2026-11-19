@@ -76,7 +76,7 @@ func (s *OpenAIGatewayService) forwardAnthropicViaRawChatCompletions(
 		return nil, err
 	}
 	chatReq.Model = upstreamModel
-	if openai.IsGPT61SolModelSpelling(upstreamModel) {
+	if openai.IsGPT61SolModelSpelling(upstreamModel) || openai.GPT62ModelID(upstreamModel) != "" {
 		chatReq.Temperature = nil
 		chatReq.TopP = nil
 	}
@@ -174,7 +174,7 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsAnthropic(
 	if err != nil {
 		return nil, err
 	}
-	anthropicResp := apicompat.ChatCompletionsResponseToAnthropic(ccResp, originalModel)
+	anthropicResp := apicompat.ChatCompletionsResponseToAnthropic(ccResp, compositeClientModel(c.Request.Context(), originalModel))
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -182,17 +182,19 @@ func (s *OpenAIGatewayService) bufferChatCompletionsAsAnthropic(
 	c.JSON(http.StatusOK, anthropicResp)
 
 	return &OpenAIForwardResult{
-		RequestID:                   requestID,
-		UpstreamHeaders:             resp.Header,
-		Usage:                       usage,
-		Model:                       originalModel,
-		BillingModel:                billingModel,
-		UpstreamModel:               upstreamModel,
-		ReasoningEffort:             reasoningEffort,
-		UpstreamResponseServiceTier: observedUpstreamResponseServiceTier(c),
-		ServiceTier:                 resolvedOpenAIUpstreamServiceTier(c, serviceTier),
-		Stream:                      false,
-		Duration:                    time.Since(startTime),
+		RequestID:                     requestID,
+		UpstreamHeaders:               resp.Header,
+		Usage:                         usage,
+		Model:                         originalModel,
+		BillingModel:                  billingModel,
+		UpstreamModel:                 upstreamModel,
+		ReasoningEffort:               reasoningEffort,
+		UpstreamResponseModel:         observedUpstreamResponseModel(c),
+		UpstreamResponseModelConflict: observedUpstreamResponseModelConflict(c),
+		UpstreamResponseServiceTier:   observedUpstreamResponseServiceTier(c),
+		ServiceTier:                   resolvedOpenAIUpstreamServiceTier(c, serviceTier),
+		Stream:                        false,
+		Duration:                      time.Since(startTime),
 	}, nil
 }
 
@@ -210,7 +212,8 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsAnthropic(
 	ctx := c.Request.Context()
 	requestID := resp.Header.Get("x-request-id")
 	writeStreamHeaders := s.newStreamHeaderWriter(c, resp.Header)
-	anthropicState := apicompat.NewChatCompletionsToAnthropicStreamState(originalModel)
+
+	anthropicState := apicompat.NewChatCompletionsToAnthropicStreamState(compositeClientModel(ctx, originalModel))
 	clientDisconnected := false
 	var stage *openAIFirstOutputStage
 	stopKeepalive := func() {}
@@ -303,10 +306,15 @@ func (s *OpenAIGatewayService) streamChatCompletionsAsAnthropic(
 		return &OpenAIForwardResult{
 			RequestID: requestID, UpstreamHeaders: resp.Header, Usage: scan.Usage,
 			Model: originalModel, BillingModel: billingModel, UpstreamModel: upstreamModel,
-			ReasoningEffort: reasoningEffort, ServiceTier: resolvedOpenAIUpstreamServiceTier(c, serviceTier),
-			UpstreamResponseServiceTier: observedUpstreamResponseServiceTier(c),
-			Stream:                      true, Duration: time.Since(startTime), FirstTokenMs: scan.FirstTokenMs,
-			ClientDisconnect: clientDisconnected,
+			ReasoningEffort:               reasoningEffort,
+			ServiceTier:                   resolvedOpenAIUpstreamServiceTier(c, serviceTier),
+			UpstreamResponseModel:         observedUpstreamResponseModel(c),
+			UpstreamResponseModelConflict: observedUpstreamResponseModelConflict(c),
+			UpstreamResponseServiceTier:   observedUpstreamResponseServiceTier(c),
+			Stream:                        true,
+			Duration:                      time.Since(startTime),
+			FirstTokenMs:                  scan.FirstTokenMs,
+			ClientDisconnect:              clientDisconnected,
 		}
 	}
 	if scan.CallbackErr != nil {
