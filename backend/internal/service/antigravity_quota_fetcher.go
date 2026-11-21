@@ -52,13 +52,19 @@ func (f *AntigravityQuotaFetcher) FetchQuota(ctx context.Context, account *Accou
 	accessToken := account.GetCredential("access_token")
 	projectID := account.GetCredential("project_id")
 
-	client, err := antigravity.NewClient(proxyURL)
+	client, err := newAntigravityClientForContext(ctx, proxyURL)
 	if err != nil {
 		return nil, fmt.Errorf("create antigravity client failed: %w", err)
 	}
 
-	// 调用 API 获取配额
-	modelsResp, modelsRaw, err := client.FetchAvailableModels(ctx, accessToken, projectID, resolveModelsListReadLimit(f.cfg))
+	baseURL := resolveAntigravityForwardBaseURL(account)
+	if baseURL == "" {
+		return nil, errors.New("no antigravity base url configured")
+	}
+
+	// Query the same endpoint that receives forwarded requests for this account (daily for
+	// paid tiers, prod otherwise), because Google accounts quota separately per endpoint.
+	modelsResp, modelsRaw, err := client.FetchAvailableModelsFromURL(ctx, baseURL, accessToken, projectID, resolveModelsListReadLimit(f.cfg))
 	if err != nil {
 		// 403 Forbidden: 不报错，返回 is_forbidden 标记
 		var forbiddenErr *antigravity.ForbiddenError
@@ -89,7 +95,7 @@ func (f *AntigravityQuotaFetcher) FetchQuota(ctx context.Context, account *Accou
 
 	// The per-group 5-hour and weekly windows. Not on the critical path: without them the
 	// per-model figures above are shown as before.
-	if summary, err := client.RetrieveUserQuotaSummary(ctx, accessToken, projectID); err != nil {
+	if summary, err := client.RetrieveUserQuotaSummaryFromURL(ctx, baseURL, accessToken, projectID); err != nil {
 		slog.Warn("failed to fetch antigravity quota summary", "account_id", account.ID, "error", err)
 	} else {
 		usageInfo.AntigravityQuotaGroups = buildAntigravityQuotaGroups(summary)
@@ -262,16 +268,16 @@ func buildAntigravityQuotaGroups(summary *antigravity.QuotaSummaryResponse) []*A
 	return groups
 }
 
-// GetProxyURL 获取账户的代理 URL
-func (f *AntigravityQuotaFetcher) GetProxyURL(ctx context.Context, account *Account) string {
+// resolveProxy returns the proxy record and the URL derived from it for one quota request.
+func (f *AntigravityQuotaFetcher) resolveProxy(ctx context.Context, account *Account) (*Proxy, string) {
 	if account.ProxyID == nil || f.proxyRepo == nil {
-		return ""
+		return nil, ""
 	}
 	proxy, err := f.proxyRepo.GetByID(ctx, *account.ProxyID)
 	if err != nil || proxy == nil {
-		return ""
+		return nil, ""
 	}
-	return proxy.URL()
+	return proxy, proxy.URL()
 }
 
 // classifyForbiddenType 根据 403 响应体判断禁止类型

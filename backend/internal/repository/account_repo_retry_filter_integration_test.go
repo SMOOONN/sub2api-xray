@@ -79,7 +79,7 @@ func newRetryFilterBindingAdmin(t *testing.T, repo service.AdminAccountRepositor
 	admin := service.NewAdminService(
 		nil, nil, NewAdminGroupRepository(client, integrationDB), repo,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		integrationDB, client, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		integrationDB, client, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	updater, ok := admin.(service.RetryFilterBindingAtomicUpdater)
 	require.True(t, ok)

@@ -63,8 +63,8 @@ func TestManager_SearchWithBestProvider_UsesFirstAvailable(t *testing.T) {
 		{Type: "brave", APIKey: "k1"},
 		{Type: "tavily", APIKey: "k2"},
 	}, nil)
-	m.clientCache[srvBrave.URL] = srvBrave.Client()
-	m.clientCache[""] = srvBrave.Client()
+	m.clientCache[clientKey{proxyURL: srvBrave.URL}] = srvBrave.Client()
+	m.clientCache[clientKey{}] = srvBrave.Client()
 
 	resp, providerName, err := m.SearchWithBestProvider(context.Background(), SearchRequest{Query: "test"})
 	require.NoError(t, err)
@@ -89,7 +89,7 @@ func TestManager_SearchWithBestProvider_NilRedis(t *testing.T) {
 	m := NewManager([]ProviderConfig{
 		{Type: "brave", APIKey: "k", QuotaLimit: 100},
 	}, nil)
-	m.clientCache[""] = srv.Client()
+	m.clientCache[clientKey{}] = srv.Client()
 
 	resp, _, err := m.SearchWithBestProvider(context.Background(), SearchRequest{Query: "test"})
 	require.NoError(t, err)
@@ -291,27 +291,40 @@ func TestSelectByQuotaWeight_Empty(t *testing.T) {
 // --- newHTTPClient ---
 
 func TestNewHTTPClient_NoProxy(t *testing.T) {
-	c, err := newHTTPClient("")
+	c, err := newHTTPClient("", NetworkPolicy{})
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewHTTPClient_InvalidProxy(t *testing.T) {
-	_, err := newHTTPClient("://bad-url")
+	_, err := newHTTPClient("://bad-url", NetworkPolicy{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid proxy URL")
 }
 
 func TestNewHTTPClient_ValidHTTPProxy(t *testing.T) {
-	c, err := newHTTPClient("http://proxy.example.com:8080")
+	c, err := newHTTPClient("http://proxy.example.com:8080", NetworkPolicy{})
 	require.NoError(t, err)
 	require.NotNil(t, c)
 }
 
 func TestNewHTTPClient_ValidSOCKS5Proxy(t *testing.T) {
-	c, err := newHTTPClient("socks5://proxy.example.com:1080")
+	c, err := newHTTPClient("socks5://proxy.example.com:1080", NetworkPolicy{})
 	require.NoError(t, err)
 	require.NotNil(t, c)
+}
+
+func TestManagerSeparatesClientCacheByNetworkPolicy(t *testing.T) {
+	m := NewManager(nil, nil)
+	const proxyURL = "http://proxy.example.com:8080"
+	shared, err := m.getOrCreateHTTPClient(proxyURL, NetworkPolicy{})
+	require.NoError(t, err)
+	publicOnly, err := m.getOrCreateHTTPClient(proxyURL, NetworkPolicy{PublicOnly: true})
+	require.NoError(t, err)
+	require.NotSame(t, shared, publicOnly)
+	reused, err := m.getOrCreateHTTPClient(proxyURL, NetworkPolicy{PublicOnly: true})
+	require.NoError(t, err)
+	require.Same(t, publicOnly, reused)
 }
 
 // --- ResetUsage ---

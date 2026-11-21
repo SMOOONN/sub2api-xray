@@ -215,8 +215,15 @@ func doWebSearch(ctx context.Context, account *Account, query string) (*websearc
 	if mgr == nil {
 		return nil, "", fmt.Errorf("web search emulation: manager not initialized")
 	}
+	policy := HTTPUpstreamNetworkPolicyForAccount(account, proxyURL)
 	resp, providerName, err := mgr.SearchWithBestProvider(ctx, websearch.SearchRequest{
-		Query: query, MaxResults: webSearchDefaultMaxResults, ProxyURL: proxyURL,
+		Query:      query,
+		MaxResults: webSearchDefaultMaxResults,
+		ProxyURL:   proxyURL,
+		NetworkPolicy: websearch.NetworkPolicy{
+			PublicOnly:           policy.PublicOnly,
+			AllowedDialAddresses: policy.AllowedDialAddresses,
+		},
 	})
 	if err != nil {
 		slog.Error("web search emulation: search failed", "error", err)

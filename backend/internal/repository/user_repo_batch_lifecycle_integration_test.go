@@ -92,7 +92,7 @@ func TestAdminBatchDisableUsersDeprovisionsPrivateResources(t *testing.T) {
 	users := NewUserRepository(client, integrationDB)
 	adminService := service.NewAdminService(
 		nil, users, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-		invalidator, integrationDB, client, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		invalidator, integrationDB, client, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	affected, err := adminService.BatchDisableUsers(ctx, []int64{f.userID, admin.ID, f.userID})
 	require.NoError(t, err)

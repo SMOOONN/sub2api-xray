@@ -38,7 +38,7 @@ Sub2API Xray 是 [Sub2API](https://github.com/Wei-Shaw/sub2api) 的持续维护�
 
 ## 当前版本
 
-本版本为 **0.2.23-xray7**，基于官方 v0.2.23，包含 GPT-6.2 Sol 和 Astra、Ultra Fast 定价，以及流式响应和缓存计费更新。安装器与在线更新使用 [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray)。
+当前版本为 **0.2.24-xray7**，基于官方 v0.2.24，包含更严格的网关请求校验、支持返回来源的 Exa 网页搜索，以及账号刷新和调度修复。安装器与在线更新使用 [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray)。
 
 ## ⚠️ 重要提醒
 

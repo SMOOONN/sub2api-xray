@@ -38,7 +38,7 @@ The user resource workspace is controlled by `enable_user_resources` and is disa
 
 ## Current Version
 
-This version is **0.2.23-xray7**, based on upstream v0.2.23. It includes GPT-6.2 Sol and Astra, Ultra Fast pricing, and streaming and cache billing updates. Installers and updates use [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray).
+The current version is **0.2.24-xray7**, based on upstream v0.2.24. It includes stricter gateway request validation, Exa web search with sources, and account refresh and scheduling fixes. Installers and updates use [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray).
 
 ## ⚠️ Important Notice
 

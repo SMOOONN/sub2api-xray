@@ -9,19 +9,20 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/redis/go-redis/v9"
 )
 
 // ProviderConfig holds the configuration for a single search provider.
 type ProviderConfig struct {
-	Type         string `json:"type"`                    // ProviderTypeBrave | ProviderTypeTavily
+	Type         string `json:"type"`                    // ProviderTypeBrave | ProviderTypeTavily | ProviderTypeExa
 	APIKey       string `json:"api_key"`                 // secret
 	QuotaLimit   int64  `json:"quota_limit"`             // 0 = unlimited
 	SubscribedAt *int64 `json:"subscribed_at,omitempty"` // subscription start (unix seconds); quota resets monthly from this date
@@ -36,7 +37,13 @@ type Manager struct {
 	redis   *redis.Client
 
 	clientMu    sync.Mutex
-	clientCache map[string]*http.Client
+	clientCache map[clientKey]*http.Client
+}
+
+type clientKey struct {
+	proxyURL             string
+	publicOnly           bool
+	allowedDialAddresses string
 }
 
 // Timeout constants for proxy and search operations.
@@ -80,7 +87,7 @@ func NewManager(configs []ProviderConfig, redisClient *redis.Client) *Manager {
 	return &Manager{
 		configs:     copied,
 		redis:       redisClient,
-		clientCache: make(map[string]*http.Client),
+		clientCache: make(map[clientKey]*http.Client),
 	}
 }
 
@@ -369,11 +376,11 @@ func (m *Manager) TestSearch(ctx context.Context, req SearchRequest) (*SearchRes
 }
 
 func (m *Manager) executeSearch(ctx context.Context, cfg ProviderConfig, req SearchRequest) (*SearchResponse, error) {
-	proxyURL := cfg.ProxyURL
-	if req.ProxyURL != "" {
-		proxyURL = req.ProxyURL
+	proxyURL, policy := req.ProxyURL, req.NetworkPolicy
+	if proxyURL == "" && cfg.ProxyURL != "" {
+		proxyURL, policy = cfg.ProxyURL, NetworkPolicy{}
 	}
-	client, err := m.getOrCreateHTTPClient(proxyURL)
+	client, err := m.getOrCreateHTTPClient(proxyURL, policy)
 	if err != nil {
 		return nil, fmt.Errorf("websearch: %w", err)
 	}
@@ -383,21 +390,26 @@ func (m *Manager) executeSearch(ctx context.Context, cfg ProviderConfig, req Sea
 
 // --- HTTP client cache ---
 
-func (m *Manager) getOrCreateHTTPClient(proxyURL string) (*http.Client, error) {
+func (m *Manager) getOrCreateHTTPClient(proxyURL string, policy NetworkPolicy) (*http.Client, error) {
+	key := clientKey{
+		proxyURL:             proxyURL,
+		publicOnly:           policy.PublicOnly,
+		allowedDialAddresses: strings.Join(policy.AllowedDialAddresses, ","),
+	}
 	m.clientMu.Lock()
 	defer m.clientMu.Unlock()
 
-	if c, ok := m.clientCache[proxyURL]; ok {
+	if c, ok := m.clientCache[key]; ok {
 		return c, nil
 	}
 	if len(m.clientCache) >= maxCachedClients {
-		m.clientCache = make(map[string]*http.Client)
+		m.clientCache = make(map[clientKey]*http.Client)
 	}
-	c, err := newHTTPClient(proxyURL)
+	c, err := newHTTPClient(proxyURL, policy)
 	if err != nil {
 		return nil, err
 	}
-	m.clientCache[proxyURL] = c
+	m.clientCache[key] = c
 	return c, nil
 }
 
@@ -405,21 +417,28 @@ func (m *Manager) getOrCreateHTTPClient(proxyURL string) (*http.Client, error) {
 // Uses proxyutil.ConfigureTransportProxy for unified proxy protocol support
 // (HTTP/HTTPS/SOCKS5/SOCKS5H).
 // Returns error if proxyURL is invalid — never falls back to direct connection.
-func newHTTPClient(proxyURL string) (*http.Client, error) {
+func newHTTPClient(proxyURL string, policy NetworkPolicy) (*http.Client, error) {
+	_, proxy, err := proxyurl.Parse(proxyURL)
+	if err != nil {
+		return nil, err
+	}
 	transport := &http.Transport{
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
 		DialContext:           (&net.Dialer{Timeout: proxyDialTimeout}).DialContext,
 		TLSHandshakeTimeout:   proxyTLSTimeout,
 		ResponseHeaderTimeout: searchDataTimeout,
 	}
-	if proxyURL != "" {
-		parsed, err := url.Parse(proxyURL)
-		if err != nil {
-			return nil, fmt.Errorf("invalid proxy URL %q: %w", proxyURL, err)
+	var protectedDial func(context.Context, string, string) (net.Conn, error)
+	if policy.PublicOnly {
+		dialer := urlvalidator.NewPublicOnlyDialer(policy.AllowedDialAddresses)
+		protectedDial = func(ctx context.Context, network, address string) (net.Conn, error) {
+			ctx, cancel := context.WithTimeout(ctx, proxyDialTimeout)
+			defer cancel()
+			return dialer.DialContext(ctx, network, address)
 		}
-		if err := proxyutil.ConfigureTransportProxy(transport, parsed); err != nil {
-			return nil, fmt.Errorf("configure proxy: %w", err)
-		}
+	}
+	if err := proxyutil.ConfigureTransportProxyWithDialer(transport, proxy, protectedDial); err != nil {
+		return nil, fmt.Errorf("configure proxy: %w", err)
 	}
 	return &http.Client{Transport: transport, Timeout: searchRequestTimeout}, nil
 }
@@ -464,6 +483,8 @@ func (m *Manager) buildProvider(cfg ProviderConfig, client *http.Client) Provide
 		return NewBraveProvider(cfg.APIKey, client)
 	case tavilyProviderName:
 		return NewTavilyProvider(cfg.APIKey, client)
+	case exaProviderName:
+		return NewExaProvider(cfg.APIKey, client)
 	default:
 		slog.Warn("websearch: unknown provider type, falling back to brave",
 			"type", cfg.Type)
