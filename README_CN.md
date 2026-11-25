@@ -38,7 +38,7 @@ Sub2API Xray 是 [Sub2API](https://github.com/Wei-Shaw/sub2api) 的持续维护�
 
 ## 当前版本
 
-当前版本为 **0.2.24-xray7**，基于官方 v0.2.24，包含更严格的网关请求校验、支持返回来源的 Exa 网页搜索，以及账号刷新和调度修复。安装器与在线更新使用 [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray)。
+当前版本为 **0.2.25-xray7**，基于官方 v0.2.25，包含请求头身份变量及隐私保护、上游分组同步、错误透传和 WebSocket 安全更新；恢复官方控件尺寸、收窄账号筛选，并自动清理订阅中移除的节点。删除订阅源会同时移除所属节点，相关账号改为无代理直连。安装器与在线更新使用 [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray)。
 
 ## ⚠️ 重要提醒
 

@@ -606,9 +606,11 @@ type UserResourcePage struct {
 }
 
 type ProxyImportResult struct {
-	Created []map[string]any `json:"created"`
-	Updated []map[string]any `json:"updated,omitempty"`
-	Errors  []string         `json:"errors"`
+	DeletedCount         int              `json:"deleted_count"`
+	DetachedAccountCount int              `json:"detached_account_count"`
+	Created              []map[string]any `json:"created"`
+	Updated              []map[string]any `json:"updated,omitempty"`
+	Errors               []string         `json:"errors"`
 }
 
 type UserAccountImportResult struct {
@@ -619,39 +621,45 @@ type UserAccountImportResult struct {
 }
 
 type ProxySourceSyncResult struct {
-	SourceID      int64            `json:"source_id"`
-	Status        string           `json:"status"`
-	ImportedCount int              `json:"imported_count"`
-	CreatedCount  int              `json:"created_count"`
-	UpdatedCount  int              `json:"updated_count"`
-	Errors        []string         `json:"errors,omitempty"`
-	Created       []map[string]any `json:"created,omitempty"`
-	Updated       []map[string]any `json:"updated,omitempty"`
+	DeletedCount         int              `json:"deleted_count"`
+	DetachedAccountCount int              `json:"detached_account_count"`
+	SourceID             int64            `json:"source_id"`
+	Status               string           `json:"status"`
+	ImportedCount        int              `json:"imported_count"`
+	CreatedCount         int              `json:"created_count"`
+	UpdatedCount         int              `json:"updated_count"`
+	Errors               []string         `json:"errors,omitempty"`
+	Created              []map[string]any `json:"created,omitempty"`
+	Updated              []map[string]any `json:"updated,omitempty"`
 }
 
 // ProxySourceSyncAllItem is the per-source line of a "sync every source" run.
 // It deliberately carries counts only: node payloads would leak credentials and
 // subscription URLs into a response that lists every source at once.
 type ProxySourceSyncAllItem struct {
-	SourceID      int64  `json:"source_id"`
-	Name          string `json:"name"`
-	Status        string `json:"status"`
-	ImportedCount int    `json:"imported_count"`
-	CreatedCount  int    `json:"created_count"`
-	UpdatedCount  int    `json:"updated_count"`
-	Error         string `json:"error,omitempty"`
+	DeletedCount         int    `json:"deleted_count"`
+	DetachedAccountCount int    `json:"detached_account_count"`
+	SourceID             int64  `json:"source_id"`
+	Name                 string `json:"name"`
+	Status               string `json:"status"`
+	ImportedCount        int    `json:"imported_count"`
+	CreatedCount         int    `json:"created_count"`
+	UpdatedCount         int    `json:"updated_count"`
+	Error                string `json:"error,omitempty"`
 }
 
 type ProxySourceSyncAllResult struct {
-	Total         int                      `json:"total"`
-	SuccessCount  int                      `json:"success_count"`
-	PartialCount  int                      `json:"partial_count"`
-	FailedCount   int                      `json:"failed_count"`
-	SkippedCount  int                      `json:"skipped_count"`
-	DeferredCount int                      `json:"deferred_count"`
-	CreatedCount  int                      `json:"created_count"`
-	UpdatedCount  int                      `json:"updated_count"`
-	Items         []ProxySourceSyncAllItem `json:"items"`
+	DeletedCount         int                      `json:"deleted_count"`
+	DetachedAccountCount int                      `json:"detached_account_count"`
+	Total                int                      `json:"total"`
+	SuccessCount         int                      `json:"success_count"`
+	PartialCount         int                      `json:"partial_count"`
+	FailedCount          int                      `json:"failed_count"`
+	SkippedCount         int                      `json:"skipped_count"`
+	DeferredCount        int                      `json:"deferred_count"`
+	CreatedCount         int                      `json:"created_count"`
+	UpdatedCount         int                      `json:"updated_count"`
+	Items                []ProxySourceSyncAllItem `json:"items"`
 }
 
 type UserSubscriptionAssignInput struct {
@@ -3077,6 +3085,12 @@ func (s *UserResourceService) DeleteSystemProxySource(ctx context.Context, sourc
 }
 
 func (s *UserResourceService) deleteProxySourceForOwner(ctx context.Context, ownerID *int64, sourceID int64) error {
+	return retryProxySourceTransaction(ctx, func() error {
+		return s.deleteProxySourceForOwnerOnce(ctx, ownerID, sourceID)
+	})
+}
+
+func (s *UserResourceService) deleteProxySourceForOwnerOnce(ctx context.Context, ownerID *int64, sourceID int64) error {
 	if err := s.ensureDB(); err != nil {
 		return err
 	}
@@ -3094,7 +3108,7 @@ WHERE id = $1 AND owner_user_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL`,
 	if affected(res) == 0 {
 		return ErrUserResourceNotFound
 	}
-	staleIDs, accountIDs, err := s.disableMissingProxySourceNodesWith(ctx, tx, ownerID, sourceID, nil)
+	staleIDs, accountIDs, _, err := s.deleteMissingProxySourceNodesWith(ctx, tx, ownerID, sourceID, nil)
 	if err != nil {
 		return err
 	}
@@ -3126,25 +3140,34 @@ func (s *UserResourceService) SyncSystemProxySource(ctx context.Context, sourceI
 }
 
 func (s *UserResourceService) syncProxySourceForOwner(ctx context.Context, ownerID *int64, sourceID int64) (*ProxySourceSyncResult, error) {
-	source, err := s.getProxySourceForOwner(ctx, ownerID, sourceID)
+	if err := s.ensureDB(); err != nil {
+		return nil, err
+	}
+	var sourceName, subscriptionURL string
+	var isPublic bool
+	snapshot := &proxySourceSyncSnapshot{}
+	err := s.db.QueryRowContext(ctx, `SELECT name, subscription_url, is_public, xmin::text FROM proxy_sources
+WHERE id = $1 AND owner_user_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL`, sourceID, userResourceOwnerValue(ownerID)).Scan(&sourceName, &subscriptionURL, &isPublic, &snapshot.revision)
+	if err == sql.ErrNoRows {
+		return nil, ErrUserResourceNotFound
+	}
 	if err != nil {
 		return nil, err
 	}
-	subscriptionURL := urAsString(source["subscription_url"])
 	content, userInfoHeader, err := fetchProxySubscription(ctx, subscriptionURL)
 	if err != nil {
-		if statusErr := s.recordProxySourceSyncError(ctx, ownerID, sourceID, err); statusErr != nil {
+		if statusErr := s.recordProxySourceSyncError(ctx, ownerID, sourceID, snapshot.revision, err); statusErr != nil {
 			return nil, errors.Join(err, fmt.Errorf("record proxy source sync failure: %w", statusErr))
 		}
 		return nil, err
 	}
-	// Informational only: a failure here must not abort a successful import.
-	if infoErr := s.recordProxySourceSubscriptionInfo(ctx, ownerID, sourceID, parseProxySubscriptionUserInfo(userInfoHeader)); infoErr != nil {
-		slog.Warn("record proxy source subscription info failed", "owner_user_id", userResourceOwnerValue(ownerID), "source_id", sourceID, "error", infoErr)
-	}
-	imported, err := s.syncProxySourceNodes(ctx, ownerID, sourceID, urAsString(source["name"]), content, toBool(source["is_public"]))
+	snapshot.info = parseProxySubscriptionUserInfo(userInfoHeader)
+	imported, err := s.syncProxySourceNodes(ctx, ownerID, sourceID, sourceName, content, isPublic, snapshot)
 	if err != nil {
-		if statusErr := s.recordProxySourceSyncError(ctx, ownerID, sourceID, err); statusErr != nil {
+		if errors.Is(err, errProxySourceChanged) {
+			return nil, err
+		}
+		if statusErr := s.recordProxySourceSyncError(ctx, ownerID, sourceID, snapshot.revision, err); statusErr != nil {
 			return nil, errors.Join(err, fmt.Errorf("record proxy source sync failure: %w", statusErr))
 		}
 		return nil, err
@@ -3157,14 +3180,16 @@ func (s *UserResourceService) syncProxySourceForOwner(ctx context.Context, owner
 		s.enqueueImportedProxyQualityChecks(*ownerID, qualityProxyIDs)
 	}
 	return &ProxySourceSyncResult{
-		SourceID:      sourceID,
-		Status:        status,
-		ImportedCount: importedCount,
-		CreatedCount:  len(imported.Created),
-		UpdatedCount:  len(imported.Updated),
-		Errors:        imported.Errors,
-		Created:       imported.Created,
-		Updated:       imported.Updated,
+		SourceID:             sourceID,
+		Status:               status,
+		ImportedCount:        importedCount,
+		CreatedCount:         len(imported.Created),
+		UpdatedCount:         len(imported.Updated),
+		DeletedCount:         imported.DeletedCount,
+		DetachedAccountCount: imported.DetachedAccountCount,
+		Errors:               imported.Errors,
+		Created:              imported.Created,
+		Updated:              imported.Updated,
 	}, nil
 }
 
@@ -3217,9 +3242,13 @@ func (s *UserResourceService) syncAllProxySourcesForOwner(ctx context.Context, o
 			item.ImportedCount = syncResult.ImportedCount
 			item.CreatedCount = syncResult.CreatedCount
 			item.UpdatedCount = syncResult.UpdatedCount
+			item.DeletedCount = syncResult.DeletedCount
+			item.DetachedAccountCount = syncResult.DetachedAccountCount
 			item.Error = truncateUTF8(strings.Join(syncResult.Errors, "\n"), proxySourceSyncAllErrorLimit)
 			result.CreatedCount += syncResult.CreatedCount
 			result.UpdatedCount += syncResult.UpdatedCount
+			result.DeletedCount += syncResult.DeletedCount
+			result.DetachedAccountCount += syncResult.DetachedAccountCount
 			switch syncResult.Status {
 			case "success":
 				result.SuccessCount++
@@ -3266,7 +3295,17 @@ ORDER BY id ASC`, userResourceOwnerValue(ownerID))
 	return targets, nil
 }
 
-func (s *UserResourceService) syncProxySourceNodes(ctx context.Context, ownerID *int64, sourceID int64, sourceName, raw string, isPublic bool) (*ProxyImportResult, error) {
+func (s *UserResourceService) syncProxySourceNodes(ctx context.Context, ownerID *int64, sourceID int64, sourceName, raw string, isPublic bool, snapshot *proxySourceSyncSnapshot) (*ProxyImportResult, error) {
+	var result *ProxyImportResult
+	err := retryProxySourceTransaction(ctx, func() error {
+		var err error
+		result, err = s.syncProxySourceNodesOnce(ctx, ownerID, sourceID, sourceName, raw, isPublic, snapshot)
+		return err
+	})
+	return result, err
+}
+
+func (s *UserResourceService) syncProxySourceNodesOnce(ctx context.Context, ownerID *int64, sourceID int64, sourceName, raw string, isPublic bool, snapshot *proxySourceSyncSnapshot) (*ProxyImportResult, error) {
 	nodes := parseProxyNodeLines(raw)
 	if len(nodes) > userResourceBatchMaxItems {
 		return nil, infraerrors.BadRequest("USER_RESOURCE_BATCH_TOO_LARGE", "proxy imports cannot exceed 1000 nodes")
@@ -3322,24 +3361,32 @@ func (s *UserResourceService) syncProxySourceNodes(ctx context.Context, ownerID 
 		}
 		prepared = append(prepared, preparedNode{key: nodeKey, payload: payload})
 	}
-	// A non-empty response where every entry failed to parse is not authoritative;
-	// preserve the last known-good nodes so a format regression cannot drop a pool.
-	allEntriesFailed := len(nodes) > 0 && len(seenKeys) == 0 && len(result.Errors) > 0
-	authoritative := !allEntriesFailed
+	// Only a fully parsed and validated list may remove nodes. A partially
+	// broken response cannot reliably identify which old nodes are missing.
+	authoritative := len(result.Errors) == 0
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	var lockedSourceID int64
+	var revision string
 	if err := tx.QueryRowContext(ctx, `
-SELECT id FROM proxy_sources
+SELECT id, xmin::text FROM proxy_sources
 WHERE id = $1 AND owner_user_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL
-FOR UPDATE`, sourceID, userResourceOwnerValue(ownerID)).Scan(&lockedSourceID); err != nil {
+FOR UPDATE`, sourceID, userResourceOwnerValue(ownerID)).Scan(&lockedSourceID, &revision); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrUserResourceNotFound
 		}
 		return nil, err
+	}
+	if snapshot != nil {
+		if revision != snapshot.revision {
+			return nil, errProxySourceChanged
+		}
+		if err := s.recordProxySourceSubscriptionInfo(ctx, tx, ownerID, sourceID, snapshot.info); err != nil {
+			return nil, err
+		}
 	}
 	currentByKey, err := proxySourceNodesByKey(ctx, tx, ownerID, sourceID)
 	if err != nil {
@@ -3356,7 +3403,15 @@ FOR UPDATE`, sourceID, userResourceOwnerValue(ownerID)).Scan(&lockedSourceID); e
 		if err := tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM proxies WHERE owner_user_id IS NOT DISTINCT FROM $1 AND deleted_at IS NULL", userResourceOwnerValue(ownerID)).Scan(&ownedCount); err != nil {
 			return nil, err
 		}
-		if ownedCount+newCount > userResourceMaxProxies {
+		removedCount := 0
+		if authoritative {
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM proxies
+WHERE owner_user_id IS NOT DISTINCT FROM $1 AND deleted_at IS NULL AND extra->>'source_id' = $2
+AND NOT (COALESCE(extra->>'source_node_key', '') = ANY($3))`, userResourceOwnerValue(ownerID), strconv.FormatInt(sourceID, 10), pq.Array(seenKeys)).Scan(&removedCount); err != nil {
+				return nil, err
+			}
+		}
+		if ownedCount+newCount-removedCount > userResourceMaxProxies {
 			return nil, infraerrors.Newf(http.StatusTooManyRequests, "USER_RESOURCE_LIMIT_REACHED", "proxies limit of %d reached", userResourceMaxProxies)
 		}
 	}
@@ -3386,11 +3441,12 @@ FOR UPDATE`, sourceID, userResourceOwnerValue(ownerID)).Scan(&lockedSourceID); e
 	staleIDs := []int64{}
 	accountIDs := []int64{}
 	if authoritative {
-		staleIDs, accountIDs, err = s.disableMissingProxySourceNodesWith(ctx, tx, ownerID, sourceID, seenKeys)
+		staleIDs, accountIDs, result.DetachedAccountCount, err = s.deleteMissingProxySourceNodesWith(ctx, tx, ownerID, sourceID, seenKeys)
 		if err != nil {
 			return nil, err
 		}
 	}
+	result.DeletedCount = len(staleIDs)
 	updatedAccountIDs, err := clearProxyDependentProbeWith(ctx, tx, updatedRuntimeIDs)
 	if err != nil {
 		return nil, err
@@ -3480,48 +3536,20 @@ func proxySourceSyncSummary(result *ProxyImportResult) (string, int, string) {
 	return status, importedCount, errorText
 }
 
-func (s *UserResourceService) recordProxySourceSyncError(ctx context.Context, ownerID *int64, sourceID int64, syncErr error) error {
+func (s *UserResourceService) recordProxySourceSyncError(ctx context.Context, ownerID *int64, sourceID int64, revision string, syncErr error) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	res, err := s.db.ExecContext(ctx, `
 UPDATE proxy_sources
 SET last_synced_at = NOW(), last_sync_status = 'error', last_sync_error = $1, updated_at = NOW()
-WHERE id = $2 AND owner_user_id IS NOT DISTINCT FROM $3 AND deleted_at IS NULL`, safeSyncError(syncErr), sourceID, userResourceOwnerValue(ownerID))
+WHERE id = $2 AND owner_user_id IS NOT DISTINCT FROM $3 AND deleted_at IS NULL AND xmin::text = $4`, safeSyncError(syncErr), sourceID, userResourceOwnerValue(ownerID), revision)
 	if err != nil {
 		return err
 	}
 	if affected(res) == 0 {
-		return ErrUserResourceNotFound
+		return errProxySourceChanged
 	}
 	return nil
-}
-
-func (s *UserResourceService) disableMissingProxySourceNodesWith(ctx context.Context, db userResourceDBTX, ownerID *int64, sourceID int64, activeKeys []string) ([]int64, []int64, error) {
-	rows, err := db.QueryContext(ctx, `
-UPDATE proxies
-SET status = 'disabled', updated_at = NOW()
-WHERE owner_user_id IS NOT DISTINCT FROM $1 AND deleted_at IS NULL AND status <> 'disabled'
-  AND extra->>'source_id' = $2
-  AND NOT (extra->>'source_node_key' = ANY($3))
-RETURNING id`, userResourceOwnerValue(ownerID), strconv.FormatInt(sourceID, 10), pq.Array(activeKeys))
-	if err != nil {
-		return nil, nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	ids := make([]int64, 0)
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, nil, err
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, err
-	}
-	accountIDs, err := clearProxyDependentProbeWith(ctx, db, ids)
-	if err != nil {
-		return nil, nil, err
-	}
-	return ids, accountIDs, nil
 }
 
 func clearProxyDependentProbeWith(ctx context.Context, db userResourceDBTX, proxyIDs []int64) ([]int64, error) {
@@ -6110,10 +6138,9 @@ func parseSubscriptionUserInfoNumber(value string) (int64, bool) {
 	return int64(parsed), true
 }
 
-// recordProxySourceSubscriptionInfo stores the airport quota/expiry snapshot in
-// its own statement, outside the node-import transaction: the numbers stay valid
-// even when parsing the node list fails.
-func (s *UserResourceService) recordProxySourceSubscriptionInfo(ctx context.Context, ownerID *int64, sourceID int64, info proxySubscriptionUserInfo) error {
+// recordProxySourceSubscriptionInfo uses the caller's version-checked transaction.
+// A parsed list with entry errors can still record quota/expiry without deleting nodes.
+func (s *UserResourceService) recordProxySourceSubscriptionInfo(ctx context.Context, db userResourceDBTX, ownerID *int64, sourceID int64, info proxySubscriptionUserInfo) error {
 	if !info.hasAny() {
 		return nil
 	}
@@ -6136,7 +6163,7 @@ func (s *UserResourceService) recordProxySourceSubscriptionInfo(ctx context.Cont
 	}
 	assignments = append(assignments, "sub_info_updated_at = NOW()", "updated_at = NOW()")
 	args = append(args, sourceID, userResourceOwnerValue(ownerID))
-	_, err := s.db.ExecContext(ctx, fmt.Sprintf(`
+	_, err := db.ExecContext(ctx, fmt.Sprintf(`
 UPDATE proxy_sources SET %s
 WHERE id = $%d AND owner_user_id IS NOT DISTINCT FROM $%d AND deleted_at IS NULL`,
 		strings.Join(assignments, ", "), len(args)-1, len(args)), args...)
@@ -6278,11 +6305,14 @@ func parseSingBoxProxyNodes(raw string) ([]parsedProxyNode, bool) {
 		return nil, false
 	}
 
-	items := singBoxOutboundItems(document)
-	if len(items) == 0 {
+	items, recognized, invalid := singBoxOutboundItems(document)
+	if !recognized {
 		return nil, false
 	}
 	out := make([]parsedProxyNode, 0, len(items))
+	if invalid {
+		out = append(out, parsedProxyNode{Err: "invalid sing-box node list or entry"})
+	}
 	for _, outbound := range items {
 		protocol := strings.ToLower(strings.TrimSpace(urAsString(outbound["type"])))
 		switch protocol {
@@ -6291,18 +6321,21 @@ func parseSingBoxProxyNodes(raw string) ([]parsedProxyNode, bool) {
 		}
 		out = append(out, parseSingBoxProxyNode(outbound))
 	}
-	if len(out) == 0 {
+	if len(out) == 0 && len(items) > 0 {
 		return []parsedProxyNode{{Err: "sing-box config contains no supported proxy outbounds"}}, true
 	}
 	return out, true
 }
 
-func singBoxOutboundItems(document any) []map[string]any {
+func singBoxOutboundItems(document any) ([]map[string]any, bool, bool) {
+	invalid := false
 	toMaps := func(values []any) []map[string]any {
 		out := make([]map[string]any, 0, len(values))
 		for _, value := range values {
 			if item, ok := value.(map[string]any); ok {
 				out = append(out, item)
+			} else {
+				invalid = true
 			}
 		}
 		return out
@@ -6310,22 +6343,31 @@ func singBoxOutboundItems(document any) []map[string]any {
 
 	switch value := document.(type) {
 	case []any:
-		return toMaps(value)
+		items := toMaps(value)
+		return items, true, invalid
 	case map[string]any:
 		combined := make([]map[string]any, 0)
+		recognized := false
 		for _, key := range []string{"outbounds", "endpoints"} {
-			if items, ok := value[key].([]any); ok && len(items) > 0 {
+			raw, exists := value[key]
+			if !exists {
+				continue
+			}
+			recognized = true
+			if items, ok := raw.([]any); ok {
 				combined = append(combined, toMaps(items)...)
+			} else {
+				invalid = true
 			}
 		}
-		if len(combined) > 0 {
-			return combined
+		if recognized {
+			return combined, true, invalid
 		}
 		if strings.TrimSpace(urAsString(value["type"])) != "" {
-			return []map[string]any{value}
+			return []map[string]any{value}, true, false
 		}
 	}
-	return nil
+	return nil, false, false
 }
 
 func parseSingBoxProxyNode(outbound map[string]any) parsedProxyNode {
@@ -6554,8 +6596,8 @@ func parseClashProxyNodes(raw string) ([]parsedProxyNode, bool) {
 		return nil, false
 	}
 	var doc clashProxyDocument
-	if err := yaml.Unmarshal([]byte(raw), &doc); err != nil || len(doc.Proxies) == 0 {
-		return nil, false
+	if err := yaml.Unmarshal([]byte(raw), &doc); err != nil || doc.Proxies == nil {
+		return []parsedProxyNode{{Err: "invalid Clash proxy list"}}, true
 	}
 	out := make([]parsedProxyNode, 0, len(doc.Proxies))
 	for _, proxy := range doc.Proxies {

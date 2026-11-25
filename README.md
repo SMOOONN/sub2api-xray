@@ -38,7 +38,7 @@ The user resource workspace is controlled by `enable_user_resources` and is disa
 
 ## Current Version
 
-The current version is **0.2.24-xray7**, based on upstream v0.2.24. It includes stricter gateway request validation, Exa web search with sources, and account refresh and scheduling fixes. Installers and updates use [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray).
+The current version is **0.2.25-xray7**, based on upstream v0.2.25. It adds request-header identity variables with privacy protection and upstream group synchronization, improves error forwarding, updates WebSocket security, and restores official control sizes with narrower account filters. Subscription refreshes remove retired nodes; deleting a source also removes its nodes. Accounts bound to removed nodes switch to direct connections. Installers and updates use [SMOOONN/sub2api-xray](https://github.com/SMOOONN/sub2api-xray).
 
 ## ⚠️ Important Notice
 

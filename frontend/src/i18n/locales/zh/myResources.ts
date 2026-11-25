@@ -341,7 +341,7 @@ export default {
     sourceSyncResumed: '已恢复该订阅源的自动同步',
     sourceSyncAllDone: '全部订阅源同步完成',
     sourceSyncAllPartial: '同步完成，{failed} 个订阅源失败',
-    sourceDeleteConfirm: '确认删除该订阅源？',
+    sourceDeleteConfirm: '确认删除该订阅源及其全部节点？绑定账号将改为无代理直连，相关备用代理引用也会解除。',
     sourceDeleted: '订阅源已删除',
     sourceDeleteFailed: '删除订阅源失败',
     extendDaysInvalid: '续期天数必须大于 0',

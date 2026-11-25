@@ -102,7 +102,7 @@ func (s *sparkShadowRepoStub) Update(_ context.Context, account *Account) error 
 	return nil
 }
 
-func (s *sparkShadowRepoStub) UpdateAccountWithGroupsAtomically(_ context.Context, account *Account, groupIDs []int64, _ *bool) error {
+func (s *sparkShadowRepoStub) UpdateAccountWithGroupsAtomically(_ context.Context, account *Account, groupIDs []int64, _ AccountBillingSettingsUpdate) error {
 	if _, ok := s.accounts[account.ID]; !ok {
 		return ErrAccountNotFound
 	}

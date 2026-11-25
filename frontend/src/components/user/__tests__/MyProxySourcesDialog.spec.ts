@@ -111,6 +111,7 @@ describe('MyProxySourcesDialog', () => {
     await wrapper.setProps({ show: true })
     await flushPromises()
     expect(api.list).toHaveBeenCalledWith({ page: 1, page_size: 100 })
+    expect(wrapper.get('[data-test="proxy-source-cleanup-warning"]').text()).toBe('admin.proxies.sourceCleanupWarning')
     expect(wrapper.emitted('loaded')?.[0]).toEqual([page()])
     expect(wrapper.find('form').exists()).toBe(false)
     expect(wrapper.html()).toContain('https://example.test/***')
@@ -228,6 +229,16 @@ describe('MyProxySourcesDialog', () => {
     await wrapper.get('[data-test="user-proxy-source-sync-7"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+  })
+
+  it('reports node deletion and direct-connection changes after a successful sync', async () => {
+    api.sync.mockResolvedValue({ imported_count: 2, deleted_count: 3, detached_account_count: 4, errors: [] })
+    const wrapper = mountDialog()
+    await flushPromises()
+    await wrapper.get('[data-test="user-proxy-source-sync-7"]').trigger('click')
+    await flushPromises()
+    expect(api.showSuccess).toHaveBeenCalledWith('myResources.messages.sourceSynced:{"count":2} admin.proxies.sourceCleanupResult:{"deleted":3,"detached":4}')
     expect(wrapper.emitted('changed')).toHaveLength(1)
   })
 

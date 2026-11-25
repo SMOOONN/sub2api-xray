@@ -74,6 +74,17 @@
             <button
               v-if="resource === 'proxies'"
               class="btn btn-secondary"
+              type="button"
+              :title="mr('actions.sources')"
+              :aria-label="mr('actions.sources')"
+              @click="openProxySources"
+            >
+              <Icon name="link" size="md" class="md:mr-2" />
+              <span class="hidden md:inline">{{ mr('actions.sources') }}</span>
+            </button>
+            <button
+              v-if="resource === 'proxies'"
+              class="btn btn-secondary"
               :disabled="batchTesting || batchQualityChecking || loading"
               :title="mr('actions.testConnection')"
               @click="batchTestProxies"
@@ -91,17 +102,7 @@
               <Icon name="shield" size="md" class="mr-2" :class="batchQualityChecking ? 'animate-pulse' : ''" />
               <span>{{ batchQualityChecking ? mr('actions.batchProgress', { completed: proxyBatchProgress.completed, total: proxyBatchProgress.total }) : mr('actions.batchQuality') }}</span>
             </button>
-            <button
-              v-if="resource === 'proxies'"
-              class="btn btn-secondary"
-              type="button"
-              :title="mr('actions.sources')"
-              :aria-label="mr('actions.sources')"
-              @click="openProxySources"
-            >
-              <Icon name="link" size="md" class="md:mr-2" />
-              <span class="hidden md:inline">{{ mr('actions.sources') }}</span>
-            </button>
+
             <div ref="columnSettingsRef" class="relative">
               <button
                 class="btn btn-secondary"

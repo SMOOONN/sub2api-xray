@@ -341,7 +341,7 @@ export default {
     sourceSyncResumed: 'Automatic sync resumed for this source',
     sourceSyncAllDone: 'All sources synced',
     sourceSyncAllPartial: 'Sync finished, {failed} sources failed',
-    sourceDeleteConfirm: 'Are you sure you want to delete this source?',
+    sourceDeleteConfirm: 'Delete this source and all its nodes? Bound accounts will connect directly without a proxy, and backup proxy references will be cleared.',
     sourceDeleted: 'Source deleted',
     sourceDeleteFailed: 'Failed to delete source',
     extendDaysInvalid: 'Extension days must be greater than 0',

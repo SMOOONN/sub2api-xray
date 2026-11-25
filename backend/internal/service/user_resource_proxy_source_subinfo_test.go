@@ -79,7 +79,7 @@ func TestRecordProxySourceSubscriptionInfoSkipsUnreportedColumns(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	svc := NewUserResourceService(db, nil, nil, nil)
-	if err := svc.recordProxySourceSubscriptionInfo(context.Background(), userResourceOwner(9), 44, parseProxySubscriptionUserInfo("total=2048")); err != nil {
+	if err := svc.recordProxySourceSubscriptionInfo(context.Background(), db, userResourceOwner(9), 44, parseProxySubscriptionUserInfo("total=2048")); err != nil {
 		t.Fatalf("record subscription info: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -95,7 +95,7 @@ func TestRecordProxySourceSubscriptionInfoWritesNothingWithoutHeader(t *testing.
 	defer func() { _ = db.Close() }()
 
 	svc := NewUserResourceService(db, nil, nil, nil)
-	if err := svc.recordProxySourceSubscriptionInfo(context.Background(), nil, 44, parseProxySubscriptionUserInfo("")); err != nil {
+	if err := svc.recordProxySourceSubscriptionInfo(context.Background(), db, nil, 44, parseProxySubscriptionUserInfo("")); err != nil {
 		t.Fatalf("record subscription info: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -114,7 +114,7 @@ func TestRecordProxySourceSubscriptionInfoWritesNullExpiry(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	svc := NewUserResourceService(db, nil, nil, nil)
-	if err := svc.recordProxySourceSubscriptionInfo(context.Background(), nil, 44, parseProxySubscriptionUserInfo("upload=1; download=2; total=3; expire=0")); err != nil {
+	if err := svc.recordProxySourceSubscriptionInfo(context.Background(), db, nil, 44, parseProxySubscriptionUserInfo("upload=1; download=2; total=3; expire=0")); err != nil {
 		t.Fatalf("record subscription info: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

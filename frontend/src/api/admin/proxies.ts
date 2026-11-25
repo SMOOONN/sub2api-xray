@@ -23,6 +23,8 @@ export interface AdminProxyImportRequest {
 }
 
 export interface AdminProxyImportResult {
+  deleted_count?: number
+  detached_account_count?: number
   created?: Proxy[]
   updated?: Proxy[]
   created_count?: number

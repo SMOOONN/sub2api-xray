@@ -87,13 +87,17 @@ describe('MyResourcesView responsive localization', () => {
     expect(source).not.toContain("<Icon :name=\"resource === 'proxies' ? 'more' : 'grid'\"")
     expect(source).not.toContain('showColumnSettings = false; openProxySources()')
 
-    // Toolbar order from the approved review: refresh, test, quality, sources, columns.
+    // Match IP management: refresh, sources, test, quality, columns.
+    const refreshAction = source.indexOf("mr('actions.refresh')")
+    const testAction = source.indexOf("mr('actions.testConnection')")
     const qualityAction = source.indexOf("mr('actions.batchQuality')")
     const sourcesAction = source.indexOf("mr('actions.sources')")
     const columnsAction = source.indexOf("mr('actions.columns')")
     expect(qualityAction).toBeGreaterThan(-1)
-    expect(qualityAction).toBeLessThan(sourcesAction)
-    expect(sourcesAction).toBeLessThan(columnsAction)
+    expect(refreshAction).toBeLessThan(sourcesAction)
+    expect(sourcesAction).toBeLessThan(testAction)
+    expect(testAction).toBeLessThan(qualityAction)
+    expect(qualityAction).toBeLessThan(columnsAction)
 
     expect(source).toContain("document.addEventListener('click', closeColumnSettingsOnOutsideClick)")
     expect(source).toContain("document.removeEventListener('click', closeColumnSettingsOnOutsideClick)")

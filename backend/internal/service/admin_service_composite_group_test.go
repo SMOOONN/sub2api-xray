@@ -32,7 +32,7 @@ func (s *accountRepoStubForCompositeAssignment) CreateWithAccountGroups(ctx cont
 	return s.BindGroups(ctx, account.ID, groupIDs)
 }
 
-func (s *accountRepoStubForCompositeAssignment) UpdateAccountWithGroupsAtomically(ctx context.Context, account *Account, groupIDs []int64, _ *bool) error {
+func (s *accountRepoStubForCompositeAssignment) UpdateAccountWithGroupsAtomically(ctx context.Context, account *Account, groupIDs []int64, _ AccountBillingSettingsUpdate) error {
 	committed := *account
 	committed.GroupIDs = append([]int64(nil), groupIDs...)
 	committed.AccountGroups = accountGroupsFromIDs(groupIDs)

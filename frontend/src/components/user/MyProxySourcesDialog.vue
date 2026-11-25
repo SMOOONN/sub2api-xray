@@ -8,6 +8,9 @@
     @close="closeManager"
   >
     <div data-test="user-proxy-source-manager" :aria-busy="loading || busy">
+      <p class="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-200" data-test="proxy-source-cleanup-warning">
+        {{ t('admin.proxies.sourceCleanupWarning') }}
+      </p>
       <p
         v-if="errorMessage"
         role="alert"
@@ -345,6 +348,8 @@ const syncAllSummary = computed(() => {
     deferred: Number(result.deferred_count) || 0,
     created: Number(result.created_count) || 0,
     updated: Number(result.updated_count) || 0,
+    deleted: Number(result.deleted_count) || 0,
+    detached: Number(result.detached_account_count) || 0,
   })
 })
 
@@ -471,8 +476,11 @@ async function syncSource(source: ResourceItem): Promise<void> {
     const result = await myResourcesApi.proxies.sources.sync(Number(source.id))
     const count = Number(result?.imported_count) || (Number(result?.created_count) || 0) + (Number(result?.updated_count) || 0)
     const errors = Array.isArray(result?.errors) ? result.errors.length : 0
-    if (errors > 0) appStore.showWarning(t('admin.proxies.sourceSyncPartial', { count, errors }))
-    else appStore.showSuccess(mr('messages.sourceSynced', { count }))
+    const cleanup = Number(result.deleted_count) > 0
+      ? ` ${t('admin.proxies.sourceCleanupResult', { deleted: result.deleted_count, detached: Number(result.detached_account_count) || 0 })}`
+      : ''
+    if (errors > 0) appStore.showWarning(t('admin.proxies.sourceSyncPartial', { count, errors }) + cleanup)
+    else appStore.showSuccess(mr('messages.sourceSynced', { count }) + cleanup)
     emit('changed')
     await loadSources()
   } catch (error) {

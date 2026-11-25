@@ -798,6 +798,9 @@
       @close="closeProxySourcesModal"
     >
       <div data-test="admin-proxy-source-manager">
+        <p class="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-200" data-test="proxy-source-cleanup-warning">
+          {{ t('admin.proxies.sourceCleanupWarning') }}
+        </p>
         <div
           v-if="proxySourceError"
           class="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-900/20 dark:text-red-300"
@@ -1671,6 +1674,8 @@ const proxySourceSyncAllSummary = computed(() => {
     deferred: Number(result.deferred_count) || 0,
     created: Number(result.created_count) || 0,
     updated: Number(result.updated_count) || 0,
+    deleted: Number(result.deleted_count) || 0,
+    detached: Number(result.detached_account_count) || 0,
   })
 })
 
@@ -2076,10 +2081,13 @@ const syncProxySource = async (source: AdminProxySource) => {
   try {
     const result = await adminAPI.proxies.sources.sync(source.id)
     const stats = getImportResultStats(result)
+    const cleanup = Number(result.deleted_count) > 0
+      ? ` ${t('admin.proxies.sourceCleanupResult', { deleted: result.deleted_count, detached: Number(result.detached_account_count) || 0 })}`
+      : ''
     if (stats.errors.length > 0) {
-      appStore.showInfo(t('admin.proxies.sourceSyncPartial', { count: stats.imported, errors: stats.errors.length }))
+      appStore.showInfo(t('admin.proxies.sourceSyncPartial', { count: stats.imported, errors: stats.errors.length }) + cleanup)
     } else {
-      appStore.showSuccess(t('admin.proxies.sourceSynced', { count: stats.imported }))
+      appStore.showSuccess(t('admin.proxies.sourceSynced', { count: stats.imported }) + cleanup)
     }
     await Promise.all([loadProxySources(), loadProxies()])
   } catch (error: unknown) {
@@ -2108,7 +2116,7 @@ const confirmDeleteProxySource = async () => {
     if (proxySourcePagination.page > lastPage) {
       proxySourcePagination.page = lastPage
     }
-    await loadProxySources()
+    await Promise.all([loadProxySources(), loadProxies()])
     void ensureProxySourceFilterOptions(true)
   } catch (error: unknown) {
     proxySourceError.value = extractApiErrorMessage(error, t('admin.proxies.sourceDeleteFailed'))

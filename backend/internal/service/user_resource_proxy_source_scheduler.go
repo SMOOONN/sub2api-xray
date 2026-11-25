@@ -127,7 +127,9 @@ LIMIT $1`, userProxySourceSchedulerBatchSize)
 		syncErr := s.syncDueProxySource(syncCtx, source)
 		cancel()
 		if syncErr != nil {
-			s.markScheduledProxySourceFailure(source, syncErr)
+			// The sync owner records failure against its fetched source revision.
+			// An unversioned scheduler write could overwrite a newer edit or sync.
+			logger.LegacyPrintf("service.user_resources", "sync proxy source id=%d failed: %v", source.ID, syncErr)
 		}
 	}
 }
@@ -177,16 +179,4 @@ WHERE id = $1 AND owner_user_id IS NOT DISTINCT FROM $2 AND deleted_at IS NULL
 		return false, err
 	}
 	return affected(result) == 1, nil
-}
-
-func (s *UserResourceService) markScheduledProxySourceFailure(source dueUserProxySource, syncErr error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_, err := s.db.ExecContext(ctx, `
-UPDATE proxy_sources
-SET last_synced_at = NOW(), last_sync_status = 'error', last_sync_error = $1, last_imported_count = 0, updated_at = NOW()
-WHERE id = $2 AND owner_user_id IS NOT DISTINCT FROM $3 AND deleted_at IS NULL`, safeSyncError(syncErr), source.ID, dueProxySourceOwnerValue(source.OwnerID))
-	if err != nil {
-		logger.LegacyPrintf("service.user_resources", "mark proxy source id=%d failure failed: %v", source.ID, err)
-	}
 }

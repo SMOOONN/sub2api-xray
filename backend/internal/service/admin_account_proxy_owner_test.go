@@ -75,7 +75,7 @@ func (r *ownerAtomicAccountRepo) CreateWithAccountGroups(ctx context.Context, ac
 	return nil
 }
 
-func (r *ownerAtomicAccountRepo) UpdateAccountWithGroupsAtomically(ctx context.Context, account *Account, groupIDs []int64, _ *bool) error {
+func (r *ownerAtomicAccountRepo) UpdateAccountWithGroupsAtomically(ctx context.Context, account *Account, groupIDs []int64, _ AccountBillingSettingsUpdate) error {
 	r.atomicUpdates++
 	if r.atomicUpdateErr != nil {
 		return r.atomicUpdateErr

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/lib/pq"
 )
 
 func TestClaimDueProxySourceIsOwnerScopedAndAtomic(t *testing.T) {
@@ -107,18 +108,20 @@ func TestDueProxySourceSyncDispatchesByNullableOwner(t *testing.T) {
 	})
 }
 
-func TestMarkScheduledSystemProxySourceFailureUsesNullSafeOwnerScope(t *testing.T) {
+func TestProxySourceFailureUsesVersionAndNullSafeOwnerScope(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("create sqlmock: %v", err)
 	}
 	defer func() { _ = db.Close() }()
 	mock.ExpectExec(`(?s)UPDATE proxy_sources.*owner_user_id IS NOT DISTINCT FROM \$3`).
-		WithArgs(sqlmock.AnyArg(), int64(44), nil).
+		WithArgs(sqlmock.AnyArg(), int64(44), nil, "revision").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	svc := NewUserResourceService(db, nil, nil, nil)
-	svc.markScheduledProxySourceFailure(dueUserProxySource{ID: 44}, context.DeadlineExceeded)
+	if err := svc.recordProxySourceSyncError(context.Background(), nil, 44, "revision", context.DeadlineExceeded); err != nil {
+		t.Fatal(err)
+	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet SQL expectations: %v", err)
 	}
@@ -177,7 +180,7 @@ func TestUserResourceServiceCloseWithoutSchedulerIsSafe(t *testing.T) {
 	}
 }
 
-func TestDeleteProxySourceRollsBackWhenNodeDisableFails(t *testing.T) {
+func TestDeleteProxySourceRollsBackWhenNodeCleanupFails(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatalf("create sqlmock: %v", err)
@@ -188,17 +191,39 @@ func TestDeleteProxySourceRollsBackWhenNodeDisableFails(t *testing.T) {
 	mock.ExpectExec(`UPDATE proxy_sources SET deleted_at`).
 		WithArgs(int64(44), int64(9)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectQuery(`(?s)UPDATE proxies.*RETURNING id`).
+	mock.ExpectQuery(`(?s)SELECT id FROM proxies.*FOR UPDATE`).
 		WithArgs(int64(9), "44", sqlmock.AnyArg()).
 		WillReturnError(context.DeadlineExceeded)
 	mock.ExpectRollback()
 
 	svc := NewUserResourceService(db, nil, nil, nil)
 	if err := svc.DeleteProxySource(context.Background(), 9, 44); err == nil {
-		t.Fatal("expected proxy node disable failure")
+		t.Fatal("expected proxy node cleanup failure")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestDeleteProxySourceRetriesRolledBackDeadlock(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE proxy_sources SET deleted_at`).WithArgs(int64(44), int64(9)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`(?s)SELECT id FROM proxies.*FOR UPDATE`).WillReturnError(&pq.Error{Code: "40P01"})
+	mock.ExpectRollback()
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE proxy_sources SET deleted_at`).WithArgs(int64(44), int64(9)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`(?s)SELECT id FROM proxies.*FOR UPDATE`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectCommit()
+	if err := NewUserResourceService(db, nil, nil, nil).DeleteProxySource(context.Background(), 9, 44); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -218,18 +243,21 @@ func TestSyncProxySourceNodesRollsBackWhenStatusWriteFails(t *testing.T) {
 		WithArgs(int64(9), "44").
 		WillReturnRows(sqlmock.NewRows(proxyColumns))
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT id FROM proxy_sources`).
+	mock.ExpectQuery(`SELECT id, xmin::text FROM proxy_sources`).
 		WithArgs(int64(44), int64(9)).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(44)))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "xmin"}).AddRow(int64(44), "revision"))
 	mock.ExpectQuery(`(?s)SELECT id, owner_user_id.*FROM proxies`).
 		WithArgs(int64(9), "44").
 		WillReturnRows(sqlmock.NewRows(proxyColumns))
 	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM proxies`).
 		WithArgs(int64(9)).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`(?s)SELECT COUNT\(\*\) FROM proxies.*source_node_key`).
+		WithArgs(int64(9), "44", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectQuery(`INSERT INTO proxies .* RETURNING id`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(101)))
-	mock.ExpectQuery(`(?s)UPDATE proxies.*RETURNING id`).
+	mock.ExpectQuery(`(?s)SELECT id FROM proxies.*FOR UPDATE`).
 		WithArgs(int64(9), "44", sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectExec(`UPDATE proxy_sources.*last_sync_status`).
@@ -237,7 +265,7 @@ func TestSyncProxySourceNodesRollsBackWhenStatusWriteFails(t *testing.T) {
 	mock.ExpectRollback()
 
 	svc := NewUserResourceService(db, nil, nil, nil)
-	_, err = svc.syncProxySourceNodes(context.Background(), userResourceOwner(9), 44, "source", "http://1.1.1.1:8080#node", false)
+	_, err = svc.syncProxySourceNodes(context.Background(), userResourceOwner(9), 44, "source", "http://1.1.1.1:8080#node", false, nil)
 	if err == nil {
 		t.Fatal("expected source status failure to roll back node changes")
 	}
